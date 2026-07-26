@@ -50,6 +50,31 @@ void main() {
     expect(passwordField.controller!.text, isEmpty);
   });
 
+  testWidgets('does not touch disposed form controllers after submission', (
+    tester,
+  ) async {
+    final repository = _FakeAuthRepository()
+      ..signInCompleter = Completer<void>();
+    await _pumpLogin(tester, repository);
+
+    await tester.enterText(
+      find.byKey(const Key('auth-email-field')),
+      'user@example.test',
+    );
+    await tester.enterText(
+      find.byKey(const Key('auth-password-field')),
+      'valid-password',
+    );
+    await tester.tap(find.byKey(const Key('auth-submit-button')));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+
+    repository.signInCompleter!.complete();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('renders a typed auth failure without the SDK message', (
     tester,
   ) async {

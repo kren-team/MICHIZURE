@@ -24,8 +24,20 @@ final class AuthController extends Notifier<AsyncValue<void>> {
 
   Future<void> signOut() => _submit(_repository.signOut);
 
+  void clearError() {
+    if (state.hasError) {
+      state = const AsyncData(null);
+    }
+  }
+
   Future<void> _submit(Future<void> Function() action) async {
+    if (state.isLoading) {
+      return;
+    }
     state = const AsyncLoading();
-    state = await AsyncValue.guard(action);
+    final result = await AsyncValue.guard(action);
+    if (ref.mounted) {
+      state = result;
+    }
   }
 }

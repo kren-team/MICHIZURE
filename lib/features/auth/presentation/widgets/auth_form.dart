@@ -84,8 +84,8 @@ final class _AuthFormState extends State<AuthForm> {
 
     final email = _emailController.text;
     final password = _passwordController.text;
-    await widget.onSubmit(email, password);
     _passwordController.clear();
+    await widget.onSubmit(email, password);
   }
 }
 
