@@ -106,7 +106,8 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
         AuthRouteState.ready =>
           location == splashRoutePath ||
                   isAuthRoute ||
-                  location == profileSetupRoutePath
+                  location == profileSetupRoutePath ||
+                  location == recoverableErrorRoutePath
               ? authenticatedRoutePath
               : null,
         AuthRouteState.recoverableError =>
@@ -142,19 +143,35 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       ),
       GoRoute(
         path: recoverableErrorRoutePath,
-        builder: (context, state) => const _RecoverableErrorScreen(),
+        builder: (context, state) => const RecoverableErrorScreen(),
       ),
     ],
   );
 }
 
-final class _RecoverableErrorScreen extends StatelessWidget {
-  const _RecoverableErrorScreen();
+final class RecoverableErrorScreen extends ConsumerWidget {
+  const RecoverableErrorScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: Text('状態を読み込めませんでした。アプリを再起動してください。')),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('状態を読み込めませんでした。'),
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('recoverable-error-retry-button'),
+              onPressed: () {
+                ref.invalidate(currentProfileProvider);
+                ref.invalidate(authStateProvider);
+              },
+              child: const Text('再試行'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
