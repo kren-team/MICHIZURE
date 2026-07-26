@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-現在は設計フェーズです。FlutterアプリやFirebase環境はまだ生成していません。実装は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。ユーザー機能は未実装です。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -70,3 +70,72 @@ integration_test/
 ```
 
 実際の生成対象と依存関係は [NEXT_TASK.md](NEXT_TASK.md) に限定してあります。
+
+## Phase 0 ローカル起動
+
+### 必要なツール
+
+- Flutter 3.44.0 / Dart 3.12.0
+- Android SDKとAPI 23以上のAndroid Emulator
+- Node.js 22
+- Java 21
+
+live Firebase project、`google-services.json`、service accountは不要です。debug buildは固定のdemo project `demo-michizure`だけを使用します。
+
+初回に依存を復元します。
+
+```bash
+flutter pub get
+npm --prefix firebase/rules-tests ci
+```
+
+Terminal 1でAuth / Firestore Emulatorを起動します。
+
+```bash
+npm --prefix firebase/rules-tests run emulators:start
+```
+
+固定portはAuth `9099`、Firestore `8080`、Emulator UI `4000`です。Terminal 2でAndroid Emulatorへアプリを起動します。
+
+```bash
+flutter run
+```
+
+Android Emulatorからhost machineへは `10.0.2.2` で接続します。起動後に `Bootstrap OK`、`Firebase Emulator`、`demo-michizure` が表示されればbootstrap成功です。別のhostが必要なdebug環境では次のように上書きできます。
+
+```bash
+flutter run --dart-define=MICHIZURE_FIREBASE_EMULATOR_HOST=127.0.0.1
+```
+
+### 品質ゲート
+
+Flutterのformat / analyze / test、Firestore Rules Test、追跡対象のsecret-like file検査を一括実行します。
+
+```bash
+./tool/check_all.sh
+```
+
+Firestore RulesはPhase 0では全read/writeを拒否します。Rules testだけを実行する場合は次を使います。
+
+```bash
+npm --prefix firebase/rules-tests test
+```
+
+CIは同じcheckに加えてAndroid debug APKをbuildします。ローカルでAPKを検証するにはAndroid SDKを設定してから実行します。
+
+```bash
+flutter build apk --debug
+```
+
+### live構成の境界
+
+non-debug buildはdemo projectへfallbackしません。次の4つの `--dart-define` が不足すると `MissingLiveFirebaseConfiguration` でfail-fastします。
+
+- `MICHIZURE_FIREBASE_API_KEY`
+- `MICHIZURE_FIREBASE_APP_ID`
+- `MICHIZURE_FIREBASE_MESSAGING_SENDER_ID`
+- `MICHIZURE_FIREBASE_PROJECT_ID`
+
+live設定、`.env`実値、signing keyをrepositoryへcommitしないでください。Phase 0はrelease signingとlive Firebase接続を構成しません。
+
+Rules test用のFirebase CLIはローカル・CI限定のdevDependencyです。現行CLIの推移依存に `npm audit` 警告がある場合、`npm audit fix --force` で無検証downgradeせず、Firebase CLI更新時にRules testとともに見直します。
