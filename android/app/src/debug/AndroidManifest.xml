@@ -4,4 +4,11 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!--
+         Firebase Local Emulator Suite uses HTTP. This debug-only application
+         override permits Android Emulator access through 10.0.2.2; release
+         builds continue to inherit the cleartext-safe main manifest.
+    -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

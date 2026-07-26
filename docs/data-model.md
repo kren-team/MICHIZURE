@@ -53,7 +53,7 @@ erDiagram
 
 | field | type | 必須 | 説明 |
 |---|---|---:|---|
-| `displayName` | string | yes | 1〜40文字 |
+| `displayName` | string | yes | trim後1〜40 Unicode scalar values、前後空白・制御文字・改行なし |
 | `photoUrl` | string/null | yes | MVPではnull可 |
 | `groupId` | string/null | yes | 単一group制約 |
 | `activeTaskSessionId` | string/null | yes | running Taskへのpointer |

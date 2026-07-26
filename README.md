@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。ユーザー機能は未実装です。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証、本人専用のプロフィール作成・編集、`users/{uid}` の最小Security Rulesを追加しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -115,7 +115,7 @@ Flutterのformat / analyze / test、Firestore Rules Test、追跡対象のsecret
 ./tool/check_all.sh
 ```
 
-Firestore RulesはPhase 0では全read/writeを拒否します。Rules testだけを実行する場合は次を使います。
+Firestore Rulesはdefault denyで、Phase 1では本人の `users/{uid}` のdirect get・作成・プロフィール更新だけを許可します。Rules testだけを実行する場合は次を使います。
 
 ```bash
 npm --prefix firebase/rules-tests test

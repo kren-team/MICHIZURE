@@ -8,7 +8,7 @@
   },
   "scripts": {
     "emulators:start": "firebase emulators:start --project demo-michizure --config ../../firebase.json --only auth,firestore",
-    "test": "firebase emulators:exec --project demo-michizure --config ../../firebase.json --only firestore \"vitest run --reporter=verbose\"",
+    "test": "firebase emulators:exec --project demo-michizure --config ../../firebase.json --only firestore \"vitest run --no-file-parallelism --reporter=verbose\"",
     "test:unit": "vitest run --reporter=verbose"
   },
   "devDependencies": {
