@@ -152,22 +152,6 @@ final class FirestoreGroupRepository implements GroupRepository {
         final memberReference = groupReference
             .collection('members')
             .doc(userId);
-        final groupSnapshot = await transaction.get(groupReference);
-        final memberSnapshot = await transaction.get(memberReference);
-        if (!groupSnapshot.exists) {
-          throw const GroupFailure(GroupFailureKind.invalidInvite);
-        }
-        if (memberSnapshot.exists) {
-          throw const GroupFailure(GroupFailureKind.alreadyMember);
-        }
-
-        final group = groupFromFirestore(
-          groupSnapshot.id,
-          groupSnapshot.data()!,
-        );
-        if (group.memberCount >= Group.maximumMemberCount) {
-          throw const GroupFailure(GroupFailureKind.groupFull);
-        }
 
         transaction.set(memberReference, {
           'userId': userId,
@@ -179,11 +163,11 @@ final class FirestoreGroupRepository implements GroupRepository {
           'schemaVersion': GroupMember.schemaVersion,
         });
         transaction.update(groupReference, {
-          'memberCount': group.memberCount + 1,
+          'memberCount': FieldValue.increment(1),
           'updatedAt': FieldValue.serverTimestamp(),
         });
         transaction.update(userReference, {
-          'groupId': group.id,
+          'groupId': invite.groupId,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       });
