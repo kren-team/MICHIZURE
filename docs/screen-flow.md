@@ -148,7 +148,7 @@ stateDiagram-v2
 |---|---|---|
 | app shell | `users/{uid}` | 1 doc |
 | Group Dashboard | group、members、active debts | 1 + 40 + limit 20 |
-| Running Task | active pointer、task doc | 2 docs |
+| Running Task | user doc内pointer、task doc | userはapp shellと共有 + 1 |
 | Debt Detail | debt、contributions | 1 + 40 |
 | Lock Status | failedUserのactive debts | limit 20 + local state |
 | Squat Counter | selected debt、contributions | 1 + 40 |

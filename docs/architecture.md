@@ -184,7 +184,7 @@ sequenceDiagram
     User->>Flutter: 内容・時間を入力
     Flutter->>Native: getCapabilities
     Native-->>Flutter: Device Owner / Usage Access / lock targets OK
-    Flutter->>Firestore: transaction: task + active pointer
+    Flutter->>Firestore: transaction: task + user activeTaskSessionId
     Firestore-->>Flutter: committed
     Flutter->>Native: startTaskGuard(task snapshot)
     Native->>Android: start foreground service
@@ -193,7 +193,7 @@ sequenceDiagram
     Native->>Native: interruption filter + dwell
     Native->>Android: selected packagesをsuspend
     Native-->>Flutter: taskFailed(eventId)
-    Flutter->>Firestore: transaction: task failed + debt + pointer delete
+    Flutter->>Firestore: transaction: task failed + debt + user pointer clear
     Firestore-->>Flutter: committed
 ```
 
@@ -250,7 +250,7 @@ sequenceDiagram
 2. DevicePolicyManagerの現在状態とeffective lockを照合し、不足する封印を先に適用する。
 3. Firebase Authを復元する。
 4. pending failure / Contribution Eventを同一IDで再送する。
-5. `activeTaskSessions/{uid}` と対象Debtをserver sourceで再取得する。
+5. `users/{uid}.activeTaskSessionId` のTaskと対象Debtをserver sourceで再取得する。
 6. Task deadline、Debt status、lock deadlineを評価する。
 7. resolved obligationを除去し、余分なsuspensionだけを解除する。
 8. snapshot listenerを画面・foreground serviceの必要範囲で登録する。

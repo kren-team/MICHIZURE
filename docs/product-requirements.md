@@ -89,7 +89,7 @@ MICHIZUREは、個人の集中タスク失敗をグループの共同スクワ�
 | hard enforcement対応 | API 29以上、Device Owner端末 | API 23〜28はUIを起動可能でもMVP保証外 |
 | lock期間 | failureから30分 | debug flavorはデモ用に短縮可 |
 | Debt単価 | failure時メンバー1人あたり10rep | 変更は新規Taskにだけ適用 |
-| 同時running Task | ユーザーごとに1件 | `activeTaskSessions/{uid}` で担保 |
+| 同時running Task | ユーザーごとに1件 | `users/{uid}.activeTaskSessionId` とTaskをatomic更新 |
 | group未所属Task | 開始不可 | 個人DebtはMVP外 |
 | タスク中の着信 | 着信中のdefault dialer遷移は失敗にしない | 実機テスト必須 |
 | OS権限画面 | Task開始前preflightで必要権限を完了し、アプリ起点の短い許可画面のみ除外 | 任意Settings遷移はfailure |
