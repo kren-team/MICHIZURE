@@ -49,6 +49,14 @@ void main() {
     expect(find.byKey(const Key('profile-error-message')), findsOneWidget);
     expect(find.textContaining('Firebase'), findsNothing);
     expect(find.text('プロフィールを保存しました。'), findsNothing);
+
+    repository.updateError = null;
+    await tester.tap(find.byKey(const Key('profile-save-button')));
+    await tester.pumpAndSettle();
+
+    expect(repository.updateCalls, 2);
+    expect(find.byKey(const Key('profile-error-message')), findsNothing);
+    expect(find.text('プロフィールを保存しました。'), findsOneWidget);
   });
 }
 

@@ -80,6 +80,21 @@ void main() {
       expect(find.byType(ProfileSetupScreen), findsOneWidget);
     });
 
+    testWidgets('recoverable error returns to Login when signed out', (
+      tester,
+    ) async {
+      final harness = await _pumpRouter(
+        tester,
+        AuthRouteState.recoverableError,
+      );
+
+      harness.gate.update(const AsyncData(AuthRouteState.signedOut));
+      await tester.pumpAndSettle();
+
+      expect(harness.location, loginRoutePath);
+      expect(find.byType(LoginScreen), findsOneWidget);
+    });
+
     testWidgets('logout redirects Home to Login', (tester) async {
       final harness = await _pumpRouter(tester, AuthRouteState.ready);
       expect(harness.location, authenticatedRoutePath);
