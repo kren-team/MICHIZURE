@@ -150,6 +150,7 @@ foreground package名は保存しない。
 | `lockExpiresAt` | timestamp | yes | task endedAt + lockDurationSec |
 | `closedAt` | timestamp/null | yes | completed / expired時 |
 | `lastContributionAt` | timestamp/null | yes | active更新表示 |
+| `lastContributionEventId` | string/null | yes | Rulesのatomic link、UI queryには不使用 |
 | `schemaVersion` | int | yes | 初期値1 |
 
 `remainingReps` は `max(0, totalReps - completedReps)` としてclientで導出し、重複保存しない。
@@ -294,7 +295,7 @@ write:
 
 1. immutable event create、`acceptedReps=1`
 2. contribution totalを `+1`
-3. Debt completedを `+1`
+3. Debt completedを `+1`、`lastContributionEventId` をevent IDへ更新
 4. new totalがtotalRepsならDebt status completed、closedAt設定
 
 これにより並行transactionはFirestore SDKにより再実行され、total超過しない。
@@ -350,6 +351,7 @@ automatic index exemption候補:
 - `taskSessions.content`
 - `failureEventId`
 - `guardConfigVersion`
+- `debts.lastContributionEventId`
 - Contribution Eventの `detectorVersion`, `clientObservedAt`
 - URLや将来追加する大きなmap/string
 
