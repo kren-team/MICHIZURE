@@ -22,9 +22,7 @@ void main() {
     'two clients create, join, observe members in real time, and leave',
     (tester) async {
       final suffix = DateTime.now().microsecondsSinceEpoch;
-      final appA = await Firebase.initializeApp(
-        options: demoFirebaseOptions,
-      );
+      final appA = await Firebase.initializeApp(options: demoFirebaseOptions);
       final appB = await Firebase.initializeApp(
         name: 'group-client-b-$suffix',
         options: demoFirebaseOptions,
