@@ -38,4 +38,19 @@ void main() {
       ),
     );
   });
+
+  test('rejects a non-canonical display name from Firestore', () {
+    final data = validData()..['displayName'] = '  Alice  ';
+
+    expect(
+      () => userProfileFromFirestore('alice', data),
+      throwsA(
+        isA<ProfileFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          ProfileFailureKind.invalidData,
+        ),
+      ),
+    );
+  });
 }

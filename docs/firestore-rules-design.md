@@ -99,7 +99,7 @@ where status == "active"
 - field keys完全一致
 - `groupId == null`
 - `activeTaskSessionId == null`
-- displayNameの型と長さ
+- displayNameはtrim済みの正規形、1〜40 Unicode文字で、前後空白・制御文字・改行なし
 - `createdAt == request.time`, `updatedAt == request.time`
 - schemaVersion 1
 

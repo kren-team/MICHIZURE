@@ -36,6 +36,7 @@ service cloud.firestore {
         && value.size() >= 1
         && value.size() <= 40
         && value.matches('.*\\S.*')
+        && value.matches('[^\\s\\p{Z}](.*[^\\s\\p{Z}])?')
         && !value.matches('.*\\p{Cc}.*')
         && !value.matches('.*\\p{Zl}.*')
         && !value.matches('.*\\p{Zp}.*');

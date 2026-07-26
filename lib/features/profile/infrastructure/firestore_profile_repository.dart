@@ -79,6 +79,7 @@ UserProfile userProfileFromFirestore(String userId, Map<String, dynamic> data) {
 
   if (displayName is! String ||
       !ProfileValidator.isValidDisplayName(displayName) ||
+      ProfileValidator.normalizeDisplayName(displayName) != displayName ||
       (photoUrl != null && photoUrl is! String) ||
       (groupId != null && groupId is! String) ||
       (activeTaskSessionId != null && activeTaskSessionId is! String) ||
