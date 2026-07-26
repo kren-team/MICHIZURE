@@ -1,67 +1,71 @@
-# NEXT TASK: Phase 2 `feature/group`
+# NEXT TASK: Phase 3 `feature/device-setup-app-selection`
 
 ## この作業だけを実装する
 
-グループの作成、招待、参加、リアルタイムのメンバー一覧、所有者移譲、退出制約を実装する。Phase 1の認証・プロフィールと `users/{uid}` Rulesを前提にする。
+Device Owner、Usage Access、notification、package visibilityの診断と、封印対象アプリの選択・端末内保存を実装する。Phase 0〜2のFirebase bootstrap、認証、プロフィール、Group機能を前提にする。
 
-Task、Device Owner、UsageStats、app lock、Debt、CameraX、ML Kit、スクワット判定は実装しない。Firebase Storage、Cloud Functions、Firebase Admin SDKも追加しない。
+Task session、他アプリへの遷移監視、実際のpackage suspension、Debt、CameraX、ML Kit、スクワット判定は実装しない。
 
 ## 作業開始
 
-1. `README.md`、`AGENTS.md`、`docs/data-model.md`、`docs/firestore-rules-design.md`、`docs/state-management.md`、`docs/testing.md`、`docs/implementation-plan.md` のPhase 2を読む。
-2. 最新のcleanな `dev` から開始する。`feature/auth-profile` は直接の統合元にしない。
-
-```bash
-git fetch origin
-git switch dev
-git pull --ff-only origin dev
-git switch -c feature/group
-```
+1. `AGENTS.md` と全設計文書を読む。
+2. 特に `docs/android-enforcement.md`、`docs/security-privacy.md`、`docs/state-management.md`、`docs/testing.md`、`docs/implementation-plan.md` のPhase 3、ADR 0003を確認する。
+3. Phase 2が統合された最新のcleanな `dev` から `feature/device-setup-app-selection` を作る。
 
 ## 必須設計制約
 
-- 一人が所属できるgroupは一つだけ。最大40人。
-- group作成は `groups/{groupId}`、`groups/{groupId}/members/{uid}`、作成者の `users/{uid}.groupId` をatomic writeで整合させる。
-- 参加・退出・所有者移譲はFirestore Transactionで実装する。クライアントの事前readだけを根拠に人数を判定しない。
-- メンバー一覧は `groups/{groupId}/members` の一つのsnapshot listenerで取得する。profileをメンバーごとに読むN+1を作らず、member documentに必要最小限の表示名snapshotを持たせる。
-- 招待tokenは平文でFirestoreに保存しない。十分な乱数tokenのSHA-256のみを `groupInvites` に保存する。期限・revoke・使用済みを検証する。
-- Phase 1で保護した `users/{uid}` の `groupId` を、group create/join/leaveの必要な遷移だけにRulesで拡張する。users collectionのlistは許可しない。
-- Firestore Rulesだけで表現できないtransaction整合性はクライアントtrust boundaryとして明記し、MVPではCloud Functionsへ依存しない。
+- Android固有処理だけをKotlinに置き、FlutterとはtypedなPlatform Channel境界で接続する。
+- Device Ownerはハッカソン用managed Emulator構成であり、一般ユーザー端末で利用可能と偽らない。
+- package inventoryと選択package名はFirestoreや外部サービスへ送らず、端末内だけに保存する。
+- debug/demo向けのbroad package visibilityとProduction配布方針を分離する。
+- システム必須package、自アプリ、launcher、Settings等を選択・封印対象にしない。
+- Phase 1のdebug限定cleartext許可をreleaseへ広げない。
+- Method Channelの生例外をUIへ露出せず、typed capability/failureへ変換する。
 
 ## 実装対象
 
 ```text
-lib/features/group/
-  domain/
-  application/
-  infrastructure/
-  presentation/
-lib/app/router.dart
-lib/app/providers.dart
-firestore.rules
-firebase/rules-tests/src/groups.test.js
-test/features/group/
-integration_test/group_flow_test.dart
+lib/features/enforcement/domain/
+lib/features/enforcement/application/
+lib/features/enforcement/infrastructure/device_control_channel.dart
+lib/features/enforcement/presentation/device_setup/
+lib/features/enforcement/presentation/app_selection/
+android/app/src/main/kotlin/com/kren/michizure/admin/
+android/app/src/main/kotlin/com/kren/michizure/enforcement/PackageCatalog.kt
+android/app/src/main/kotlin/com/kren/michizure/platform/
+android/app/src/main/AndroidManifest.xml
+android/app/src/main/res/xml/device_admin_receiver.xml
+android/app/src/debug/AndroidManifest.xml
+test/features/enforcement/
+android/app/src/test/
 ```
 
-画面はGroup Onboarding、Create、Join、Dashboard、Invite、Member listを最小限で実装する。認証済みユーザーで `groupId == null` ならOnboarding、所属済みならDashboardへ遷移する。Android Native実装はない。
+Firestore変更はない。package selectionは既存設計で指定されたAndroidローカル永続化を使う。
+
+## UI
+
+- Device Setup checklist
+- Device Owner / Usage Access / notification / package visibilityの状態と設定導線
+- lock可能アプリ一覧と複数選択
+- 選択の保存・復元
+- managed demoと一般端末で利用できない機能の明示
 
 ## 完了条件
 
-- Aがgroupを作成し、Bが有効tokenで参加できる。
-- 両端末のmember listがリアルタイム更新される。
-- 二つ目のgroup参加、41人目、期限切れ・revoke済み招待を拒否する。
-- ownerが退出する前に移譲導線を提供し、最後のmemberの退出仕様を明示する。
-- dashboard初回readはgroup document + members queryを基本とし、N+1 profile readを発生させない。
-- Flutter unit/widget test、Firestore Emulator Rules test、2クライアントintegration test、`flutter build apk --debug` が成功する。
+- Android EmulatorでDevice Owner capabilityを診断できる。
+- lock対象として安全なpackageだけを列挙できる。
+- package選択を保存し、アプリ再起動後に復元できる。
+- package inventoryがnetwork/Firestoreへ送信されない。
+- capabilityなし、権限拒否、Platform Channel失敗を安全なUIで表示できる。
+- Flutter unit/widget test、Kotlin unit test、`flutter build apk --debug` が成功する。
+- Device Owner provisioningを含むsmoke test手順がドキュメント化される。
 
 ## 推奨commit分割
 
-1. `feat: groupドメインとFirestore repositoryを追加`
-2. `feat: group作成と参加を実装`
-3. `feat: member一覧と招待管理を実装`
-4. `feat: owner移譲と退出制約を実装`
-5. `test: group transactionとRulesを検証`
-6. `docs: Group実装手順を更新`
+1. `feat: Device Owner capability診断を追加`
+2. `feat: lock可能アプリcatalogを実装`
+3. `feat: app選択とローカル永続化を追加`
+4. `test: device control channelとpackage制約を検証`
+5. `docs: Device setupの実行手順を更新`
 
-作業完了時は、branch、commit、Firestore schema/Rules/Index、テストの実行結果、既知のtrust boundary、PR作成コマンドを報告する。
+Phase 4以降を先取りしない。作業完了時はbranch、commit、Platform Channel contract、Android権限・manifest差分、ローカル保存方式、テスト結果、既知のmanaged-device制約を報告する。

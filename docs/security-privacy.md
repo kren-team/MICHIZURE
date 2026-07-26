@@ -34,6 +34,8 @@ Rulesが信頼できるのは `request.auth`, `request.time`, existing/after doc
 - clientが実際のスクワットを観測したという申告
 - root / patched OS上のDevicePolicyManager結果
 
+Phase 2のgroup作成・参加・退出・所有者移譲は、user/group/member/inviteのbefore/after-stateをRulesで結び、1ユーザー1groupと最大40人をclient UIに依存せず検証する。raw invite tokenはFirestoreへ保存しない。一方、raw tokenを受領した認証済みユーザーは期限内なら参加できるため、tokenはbearer credentialであり、転送された相手の本人性や招待受領者まではMVPで保証しない。
+
 ## 3. Threat model
 
 | Threat | MVP対策 | 残余リスク / Production |

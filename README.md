@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証、本人専用のプロフィール作成・編集、`users/{uid}` の最小Security Rulesを追加しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証とプロフィール、Phase 2ではグループ作成・招待・参加・リアルタイムメンバー一覧・所有者移譲・退出を追加しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -115,10 +115,19 @@ Flutterのformat / analyze / test、Firestore Rules Test、追跡対象のsecret
 ./tool/check_all.sh
 ```
 
-Firestore Rulesはdefault denyで、Phase 1では本人の `users/{uid}` のdirect get・作成・プロフィール更新だけを許可します。Rules testだけを実行する場合は次を使います。
+Firestore Rulesはdefault denyです。本人の `users/{uid}` と、所属メンバーに限定したgroup/member操作、hash化招待を許可し、group作成・参加・退出・所有者移譲は関連documentのafter-stateまで検証します。Rules testだけを実行する場合は次を使います。
 
 ```bash
 npm --prefix firebase/rules-tests test
+```
+
+接続済みAndroid Emulator上で、独立した2つのFirebase Auth clientによるGroup統合フローを検証できます。
+
+```bash
+firebase emulators:exec \
+  --project demo-michizure \
+  --only auth,firestore \
+  "flutter test integration_test/group_flow_test.dart -d emulator-5554"
 ```
 
 CIは同じcheckに加えてAndroid debug APKをbuildします。ローカルでAPKを検証するにはAndroid SDKを設定してから実行します。
