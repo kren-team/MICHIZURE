@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../application/profile_controller.dart';
 import '../domain/user_profile.dart';
+import 'profile_failure_message.dart';
 
 final class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -64,11 +65,31 @@ final class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ? null
                     : '表示名は制御文字を含めず、1〜40文字で入力してください。',
               ),
+              if (state.whenOrNull(error: (error, stackTrace) => error)
+                  case final error?) ...[
+                const SizedBox(height: 12),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    profileFailureMessage(error),
+                    key: const Key('profile-error-message'),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               FilledButton(
                 key: const Key('profile-save-button'),
                 onPressed: isSaving ? null : () => _save(user.id),
-                child: const Text('変更を保存する'),
+                child: isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('変更を保存する'),
               ),
             ],
           ),
@@ -87,5 +108,15 @@ final class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           userId: userId,
           displayName: _displayNameController.text,
         );
+    if (!mounted || ref.read(profileControllerProvider).hasError) {
+      return;
+    }
+
+    _displayNameController.text = ProfileValidator.normalizeDisplayName(
+      _displayNameController.text,
+    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('プロフィールを保存しました。')));
   }
 }

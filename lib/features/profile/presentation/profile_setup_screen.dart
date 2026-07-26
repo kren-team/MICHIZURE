@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../application/profile_controller.dart';
-import '../domain/profile_failure.dart';
 import '../domain/user_profile.dart';
+import 'profile_failure_message.dart';
 
 final class ProfileSetupScreen extends ConsumerStatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -60,7 +60,8 @@ final class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                         case final error?) ...[
                       const SizedBox(height: 12),
                       Text(
-                        _profileFailureMessage(error),
+                        profileFailureMessage(error),
+                        key: const Key('profile-error-message'),
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
                         ),
@@ -103,12 +104,4 @@ final class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
           displayName: _displayNameController.text,
         );
   }
-}
-
-String _profileFailureMessage(Object error) {
-  if (error is ProfileFailure &&
-      error.kind == ProfileFailureKind.invalidDisplayName) {
-    return '表示名は制御文字を含めず、1〜40文字で入力してください。';
-  }
-  return 'プロフィールを保存できませんでした。再試行してください。';
 }
