@@ -7,14 +7,29 @@ void main() {
       expect(ProfileValidator.normalizeDisplayName('  Alice  '), 'Alice');
     });
 
-    test('accepts a non-empty name up to 40 characters', () {
-      expect(ProfileValidator.isValidDisplayName('Alice'), isTrue);
-      expect(ProfileValidator.isValidDisplayName('a' * 40), isTrue);
+    test('accepts Unicode display names up to 40 scalar values', () {
+      for (final name in [
+        '野々村 奏',
+        '奏',
+        'かなで',
+        'カナデ',
+        'Kanade',
+        'Kanade 野々村',
+        'user123',
+        '奏' * 40,
+      ]) {
+        expect(ProfileValidator.isValidDisplayName(name), isTrue);
+      }
     });
 
-    test('rejects blank and too-long names', () {
-      expect(ProfileValidator.isValidDisplayName('  '), isFalse);
-      expect(ProfileValidator.isValidDisplayName('a' * 41), isFalse);
+    test('rejects blank, control characters, and too-long names', () {
+      for (final name in ['', '  ', '\n', 'Kanade\n奏', '奏' * 41]) {
+        expect(ProfileValidator.isValidDisplayName(name), isFalse);
+      }
+    });
+
+    test('counts Unicode scalar values instead of UTF-16 code units', () {
+      expect(ProfileValidator.unicodeScalarLength('奏😀'), 2);
     });
   });
 }

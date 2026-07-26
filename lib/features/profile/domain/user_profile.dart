@@ -27,12 +27,18 @@ final class ProfileValidator {
   const ProfileValidator._();
 
   static const int maximumDisplayNameLength = 40;
+  static final RegExp _disallowedCharacters = RegExp(
+    '[\\x00-\\x1F\\x7F-\\x9F\\u2028\\u2029]',
+  );
 
   static String normalizeDisplayName(String value) => value.trim();
+
+  static int unicodeScalarLength(String value) => value.runes.length;
 
   static bool isValidDisplayName(String value) {
     final normalized = normalizeDisplayName(value);
     return normalized.isNotEmpty &&
-        normalized.length <= maximumDisplayNameLength;
+        unicodeScalarLength(normalized) <= maximumDisplayNameLength &&
+        !_disallowedCharacters.hasMatch(normalized);
   }
 }

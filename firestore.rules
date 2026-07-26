@@ -32,7 +32,13 @@ service cloud.firestore {
     }
 
     function validDisplayName(value) {
-      return value is string && value.size() >= 1 && value.size() <= 40;
+      return value is string
+        && value.size() >= 1
+        && value.size() <= 40
+        && value.matches('.*\\S.*')
+        && !value.matches('.*\\p{Cc}.*')
+        && !value.matches('.*\\p{Zl}.*')
+        && !value.matches('.*\\p{Zp}.*');
     }
 
     function validNullableString(value) {

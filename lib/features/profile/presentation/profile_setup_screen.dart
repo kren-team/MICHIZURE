@@ -49,11 +49,12 @@ final class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                       key: const Key('profile-display-name-field'),
                       controller: _displayNameController,
                       enabled: !isSaving,
+                      maxLength: ProfileValidator.maximumDisplayNameLength,
                       decoration: const InputDecoration(labelText: '表示名'),
                       validator: (value) =>
                           ProfileValidator.isValidDisplayName(value ?? '')
                           ? null
-                          : '表示名は1〜40文字で入力してください。',
+                          : '表示名は制御文字を含めず、1〜40文字で入力してください。',
                     ),
                     if (state.whenOrNull(error: (error, stackTrace) => error)
                         case final error?) ...[
@@ -107,7 +108,7 @@ final class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 String _profileFailureMessage(Object error) {
   if (error is ProfileFailure &&
       error.kind == ProfileFailureKind.invalidDisplayName) {
-    return '表示名は1〜40文字で入力してください。';
+    return '表示名は制御文字を含めず、1〜40文字で入力してください。';
   }
   return 'プロフィールを保存できませんでした。再試行してください。';
 }
