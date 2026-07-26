@@ -27,7 +27,12 @@ final class LoginScreen extends ConsumerWidget {
             .signIn(email: email, password: password),
       ),
       footer: TextButton(
-        onPressed: isSubmitting ? null : () => context.go('/register'),
+        onPressed: isSubmitting
+            ? null
+            : () {
+                ref.read(authControllerProvider.notifier).clearError();
+                context.go('/register');
+              },
         child: const Text('アカウントを作成する'),
       ),
     );

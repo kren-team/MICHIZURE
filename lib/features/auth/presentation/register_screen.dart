@@ -28,7 +28,12 @@ final class RegisterScreen extends ConsumerWidget {
             .register(email: email, password: password),
       ),
       footer: TextButton(
-        onPressed: isSubmitting ? null : () => context.go('/login'),
+        onPressed: isSubmitting
+            ? null
+            : () {
+                ref.read(authControllerProvider.notifier).clearError();
+                context.go('/login');
+              },
         child: const Text('ログインへ戻る'),
       ),
     );
