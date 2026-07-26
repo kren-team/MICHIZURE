@@ -121,6 +121,7 @@ service cloud.firestore {
           || (
             resource.data.groupId is string
             && request.resource.data.groupId == null
+            && resource.data.activeTaskSessionId == null
             && exists(memberPath(resource.data.groupId, uid))
             && !existsAfter(memberPath(resource.data.groupId, uid))
             && existsAfter(groupPath(resource.data.groupId))
@@ -277,6 +278,8 @@ service cloud.firestore {
           return hasExactMemberKeys()
             && request.resource.data.userId == uid
             && validDisplayName(request.resource.data.displayNameSnapshot)
+            && request.resource.data.displayNameSnapshot
+              == getAfter(userPath(uid)).data.displayName
             && request.resource.data.role in ['owner', 'member']
             && (
               request.resource.data.inviteTokenHash == null

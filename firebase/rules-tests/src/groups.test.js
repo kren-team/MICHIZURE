@@ -57,12 +57,13 @@ const unauthenticatedFirestore = () =>
 const userData = ({
   displayName = 'User',
   groupId: membership = null,
+  activeTaskSessionId = null,
   timestamp = fixedTimestamp,
 } = {}) => ({
   displayName,
   photoUrl: null,
   groupId: membership,
-  activeTaskSessionId: null,
+  activeTaskSessionId,
   createdAt: timestamp,
   updatedAt: timestamp,
   schemaVersion: 1,
@@ -125,12 +126,12 @@ async function expectDenied(operation) {
 
 async function seedUser(
   uid,
-  { membership = null, displayName = uid } = {},
+  { membership = null, displayName = uid, activeTaskSessionId = null } = {},
 ) {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(
       doc(context.firestore(), 'users', uid),
-      userData({ displayName, groupId: membership }),
+      userData({ displayName, groupId: membership, activeTaskSessionId }),
     );
   });
 }
@@ -357,6 +358,45 @@ describe('group atomic workflows', () => {
     );
   });
 
+  test('concurrent joins by one user can only select one group', async () => {
+    await seedGroup(groupId, {
+      inviteHash: validInviteHash,
+    });
+    await seedGroup(otherGroupId, {
+      ownerUid: carolId,
+      memberUids: [carolId],
+      inviteHash: secondInviteHash,
+    });
+    await seedUser(bobId);
+
+    const results = await Promise.allSettled([
+      joinGroupTransaction(
+        firestoreAs(bobId),
+        bobId,
+        groupId,
+        validInviteHash,
+      ),
+      joinGroupTransaction(
+        firestoreAs(bobId),
+        bobId,
+        otherGroupId,
+        secondInviteHash,
+      ),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      const firestore = context.firestore();
+      const userSnapshot = await getDoc(doc(firestore, 'users', bobId));
+      const memberships = await Promise.all([
+        getDoc(doc(firestore, 'groups', groupId, 'members', bobId)),
+        getDoc(doc(firestore, 'groups', otherGroupId, 'members', bobId)),
+      ]);
+      expect([groupId, otherGroupId]).toContain(userSnapshot.data().groupId);
+      expect(memberships.filter((snapshot) => snapshot.exists())).toHaveLength(1);
+    });
+  });
+
   test('denies the 41st member', async () => {
     const memberUids = [
       aliceId,
@@ -408,6 +448,20 @@ describe('group atomic workflows', () => {
     });
 
     await assertSucceeds(
+      leaveGroupTransaction(firestoreAs(bobId), bobId),
+    );
+  });
+
+  test('a member with an active task cannot leave', async () => {
+    await seedGroup(groupId, {
+      memberUids: [aliceId, bobId],
+    });
+    await seedUser(bobId, {
+      membership: groupId,
+      activeTaskSessionId: 'running-task',
+    });
+
+    await expectDenied(
       leaveGroupTransaction(firestoreAs(bobId), bobId),
     );
   });
@@ -525,6 +579,33 @@ describe('group authorization and schema', () => {
     );
     batch.update(doc(bob, 'groups', groupId), {
       memberCount: 2,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(bob, 'users', bobId), {
+      groupId,
+      updatedAt: serverTimestamp(),
+    });
+
+    await expectDenied(batch.commit());
+  });
+
+  test('denies a display name snapshot that differs from the user profile', async () => {
+    await seedGroup(groupId, {
+      inviteHash: validInviteHash,
+    });
+    await seedUser(bobId, { displayName: '正しい名前' });
+    const bob = firestoreAs(bobId);
+    const batch = writeBatch(bob);
+    batch.set(
+      doc(bob, 'groups', groupId, 'members', bobId),
+      memberData({
+        uid: bobId,
+        displayName: '偽の名前',
+        timestamp: serverTimestamp(),
+      }),
+    );
+    batch.update(doc(bob, 'groups', groupId), {
+      memberCount: increment(1),
       updatedAt: serverTimestamp(),
     });
     batch.update(doc(bob, 'users', bobId), {
