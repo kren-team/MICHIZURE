@@ -1,33 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:michizure/app/bootstrap.dart';
 import 'package:michizure/app/router.dart';
+import 'package:michizure/features/auth/presentation/login_screen.dart';
 
 void main() {
-  testWidgets('router starts at the bootstrap route', (tester) async {
-    final router = createAppRouter();
+  testWidgets('router sends a signed-out user to login', (tester) async {
+    final gate = AuthRouteGate();
+    gate.update(const AsyncData(null));
+    final router = createAppRouter(authRouteGate: gate);
     addTearDown(router.dispose);
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          bootstrapStateProvider.overrideWithValue(
-            BootstrapState(
-              environment: AppEnvironment.firebaseEmulator,
-              projectId: demoFirebaseProjectId,
-              startedAt: DateTime.utc(2026),
-            ),
-          ),
-        ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
+      ProviderScope(child: MaterialApp.router(routerConfig: router)),
     );
     await tester.pump();
 
-    expect(
-      router.routerDelegate.currentConfiguration.uri.path,
-      bootstrapRoutePath,
-    );
+    expect(router.routerDelegate.currentConfiguration.uri.path, loginRoutePath);
+    expect(find.byType(LoginScreen), findsOneWidget);
   });
 }

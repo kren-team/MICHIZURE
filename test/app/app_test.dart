@@ -1,11 +1,17 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/app.dart';
 import 'package:michizure/app/bootstrap.dart';
+import 'package:michizure/app/router.dart';
 
 void main() {
-  testWidgets('renders the bootstrap placeholder and environment', (
-    tester,
-  ) async {
+  testWidgets('renders the login route for a signed-out user', (tester) async {
+    final gate = AuthRouteGate();
+    gate.update(const AsyncData(null));
+    final router = createAppRouter(authRouteGate: gate);
+    addTearDown(router.dispose);
+
     await tester.pumpWidget(
       MichizureApp(
         bootstrapState: BootstrapState(
@@ -13,12 +19,11 @@ void main() {
           projectId: demoFirebaseProjectId,
           startedAt: DateTime.utc(2026),
         ),
+        router: router,
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Bootstrap OK'), findsOneWidget);
-    expect(find.text('Environment: Firebase Emulator'), findsOneWidget);
-    expect(find.text('Project: demo-michizure'), findsOneWidget);
+    expect(find.byKey(const Key('auth-submit-button')), findsOneWidget);
   });
 }
