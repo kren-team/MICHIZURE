@@ -2,6 +2,78 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function hasExactUserKeys() {
+      return request.resource.data.keys().hasAll([
+          'displayName',
+          'photoUrl',
+          'groupId',
+          'activeTaskSessionId',
+          'createdAt',
+          'updatedAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'displayName',
+          'photoUrl',
+          'groupId',
+          'activeTaskSessionId',
+          'createdAt',
+          'updatedAt',
+          'schemaVersion'
+        ]);
+    }
+
+    function validDisplayName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 40;
+    }
+
+    function validNullableString(value) {
+      return value == null || value is string;
+    }
+
+    function validUserSchema() {
+      return validDisplayName(request.resource.data.displayName)
+        && validNullableString(request.resource.data.photoUrl)
+        && request.resource.data.groupId == null
+        && request.resource.data.activeTaskSessionId == null
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    match /users/{uid} {
+      allow get: if isSelf(uid);
+      allow list, delete: if false;
+
+      allow create: if isSelf(uid)
+        && hasExactUserKeys()
+        && validUserSchema()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isSelf(uid)
+        && hasExactUserKeys()
+        && validUserSchema()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'photoUrl',
+          'updatedAt'
+        ])
+        && validDisplayName(request.resource.data.displayName)
+        && validNullableString(request.resource.data.photoUrl)
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.activeTaskSessionId == resource.data.activeTaskSessionId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.updatedAt == request.time;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
