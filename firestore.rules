@@ -58,17 +58,14 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
 
       allow update: if isSelf(uid)
-        && hasExactUserKeys()
-        && validUserSchema()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName',
           'photoUrl',
           'updatedAt'
         ])
+        && hasExactUserKeys()
         && validDisplayName(request.resource.data.displayName)
         && validNullableString(request.resource.data.photoUrl)
-        && request.resource.data.groupId == resource.data.groupId
-        && request.resource.data.activeTaskSessionId == resource.data.activeTaskSessionId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.schemaVersion == resource.data.schemaVersion
         && request.resource.data.updatedAt == request.time;
