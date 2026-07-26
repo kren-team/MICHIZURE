@@ -8,7 +8,7 @@ import 'package:michizure/app/router.dart';
 void main() {
   testWidgets('renders the login route for a signed-out user', (tester) async {
     final gate = AuthRouteGate();
-    gate.update(const AsyncData(null));
+    gate.update(const AsyncData(AuthRouteState.signedOut));
     final router = createAppRouter(authRouteGate: gate);
     addTearDown(router.dispose);
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../app/providers.dart';
 import '../application/auth_controller.dart';
 
 final class AuthenticatedPlaceholderScreen extends ConsumerWidget {
@@ -9,11 +11,17 @@ final class AuthenticatedPlaceholderScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
+    final profile = ref.watch(currentProfileProvider).value;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('MICHIZURE'),
         actions: [
+          IconButton(
+            tooltip: 'プロフィール',
+            onPressed: () => context.go('/profile'),
+            icon: const Icon(Icons.person_outline),
+          ),
           TextButton(
             onPressed: authState.isLoading
                 ? null
@@ -22,10 +30,10 @@ final class AuthenticatedPlaceholderScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: const Center(
+      body: Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text('認証済みです。プロフィール設定を確認しています。'),
+          padding: const EdgeInsets.all(24),
+          child: Text('${profile?.displayName ?? ''} さん、グループ機能は次のPhaseで実装します。'),
         ),
       ),
     );
