@@ -622,7 +622,7 @@ service cloud.firestore {
         )).data.activeTaskSessionId == null;
     }
 
-    function validTaskManualFailure(taskId) {
+    function validTaskFailure(taskId) {
       return resource.data.ownerUid == request.auth.uid
         && resource.data.status == 'running'
         && request.resource.data.status == 'failed'
@@ -638,7 +638,12 @@ service cloud.firestore {
           >= request.time - duration.value(60, 's')
         && request.resource.data.endedAt
           <= request.time + duration.value(60, 's')
-        && request.resource.data.failureReason == 'user_aborted'
+        && request.resource.data.failureReason in [
+          'foreign_app_foreground',
+          'user_aborted',
+          'monitor_capability_lost',
+          'recovery_detected_violation'
+        ]
         && request.resource.data.failureEventId is string
         && request.resource.data.failureEventId.size() >= 1
         && request.resource.data.failureEventId.size() <= 200
@@ -683,7 +688,7 @@ service cloud.firestore {
         && request.resource.data.schemaVersion == resource.data.schemaVersion
         && (
           validTaskSuccess(taskId)
-          || validTaskManualFailure(taskId)
+          || validTaskFailure(taskId)
         );
     }
 

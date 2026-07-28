@@ -223,15 +223,20 @@ function failTaskAtomic(
   firestore,
   taskId,
   memberCount,
-  { includeDebt = true, totalReps = memberCount * 10 } = {},
+  {
+    includeDebt = true,
+    totalReps = memberCount * 10,
+    failureReason = 'user_aborted',
+    failureEventId = `manual_${taskId}_event`,
+  } = {},
 ) {
   const endedAt = Timestamp.fromDate(new Date());
   const batch = writeBatch(firestore);
   batch.update(doc(firestore, 'taskSessions', taskId), {
     status: 'failed',
     endedAt,
-    failureReason: 'user_aborted',
-    failureEventId: `manual_${taskId}_event`,
+    failureReason,
+    failureEventId,
     groupMemberCountAtFailure: memberCount,
     debtId: taskId,
   });
@@ -461,6 +466,63 @@ describe('Task terminal transitions and minimal Debt', () => {
       expect(debt.data().totalReps).toBe(memberCount * 10);
     },
   );
+
+  test.each([
+    'foreign_app_foreground',
+    'monitor_capability_lost',
+    'recovery_detected_violation',
+  ])('allows the Phase 5 failure reason %s with the same atomic Debt', async (reason) => {
+    await seedGroup(5);
+    const taskId = await seedRunningTask({ taskId: `native-${reason}` });
+
+    await assertSucceeds(
+      failTaskAtomic(firestoreAs(aliceId), taskId, 5, {
+        failureReason: reason,
+        failureEventId: `native_${reason}_event`,
+      }),
+    );
+    const task = await getDoc(
+      doc(firestoreAs(aliceId), 'taskSessions', taskId),
+    );
+    expect(task.data().failureReason).toBe(reason);
+    expect(task.data().debtId).toBe(taskId);
+  });
+
+  test('denies debug and unknown failure reasons independently', async () => {
+    for (const reason of ['debug_demo', 'forged_reason']) {
+      await testEnvironment.clearFirestore();
+      await seedGroup(5);
+      const taskId = await seedRunningTask({ taskId: `denied-${reason}` });
+      await expectDenied(
+        failTaskAtomic(firestoreAs(aliceId), taskId, 5, {
+          failureReason: reason,
+        }),
+      );
+    }
+  });
+
+  test('success and native failure race converges to one terminal state', async () => {
+    await seedGroup(5);
+    const taskId = await seedRunningTask({
+      taskId: 'terminal-race',
+      expectedInPast: true,
+    });
+    const alice = firestoreAs(aliceId);
+
+    const results = await Promise.allSettled([
+      succeedTaskAtomic(alice, taskId),
+      failTaskAtomic(alice, taskId, 5, {
+        failureReason: 'foreign_app_foreground',
+        failureEventId: 'native_race_event',
+      }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const task = await getDoc(doc(alice, 'taskSessions', taskId));
+    expect(['succeeded', 'failed']).toContain(task.data().status);
+    const debt = await getDoc(doc(alice, 'debts', taskId));
+    expect(debt.exists()).toBe(task.data().status === 'failed');
+  });
 
   test('denies failure without its Debt', async () => {
     await seedGroup(5);
