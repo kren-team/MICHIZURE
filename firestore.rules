@@ -26,6 +26,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/groupInvites/$(tokenHash);
     }
 
+    function taskPath(taskId) {
+      return /databases/$(database)/documents/taskSessions/$(taskId);
+    }
+
+    function debtPath(debtId) {
+      return /databases/$(database)/documents/debts/$(debtId);
+    }
+
     function isMember(groupId) {
       return signedIn() && exists(memberPath(groupId, request.auth.uid));
     }
@@ -129,6 +137,40 @@ service cloud.firestore {
         );
     }
 
+    function validActiveTaskPointerUpdate(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'activeTaskSessionId',
+          'updatedAt'
+        ])
+        && (
+          (
+            resource.data.activeTaskSessionId == null
+            && request.resource.data.activeTaskSessionId is string
+            && existsAfter(taskPath(request.resource.data.activeTaskSessionId))
+            && getAfter(taskPath(
+              request.resource.data.activeTaskSessionId
+            )).data.ownerUid == uid
+            && getAfter(taskPath(
+              request.resource.data.activeTaskSessionId
+            )).data.groupId == resource.data.groupId
+            && getAfter(taskPath(
+              request.resource.data.activeTaskSessionId
+            )).data.status == 'running'
+          )
+          || (
+            resource.data.activeTaskSessionId is string
+            && request.resource.data.activeTaskSessionId == null
+            && existsAfter(taskPath(resource.data.activeTaskSessionId))
+            && getAfter(taskPath(
+              resource.data.activeTaskSessionId
+            )).data.ownerUid == uid
+            && getAfter(taskPath(
+              resource.data.activeTaskSessionId
+            )).data.status in ['succeeded', 'failed']
+          )
+        );
+    }
+
     match /users/{uid} {
       allow get: if isSelf(uid);
       allow list, delete: if false;
@@ -148,6 +190,7 @@ service cloud.firestore {
         && (
           validProfileUpdate(uid)
           || validGroupPointerUpdate(uid)
+          || validActiveTaskPointerUpdate(uid)
         );
     }
 
@@ -438,6 +481,301 @@ service cloud.firestore {
           resource.data.createdByUid == request.auth.uid
           || isOwner(resource.data.groupId)
         );
+    }
+
+    function hasExactTaskKeys() {
+      return request.resource.data.keys().hasAll([
+          'ownerUid',
+          'groupId',
+          'content',
+          'durationSec',
+          'startedAt',
+          'serverRecordedAt',
+          'expectedEndAt',
+          'status',
+          'endedAt',
+          'failureReason',
+          'failureEventId',
+          'groupMemberCountAtFailure',
+          'debtId',
+          'lockDurationSec',
+          'guardConfigVersion',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'ownerUid',
+          'groupId',
+          'content',
+          'durationSec',
+          'startedAt',
+          'serverRecordedAt',
+          'expectedEndAt',
+          'status',
+          'endedAt',
+          'failureReason',
+          'failureEventId',
+          'groupMemberCountAtFailure',
+          'debtId',
+          'lockDurationSec',
+          'guardConfigVersion',
+          'schemaVersion'
+        ]);
+    }
+
+    function validTaskBase() {
+      return hasExactTaskKeys()
+        && request.resource.data.ownerUid is string
+        && request.resource.data.ownerUid.size() > 0
+        && request.resource.data.groupId is string
+        && request.resource.data.groupId.size() > 0
+        && validCanonicalString(request.resource.data.content, 100)
+        && request.resource.data.durationSec is int
+        && request.resource.data.durationSec >= 60
+        && request.resource.data.durationSec <= 10800
+        && request.resource.data.startedAt is timestamp
+        && request.resource.data.serverRecordedAt is timestamp
+        && request.resource.data.expectedEndAt is timestamp
+        && request.resource.data.expectedEndAt
+          == request.resource.data.startedAt
+            + duration.value(request.resource.data.durationSec, 's')
+        && request.resource.data.status in ['running', 'succeeded', 'failed']
+        && (
+          request.resource.data.endedAt == null
+          || request.resource.data.endedAt is timestamp
+        )
+        && (
+          request.resource.data.failureReason == null
+          || request.resource.data.failureReason in [
+            'foreign_app_foreground',
+            'user_aborted',
+            'monitor_capability_lost',
+            'recovery_detected_violation',
+            'debug_demo'
+          ]
+        )
+        && (
+          request.resource.data.failureEventId == null
+          || (
+            request.resource.data.failureEventId is string
+            && request.resource.data.failureEventId.size() >= 1
+            && request.resource.data.failureEventId.size() <= 200
+          )
+        )
+        && (
+          request.resource.data.groupMemberCountAtFailure == null
+          || (
+            request.resource.data.groupMemberCountAtFailure is int
+            && request.resource.data.groupMemberCountAtFailure >= 1
+            && request.resource.data.groupMemberCountAtFailure <= 40
+          )
+        )
+        && (
+          request.resource.data.debtId == null
+          || request.resource.data.debtId is string
+        )
+        && request.resource.data.lockDurationSec == 1800
+        && request.resource.data.guardConfigVersion == 1
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    function validRunningTaskCreate(taskId) {
+      return request.resource.data.ownerUid == request.auth.uid
+        && get(userPath(request.auth.uid)).data.groupId
+          == request.resource.data.groupId
+        && exists(memberPath(
+          request.resource.data.groupId,
+          request.auth.uid
+        ))
+        && get(userPath(request.auth.uid)).data.activeTaskSessionId == null
+        && getAfter(userPath(
+          request.auth.uid
+        )).data.activeTaskSessionId == taskId
+        && request.resource.data.status == 'running'
+        && request.resource.data.startedAt
+          >= request.time - duration.value(60, 's')
+        && request.resource.data.startedAt
+          <= request.time + duration.value(60, 's')
+        && request.resource.data.serverRecordedAt == request.time
+        && request.resource.data.endedAt == null
+        && request.resource.data.failureReason == null
+        && request.resource.data.failureEventId == null
+        && request.resource.data.groupMemberCountAtFailure == null
+        && request.resource.data.debtId == null;
+    }
+
+    function validTaskSuccess(taskId) {
+      return resource.data.ownerUid == request.auth.uid
+        && resource.data.status == 'running'
+        && request.resource.data.status == 'succeeded'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'endedAt'
+        ])
+        && request.time >= resource.data.expectedEndAt
+        && request.resource.data.endedAt == request.time
+        && request.resource.data.failureReason == null
+        && request.resource.data.failureEventId == null
+        && request.resource.data.groupMemberCountAtFailure == null
+        && request.resource.data.debtId == null
+        && getAfter(userPath(
+          request.auth.uid
+        )).data.activeTaskSessionId == null;
+    }
+
+    function validTaskManualFailure(taskId) {
+      return resource.data.ownerUid == request.auth.uid
+        && resource.data.status == 'running'
+        && request.resource.data.status == 'failed'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'endedAt',
+          'failureReason',
+          'failureEventId',
+          'groupMemberCountAtFailure',
+          'debtId'
+        ])
+        && request.resource.data.endedAt
+          >= request.time - duration.value(60, 's')
+        && request.resource.data.endedAt
+          <= request.time + duration.value(60, 's')
+        && request.resource.data.failureReason == 'user_aborted'
+        && request.resource.data.failureEventId is string
+        && request.resource.data.failureEventId.size() >= 1
+        && request.resource.data.failureEventId.size() <= 200
+        && request.resource.data.groupMemberCountAtFailure
+          == get(groupPath(resource.data.groupId)).data.memberCount
+        && request.resource.data.debtId == taskId
+        && getAfter(userPath(
+          request.auth.uid
+        )).data.activeTaskSessionId == null
+        && existsAfter(debtPath(taskId))
+        && getAfter(debtPath(taskId)).data.failedTaskSessionId == taskId
+        && getAfter(debtPath(taskId)).data.failedUserId == request.auth.uid
+        && getAfter(debtPath(taskId)).data.groupId == resource.data.groupId
+        && getAfter(debtPath(taskId)).data.memberCountAtFailure
+          == request.resource.data.groupMemberCountAtFailure;
+    }
+
+    match /taskSessions/{taskId} {
+      allow get: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow list: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
+      allow delete: if false;
+
+      allow create: if signedIn()
+        && validTaskBase()
+        && validRunningTaskCreate(taskId);
+
+      allow update: if signedIn()
+        && validTaskBase()
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.content == resource.data.content
+        && request.resource.data.durationSec == resource.data.durationSec
+        && request.resource.data.startedAt == resource.data.startedAt
+        && request.resource.data.serverRecordedAt
+          == resource.data.serverRecordedAt
+        && request.resource.data.expectedEndAt == resource.data.expectedEndAt
+        && request.resource.data.lockDurationSec
+          == resource.data.lockDurationSec
+        && request.resource.data.guardConfigVersion
+          == resource.data.guardConfigVersion
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && (
+          validTaskSuccess(taskId)
+          || validTaskManualFailure(taskId)
+        );
+    }
+
+    function hasExactDebtKeys() {
+      return request.resource.data.keys().hasAll([
+          'groupId',
+          'failedUserId',
+          'failedTaskSessionId',
+          'memberCountAtFailure',
+          'repsPerMember',
+          'totalReps',
+          'completedReps',
+          'status',
+          'createdAt',
+          'lockExpiresAt',
+          'closedAt',
+          'lastContributionAt',
+          'lastContributionEventId',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'groupId',
+          'failedUserId',
+          'failedTaskSessionId',
+          'memberCountAtFailure',
+          'repsPerMember',
+          'totalReps',
+          'completedReps',
+          'status',
+          'createdAt',
+          'lockExpiresAt',
+          'closedAt',
+          'lastContributionAt',
+          'lastContributionEventId',
+          'schemaVersion'
+        ]);
+    }
+
+    function validInitialDebt(debtId) {
+      return hasExactDebtKeys()
+        && debtId == request.resource.data.failedTaskSessionId
+        && request.resource.data.failedUserId == request.auth.uid
+        && request.resource.data.groupId
+          == get(userPath(request.auth.uid)).data.groupId
+        && isMember(request.resource.data.groupId)
+        && request.resource.data.memberCountAtFailure
+          == get(groupPath(request.resource.data.groupId)).data.memberCount
+        && request.resource.data.memberCountAtFailure is int
+        && request.resource.data.memberCountAtFailure >= 1
+        && request.resource.data.memberCountAtFailure <= 40
+        && request.resource.data.repsPerMember == 10
+        && request.resource.data.totalReps
+          == request.resource.data.memberCountAtFailure * 10
+        && request.resource.data.completedReps == 0
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lockExpiresAt
+          == getAfter(taskPath(debtId)).data.endedAt
+            + duration.value(
+              getAfter(taskPath(debtId)).data.lockDurationSec,
+              's'
+            )
+        && request.resource.data.closedAt == null
+        && request.resource.data.lastContributionAt == null
+        && request.resource.data.lastContributionEventId == null
+        && request.resource.data.schemaVersion == 1
+        && existsAfter(taskPath(debtId))
+        && getAfter(taskPath(debtId)).data.status == 'failed'
+        && getAfter(taskPath(debtId)).data.debtId == debtId
+        && getAfter(taskPath(debtId)).data.failureEventId is string
+        && getAfter(taskPath(debtId)).data.groupMemberCountAtFailure
+          == request.resource.data.memberCountAtFailure;
+    }
+
+    match /debts/{debtId} {
+      allow get: if signedIn()
+        && (
+          (
+            !exists(debtPath(debtId))
+            && exists(taskPath(debtId))
+            && get(taskPath(debtId)).data.ownerUid == request.auth.uid
+          )
+          || resource.data.failedUserId == request.auth.uid
+          || isMember(resource.data.groupId)
+        );
+      allow list: if signedIn()
+        && (
+          resource.data.failedUserId == request.auth.uid
+          || isMember(resource.data.groupId)
+        );
+      allow create: if signedIn() && validInitialDebt(debtId);
+      allow update, delete: if false;
     }
 
     match /{document=**} {
