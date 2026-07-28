@@ -48,13 +48,15 @@ flowchart LR
 
 Firebase Emulator Suiteは本番性能の代替ではないが、デモのinternet依存と費用を除去できる。live Spark projectはbackupとする。
 
-## 3. Demo build flavor
+## 3. Demo build構成
 
 ```text
-debugDemo
+現在のdebug source set（Phase 3）
   Firebase demo project
-  cleartext 10.0.2.2 only
+  cleartextをdebug applicationだけで許可
   QUERY_ALL_PACKAGES
+
+将来のdebugDemo（Phase 11）
   FakeSquatDetector / SyntheticLandmark source
   debug banner
   short lock duration override option
@@ -68,7 +70,7 @@ release
 
 デモ中は実要件と同じ30分lockでもDebt完済で解除できる。時間切れを見せる予備scenarioだけdebug overrideを使う。
 
-## 4. Deterministic demo target
+## 4. Deterministic demo target（Phase 11予定）
 
 preinstalled appはAVD imageごとにpackage名・suspend可否が違うため、別applicationIdの小さなdebug target APKを用意する。
 
@@ -90,7 +92,7 @@ tools/demo-target/
 - Google accountを追加しない
 - screen lockなし、またはデモ手順で管理
 - MICHIZUREをDevice Ownerにする前にアプリを起動しない
-- demo targetをinstall
+- Phase 11以降はdemo targetをinstall
 - animation scaleを通常または固定値に揃える
 - host webcamを使う場合はBだけcamera mapping
 
@@ -98,31 +100,31 @@ Device Ownerは通常の既存個人端末へ後付けする手順ではない�
 
 ## 6. APK installとDevice Owner provisioning
 
-予定artifact:
+Phase 3時点のartifact:
 
 ```text
-build/app/outputs/flutter-apk/app-debugDemo.apk
-tools/demo-target/app/build/outputs/apk/debug/app-debug.apk
+build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-A:
+Phase 11で予定する`tools/demo-target`はまだ未実装であり、このPhaseではChrome等の選択可能な既存launcher appを選択復元テストに使う。実際のsuspendは行わない。
+
+Device Owner設定はfactory reset済みで、Google account、他user、work profile、既存Device OwnerがないAVDでのみ行う。Device Ownerは通常アプリのruntime permissionではなく、アプリ自身が取得することもできない。
+
+A（Phase 3の1台構成）:
 
 ```bash
+flutter build apk --debug
 adb -s emulator-5554 install -r \
-  build/app/outputs/flutter-apk/app-debugDemo.apk
-adb -s emulator-5554 install -r \
-  tools/demo-target/app/build/outputs/apk/debug/app-debug.apk
+  build/app/outputs/flutter-apk/app-debug.apk
 adb -s emulator-5554 shell dpm set-device-owner \
   com.kren.michizure/.admin.MichizureDeviceAdminReceiver
 ```
 
-B:
+B（後続Phaseの2台構成）:
 
 ```bash
 adb -s emulator-5556 install -r \
-  build/app/outputs/flutter-apk/app-debugDemo.apk
-adb -s emulator-5556 install -r \
-  tools/demo-target/app/build/outputs/apk/debug/app-debug.apk
+  build/app/outputs/flutter-apk/app-debug.apk
 adb -s emulator-5556 shell dpm set-device-owner \
   com.kren.michizure/.admin.MichizureDeviceAdminReceiver
 ```
@@ -165,8 +167,34 @@ capability診断画面で次をgreenにする。
 - Usage Access
 - Notification / FGS
 - package visibility
-- target suspendable
+- target suspendable（Phase 6以降）
 - Firebase Emulator connected
+
+### 7.1 Phase 3 smoke test
+
+1. Home右上の「端末セットアップ」を開く。
+2. Device Owner、Usage Access、通知、アプリ一覧、Android APIがgreenであることを確認する。
+3. 「封印対象アプリを選ぶ」を開く。
+4. Chrome等の選択可能なlauncher appを2件選び、保存する。
+5. MICHIZURE、launcher、dialer、Settings等が表示される場合は理由付きdisabledであることを確認する。
+6. app processを終了して再起動し、2件の選択が復元されることを確認する。
+
+Native contractの自動smoke:
+
+```bash
+flutter test integration_test/device_setup_flow_test.dart \
+  -d emulator-5554 \
+  --no-uninstall
+```
+
+Kotlin instrumentation:
+
+```bash
+cd android
+./gradlew :app:connectedDebugAndroidTest
+```
+
+`--no-uninstall`はDevice Owner appのtest cleanupによるアンインストール失敗を避けるために必要である。Device Owner解除やAVD wipeはデモ端末の管理操作であり、このsmoke testでは行わない。
 
 ## 8. Firebase Emulator Suite
 

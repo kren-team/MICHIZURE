@@ -297,6 +297,12 @@ List<Widget> _accountActions(
 ) {
   return [
     IconButton(
+      key: const Key('device-setup-route-button'),
+      tooltip: '端末セットアップ',
+      onPressed: () => context.go('/device-setup'),
+      icon: const Icon(Icons.phonelink_setup),
+    ),
+    IconButton(
       tooltip: 'プロフィール',
       onPressed: () => context.go('/profile'),
       icon: const Icon(Icons.person_outline),

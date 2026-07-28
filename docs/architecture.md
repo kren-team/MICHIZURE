@@ -156,7 +156,7 @@ channel名はapplicationId配下でversionを含める。
 
 | 種別 | channel | 主な操作 |
 |---|---|---|
-| MethodChannel | `com.kren.michizure/device_control/v1` | `getCapabilities`, `openUsageAccessSettings`, `listLockableApps`, `startTaskGuard`, `stopTaskGuard`, `applyObligation`, `resolveObligation`, `reconcileLocks` |
+| MethodChannel | `com.kren.michizure/device_control/v1` | Phase 3: `getCapabilities`, `openUsageAccessSettings`, `openNotificationSettings`, `listLockableApps`, `getSelectedPackages`, `saveSelectedPackages`; 後続: `startTaskGuard`, `stopTaskGuard`, `applyObligation`, `resolveObligation`, `reconcileLocks` |
 | EventChannel | `com.kren.michizure/task_events/v1` | `guardStarted`, `foreignAppCandidate`, `taskFailed`, `deadlineReached`, `capabilityLost`, `nativeError` |
 | EventChannel | `com.kren.michizure/squat_events/v1` | `calibrating`, `stateChanged`, `repCompleted`, `qualityWarning`, `detectorError` |
 | PlatformView | `com.kren.michizure/pose_preview/v1` | native camera preview overlay |

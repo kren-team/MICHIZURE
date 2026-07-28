@@ -20,7 +20,17 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+}
+
+dependencies {
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // Keep aligned with Flutter's integration_test AndroidX Test baseline.
+    androidTestImplementation("androidx.test.ext:junit:1.1.2")
+    androidTestImplementation("androidx.test:runner:1.3.0")
 }
 
 kotlin {

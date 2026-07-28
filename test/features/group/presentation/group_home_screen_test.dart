@@ -19,6 +19,7 @@ void main() {
 
     expect(find.byKey(const Key('group-create-route-button')), findsOneWidget);
     expect(find.byKey(const Key('group-join-route-button')), findsOneWidget);
+    expect(find.byKey(const Key('device-setup-route-button')), findsOneWidget);
   });
 
   testWidgets('shows the realtime member snapshot without profile N+1 reads', (

@@ -4,6 +4,11 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!--
+         The managed hackathon build needs a complete launcher-app catalog.
+         This broad visibility is deliberately absent from main/release.
+    -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <!--
          Firebase Local Emulator Suite uses HTTP. This debug-only application
