@@ -53,6 +53,10 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
 
   @override
   TaskGuardControllerState build() {
+    _subscription = ref
+        .read(nativeTaskGuardProvider)
+        .watchEvents()
+        .listen(_receive, onError: _receiveStreamError);
     ref.onDispose(() {
       _retryTimer?.cancel();
       unawaited(_subscription?.cancel());
@@ -62,16 +66,12 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
 
   Future<void> ensureStarted(TaskSession task) async {
     _task = task;
-    _subscription ??= ref
-        .read(nativeTaskGuardProvider)
-        .watchEvents()
-        .listen(_receive, onError: _receiveStreamError);
     if (task.isTerminal) {
       state = TaskGuardControllerState(
         phase: TaskGuardPhase.terminal,
         task: task,
       );
-      await ref.read(nativeTaskGuardProvider).getState();
+      await _requestPendingReplay();
       return;
     }
     if (_startInFlight) {
@@ -95,7 +95,7 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
           task: task,
         );
       }
-      await ref.read(nativeTaskGuardProvider).getState();
+      await _requestPendingReplay();
     } on Object catch (error) {
       if (ref.mounted) {
         state = TaskGuardControllerState(
@@ -149,7 +149,27 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
         !_inFlightEventIds.add(event.eventId)) {
       return;
     }
-    final task = _task;
+    _pendingEvent = event;
+    var task = _task;
+    if (task == null) {
+      try {
+        task = await ref
+            .read(taskRepositoryProvider)
+            .watchTask(event.taskSessionId)
+            .first;
+        _task = task;
+      } on Object catch (error) {
+        _inFlightEventIds.remove(event.eventId);
+        if (ref.mounted) {
+          state = TaskGuardControllerState(
+            phase: TaskGuardPhase.retryNeeded,
+            failure: error is TaskFailure ? error : _safeGuardFailure(error),
+          );
+        }
+        _scheduleRetry();
+        return;
+      }
+    }
     if (task == null || task.id != event.taskSessionId) {
       _inFlightEventIds.remove(event.eventId);
       if (ref.mounted) {
@@ -163,7 +183,6 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
       }
       return;
     }
-    _pendingEvent = event;
     if (ref.mounted) {
       state = TaskGuardControllerState(
         phase: TaskGuardPhase.synchronizing,
@@ -238,6 +257,20 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
         unawaited(retry());
       }
     });
+  }
+
+  Future<void> _requestPendingReplay() async {
+    try {
+      await ref.read(nativeTaskGuardProvider).getState();
+    } on Object catch (error) {
+      if (ref.mounted && _pendingEvent == null) {
+        state = TaskGuardControllerState(
+          phase: TaskGuardPhase.retryNeeded,
+          task: _task,
+          failure: _safeGuardFailure(error),
+        );
+      }
+    }
   }
 }
 

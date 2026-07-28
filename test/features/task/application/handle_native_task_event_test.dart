@@ -55,6 +55,19 @@ void main() {
   );
 
   test(
+    'replayed event restores its Task before processing after app restart',
+    () async {
+      container.read(taskGuardControllerProvider);
+
+      guard.emit(_failureEvent(runningTaskFixture()));
+      await _flush();
+
+      expect(tasks.failCalls, 1);
+      expect(guard.acknowledgedEventIds, ['native-event-1']);
+    },
+  );
+
+  test(
     'offline failure stays pending and retry uses the same event ID',
     () async {
       tasks.failError = const TaskFailure(TaskFailureKind.offline);
