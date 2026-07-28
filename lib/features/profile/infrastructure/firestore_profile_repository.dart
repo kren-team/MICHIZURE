@@ -58,9 +58,40 @@ final class FirestoreProfileRepository implements ProfileRepository {
     }
 
     try {
-      await _users.doc(userId).update({
-        'displayName': normalizedName,
-        'updatedAt': FieldValue.serverTimestamp(),
+      final userReference = _users.doc(userId);
+      await _firestore.runTransaction((transaction) async {
+        final userSnapshot = await transaction.get(userReference);
+        if (!userSnapshot.exists) {
+          throw const ProfileFailure(ProfileFailureKind.invalidData);
+        }
+        final groupId = userSnapshot.data()!['groupId'];
+        if (groupId != null && groupId is! String) {
+          throw const ProfileFailure(ProfileFailureKind.invalidData);
+        }
+
+        DocumentReference<Map<String, dynamic>>? memberReference;
+        if (groupId is String) {
+          memberReference = _firestore
+              .collection('groups')
+              .doc(groupId)
+              .collection('members')
+              .doc(userId);
+          final memberSnapshot = await transaction.get(memberReference);
+          if (!memberSnapshot.exists) {
+            throw const ProfileFailure(ProfileFailureKind.invalidData);
+          }
+        }
+
+        transaction.update(userReference, {
+          'displayName': normalizedName,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (memberReference != null) {
+          transaction.update(memberReference, {
+            'displayNameSnapshot': normalizedName,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
       });
     } on FirebaseException {
       throw const ProfileFailure(ProfileFailureKind.unknown);

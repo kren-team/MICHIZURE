@@ -152,6 +152,9 @@ Rulesから「どの第三者がjoinしたか」をgroup update単体で一般�
 
 - list/get: group member
 - create: document ID / `userId == auth.uid`、join workflowのみ
+  - `displayNameSnapshot` はafter-stateの本人 `users/{uid}.displayName` と一致
+  - join時は `inviteTokenHash` が有効なinvite documentを指す
+  - owner作成時の `inviteTokenHash` はnull
 - update:
   - 本人のdisplayNameSnapshot同期
   - owner transfer時のrole変更
@@ -168,6 +171,10 @@ Rulesから「どの第三者がjoinしたか」をgroup update単体で一般�
 - join時は `revokedAt == null` かつ `request.time < expiresAt`
 
 tokenHash doc IDは十分なentropyを持つraw tokenのSHA-256であり、短い人間入力コードを直接IDにしない。
+
+join clientはinviteと自分のuserだけをtransaction readし、groupにはatomic incrementを書き込む。Rulesはgroupのbefore/afterが正確に+1かつ40以下であること、同じatomic write後にuser/memberが整合すること、memberの `inviteTokenHash` が未失効inviteを指すことを検証する。これにより非memberへgroup readを開放せず、同一userの複数group参加と41人目を拒否する。
+
+leaveではownerを拒否し、`users.activeTaskSessionId == null`、member削除、group countの正確な-1、user pointerのnull化を同じatomic writeで要求する。未解決lock obligationによる退出拒否は、Debt/lock documentが導入される後続PhaseでRules条件を追加する。
 
 ## 7. `taskSessions/{taskId}`
 

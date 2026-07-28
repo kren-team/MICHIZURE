@@ -10,6 +10,54 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function groupPath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId);
+    }
+
+    function memberPath(groupId, uid) {
+      return /databases/$(database)/documents/groups/$(groupId)/members/$(uid);
+    }
+
+    function invitePath(tokenHash) {
+      return /databases/$(database)/documents/groupInvites/$(tokenHash);
+    }
+
+    function isMember(groupId) {
+      return signedIn() && exists(memberPath(groupId, request.auth.uid));
+    }
+
+    function isOwner(groupId) {
+      return isMember(groupId)
+        && get(memberPath(groupId, request.auth.uid)).data.role == 'owner';
+    }
+
+    function validCanonicalString(value, maximumLength) {
+      return value is string
+        && value.size() >= 1
+        && value.size() <= maximumLength
+        && value.matches('.*\\S.*')
+        && value.matches('[^\\s\\p{Z}](.*[^\\s\\p{Z}])?')
+        && !value.matches('.*\\p{Cc}.*')
+        && !value.matches('.*\\p{Zl}.*')
+        && !value.matches('.*\\p{Zp}.*');
+    }
+
+    function validDisplayName(value) {
+      return validCanonicalString(value, 40);
+    }
+
+    function validGroupName(value) {
+      return validCanonicalString(value, 50);
+    }
+
+    function validNullableString(value) {
+      return value == null || value is string;
+    }
+
     function hasExactUserKeys() {
       return request.resource.data.keys().hasAll([
           'displayName',
@@ -31,27 +79,54 @@ service cloud.firestore {
         ]);
     }
 
-    function validDisplayName(value) {
-      return value is string
-        && value.size() >= 1
-        && value.size() <= 40
-        && value.matches('.*\\S.*')
-        && value.matches('[^\\s\\p{Z}](.*[^\\s\\p{Z}])?')
-        && !value.matches('.*\\p{Cc}.*')
-        && !value.matches('.*\\p{Zl}.*')
-        && !value.matches('.*\\p{Zp}.*');
-    }
-
-    function validNullableString(value) {
-      return value == null || value is string;
-    }
-
-    function validUserSchema() {
-      return validDisplayName(request.resource.data.displayName)
+    function validUserBase() {
+      return hasExactUserKeys()
+        && validDisplayName(request.resource.data.displayName)
         && validNullableString(request.resource.data.photoUrl)
-        && request.resource.data.groupId == null
-        && request.resource.data.activeTaskSessionId == null
+        && validNullableString(request.resource.data.groupId)
+        && validNullableString(request.resource.data.activeTaskSessionId)
         && request.resource.data.schemaVersion == 1;
+    }
+
+    function validProfileUpdate(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'photoUrl',
+          'updatedAt'
+        ])
+        && (
+          resource.data.groupId == null
+          || (
+            exists(memberPath(resource.data.groupId, uid))
+            && getAfter(memberPath(resource.data.groupId, uid)).data.displayNameSnapshot
+              == request.resource.data.displayName
+            && getAfter(memberPath(resource.data.groupId, uid)).data.updatedAt
+              == request.time
+          )
+        );
+    }
+
+    function validGroupPointerUpdate(uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'groupId',
+          'updatedAt'
+        ])
+        && (
+          (
+            resource.data.groupId == null
+            && request.resource.data.groupId is string
+            && existsAfter(memberPath(request.resource.data.groupId, uid))
+            && getAfter(memberPath(request.resource.data.groupId, uid)).data.userId == uid
+          )
+          || (
+            resource.data.groupId is string
+            && request.resource.data.groupId == null
+            && resource.data.activeTaskSessionId == null
+            && exists(memberPath(resource.data.groupId, uid))
+            && !existsAfter(memberPath(resource.data.groupId, uid))
+            && existsAfter(groupPath(resource.data.groupId))
+          )
+        );
     }
 
     match /users/{uid} {
@@ -59,23 +134,310 @@ service cloud.firestore {
       allow list, delete: if false;
 
       allow create: if isSelf(uid)
-        && hasExactUserKeys()
-        && validUserSchema()
+        && validUserBase()
+        && request.resource.data.groupId == null
+        && request.resource.data.activeTaskSessionId == null
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
       allow update: if isSelf(uid)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName',
-          'photoUrl',
-          'updatedAt'
-        ])
-        && hasExactUserKeys()
-        && validDisplayName(request.resource.data.displayName)
-        && validNullableString(request.resource.data.photoUrl)
+        && validUserBase()
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.schemaVersion == resource.data.schemaVersion
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time
+        && (
+          validProfileUpdate(uid)
+          || validGroupPointerUpdate(uid)
+        );
+    }
+
+    function hasExactGroupKeys() {
+      return request.resource.data.keys().hasAll([
+          'name',
+          'ownerUid',
+          'memberCount',
+          'createdAt',
+          'updatedAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'ownerUid',
+          'memberCount',
+          'createdAt',
+          'updatedAt',
+          'schemaVersion'
+        ]);
+    }
+
+    function validGroupBase() {
+      return hasExactGroupKeys()
+        && validGroupName(request.resource.data.name)
+        && request.resource.data.ownerUid is string
+        && request.resource.data.ownerUid.size() > 0
+        && request.resource.data.memberCount is int
+        && request.resource.data.memberCount >= 1
+        && request.resource.data.memberCount <= 40
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    function validGroupMetadataUpdate(groupId) {
+      return isOwner(groupId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'updatedAt'
+        ]);
+    }
+
+    function validGroupJoin(groupId) {
+      return signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'memberCount',
+          'updatedAt'
+        ])
+        && resource.data.memberCount < 40
+        && request.resource.data.memberCount == resource.data.memberCount + 1
+        && !exists(memberPath(groupId, request.auth.uid))
+        && existsAfter(memberPath(groupId, request.auth.uid))
+        && getAfter(userPath(request.auth.uid)).data.groupId == groupId;
+    }
+
+    function validGroupLeave(groupId) {
+      return isMember(groupId)
+        && resource.data.ownerUid != request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'memberCount',
+          'updatedAt'
+        ])
+        && request.resource.data.memberCount == resource.data.memberCount - 1
+        && request.resource.data.memberCount >= 1
+        && !existsAfter(memberPath(groupId, request.auth.uid))
+        && getAfter(userPath(request.auth.uid)).data.groupId == null;
+    }
+
+    function validGroupOwnerTransfer(groupId) {
+      return isOwner(groupId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerUid',
+          'updatedAt'
+        ])
+        && request.resource.data.ownerUid != resource.data.ownerUid
+        && getAfter(memberPath(groupId, resource.data.ownerUid)).data.role == 'member'
+        && getAfter(memberPath(groupId, request.resource.data.ownerUid)).data.role == 'owner';
+    }
+
+    match /groups/{groupId} {
+      allow get, list: if isMember(groupId);
+      allow delete: if false;
+
+      allow create: if signedIn()
+        && validGroupBase()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberCount == 1
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && getAfter(userPath(request.auth.uid)).data.groupId == groupId
+        && getAfter(memberPath(groupId, request.auth.uid)).data.role == 'owner';
+
+      allow update: if validGroupBase()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.updatedAt == request.time
+        && (
+          validGroupMetadataUpdate(groupId)
+          || validGroupJoin(groupId)
+          || validGroupLeave(groupId)
+          || validGroupOwnerTransfer(groupId)
+        );
+
+      match /members/{uid} {
+        allow get, list: if isMember(groupId);
+
+        function hasExactMemberKeys() {
+          return request.resource.data.keys().hasAll([
+              'userId',
+              'displayNameSnapshot',
+              'role',
+              'inviteTokenHash',
+              'joinedAt',
+              'updatedAt',
+              'schemaVersion'
+            ])
+            && request.resource.data.keys().hasOnly([
+              'userId',
+              'displayNameSnapshot',
+              'role',
+              'inviteTokenHash',
+              'joinedAt',
+              'updatedAt',
+              'schemaVersion'
+            ]);
+        }
+
+        function validMemberBase() {
+          return hasExactMemberKeys()
+            && request.resource.data.userId == uid
+            && validDisplayName(request.resource.data.displayNameSnapshot)
+            && request.resource.data.displayNameSnapshot
+              == getAfter(userPath(uid)).data.displayName
+            && request.resource.data.role in ['owner', 'member']
+            && (
+              request.resource.data.inviteTokenHash == null
+              || (
+                request.resource.data.inviteTokenHash is string
+                && request.resource.data.inviteTokenHash.matches('[a-f0-9]{64}')
+              )
+            )
+            && request.resource.data.schemaVersion == 1;
+        }
+
+        function validInviteForJoin() {
+          return request.resource.data.inviteTokenHash is string
+            && exists(invitePath(request.resource.data.inviteTokenHash))
+            && get(invitePath(request.resource.data.inviteTokenHash)).data.groupId == groupId
+            && get(invitePath(request.resource.data.inviteTokenHash)).data.revokedAt == null
+            && request.time < get(invitePath(request.resource.data.inviteTokenHash)).data.expiresAt;
+        }
+
+        function validOwnerMemberCreate() {
+          return request.auth.uid == uid
+            && request.resource.data.role == 'owner'
+            && request.resource.data.inviteTokenHash == null
+            && !exists(groupPath(groupId))
+            && getAfter(groupPath(groupId)).data.ownerUid == uid
+            && getAfter(groupPath(groupId)).data.memberCount == 1
+            && getAfter(userPath(uid)).data.groupId == groupId;
+        }
+
+        function validJoinedMemberCreate() {
+          return request.auth.uid == uid
+            && request.resource.data.role == 'member'
+            && exists(groupPath(groupId))
+            && validInviteForJoin()
+            && getAfter(groupPath(groupId)).data.memberCount
+              == get(groupPath(groupId)).data.memberCount + 1
+            && getAfter(userPath(uid)).data.groupId == groupId;
+        }
+
+        function validDisplayNameSync() {
+          return request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'displayNameSnapshot',
+              'updatedAt'
+            ])
+            && getAfter(userPath(uid)).data.displayName
+              == request.resource.data.displayNameSnapshot
+            && getAfter(userPath(uid)).data.updatedAt == request.time;
+        }
+
+        function validOwnerRoleUpdate() {
+          return isOwner(groupId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'role',
+              'updatedAt'
+            ])
+            && (
+              (
+                uid == request.auth.uid
+                && resource.data.role == 'owner'
+                && request.resource.data.role == 'member'
+                && getAfter(groupPath(groupId)).data.ownerUid != uid
+                && getAfter(memberPath(
+                  groupId,
+                  getAfter(groupPath(groupId)).data.ownerUid
+                )).data.role == 'owner'
+              )
+              || (
+                uid == getAfter(groupPath(groupId)).data.ownerUid
+                && resource.data.role == 'member'
+                && request.resource.data.role == 'owner'
+                && getAfter(memberPath(groupId, request.auth.uid)).data.role == 'member'
+              )
+            );
+        }
+
+        allow create: if signedIn()
+          && validMemberBase()
+          && request.resource.data.joinedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && (
+            validOwnerMemberCreate()
+            || validJoinedMemberCreate()
+          );
+
+        allow update: if validMemberBase()
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.schemaVersion == resource.data.schemaVersion
+          && request.resource.data.updatedAt == request.time
+          && (
+            validDisplayNameSync()
+            || validOwnerRoleUpdate()
+          );
+
+        allow delete: if isSelf(uid)
+          && resource.data.role == 'member'
+          && getAfter(userPath(uid)).data.groupId == null
+          && getAfter(groupPath(groupId)).data.memberCount
+            == get(groupPath(groupId)).data.memberCount - 1;
+      }
+    }
+
+    function hasExactInviteKeys() {
+      return request.resource.data.keys().hasAll([
+          'groupId',
+          'groupNameSnapshot',
+          'createdByUid',
+          'createdAt',
+          'expiresAt',
+          'revokedAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'groupId',
+          'groupNameSnapshot',
+          'createdByUid',
+          'createdAt',
+          'expiresAt',
+          'revokedAt',
+          'schemaVersion'
+        ]);
+    }
+
+    function validInviteBase() {
+      return hasExactInviteKeys()
+        && request.resource.data.groupId is string
+        && validGroupName(request.resource.data.groupNameSnapshot)
+        && request.resource.data.createdByUid is string
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    match /groupInvites/{tokenHash} {
+      allow get: if signedIn();
+      allow list, delete: if false;
+
+      allow create: if signedIn()
+        && tokenHash.matches('[a-f0-9]{64}')
+        && validInviteBase()
+        && isMember(request.resource.data.groupId)
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.groupNameSnapshot
+          == get(groupPath(request.resource.data.groupId)).data.name
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(7, 'd')
+        && request.resource.data.revokedAt == null;
+
+      allow update: if signedIn()
+        && validInviteBase()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'revokedAt'
+        ])
+        && resource.data.revokedAt == null
+        && request.resource.data.revokedAt == request.time
+        && (
+          resource.data.createdByUid == request.auth.uid
+          || isOwner(resource.data.groupId)
+        );
     }
 
     match /{document=**} {

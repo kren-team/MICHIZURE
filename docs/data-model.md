@@ -83,6 +83,7 @@ emailはFirebase Authを正としFirestoreへ複製しない。本人以外に�
 | `userId` | string | yes | document IDと一致 |
 | `displayNameSnapshot` | string | yes | member list用 |
 | `role` | string | yes | `owner` / `member` |
+| `inviteTokenHash` | string/null | yes | join認可に使った招待hash。owner作成時はnull |
 | `joinedAt` | timestamp | yes | server timestamp |
 | `updatedAt` | timestamp | yes | profile名同期 |
 | `schemaVersion` | int | yes | 初期値1 |
@@ -209,21 +210,22 @@ transactionのread:
 
 1. user
 2. invite
-3. group
-4. 自分のmember doc
 
 write:
 
 1. member doc create
-2. group `memberCount + 1`
+2. group `memberCount = FieldValue.increment(1)`
 3. user `groupId = groupId`
 
 条件:
 
 - user.groupId null
 - invite未失効かつ `request.time < expiresAt`
-- group.memberCount < 40
-- member doc不存在
+- Rulesがgroupのbefore/afterを比較し、before `memberCount < 40` かつ正確に+1
+- member createに保存した `inviteTokenHash` がinvite document IDと一致
+- member docがcreateであること
+
+参加前ユーザーにgroup documentのreadを許可しないため、client transactionはgroupを事前readしない。user docのtransaction競合で同一ユーザーの同時join/createを直列化し、groupへのatomic incrementとRulesのafter-state検証で39人への同時参加を最大40人に制限する。
 
 ### 5.4 group退出
 
@@ -234,7 +236,7 @@ transaction:
 3. group `memberCount - 1`
 4. user `groupId = null`
 
-active Debtの返済権は失うが、既存Contributionは履歴として残る。失敗ユーザー自身に未解決lock obligationがある場合、group退出を拒否する。owner移譲はowner member更新、new owner member更新、group owner更新を同一transactionにする。
+active Debtの返済権は失うが、既存Contributionは履歴として残る。失敗ユーザー自身に未解決lock obligationがある場合、group退出を拒否する。owner移譲はowner member更新、new owner member更新、group owner更新を同一transactionにする。ownerは移譲前に退出できず、最後の1人は移譲先がないため退出できない。group削除はMVP対象外とする。
 
 ### 5.5 Task開始
 

@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:michizure/app/providers.dart';
 import 'package:michizure/app/router.dart';
 import 'package:michizure/features/auth/domain/auth_user.dart';
-import 'package:michizure/features/auth/presentation/authenticated_placeholder_screen.dart';
 import 'package:michizure/features/auth/presentation/login_screen.dart';
+import 'package:michizure/features/group/presentation/group_home_screen.dart';
 import 'package:michizure/features/profile/domain/user_profile.dart';
 import 'package:michizure/features/profile/presentation/profile_setup_screen.dart';
 
@@ -45,7 +45,7 @@ void main() {
       final harness = await _pumpRouter(tester, AuthRouteState.ready);
 
       expect(harness.location, authenticatedRoutePath);
-      expect(find.byType(AuthenticatedPlaceholderScreen), findsOneWidget);
+      expect(find.byType(GroupHomeScreen), findsOneWidget);
     });
 
     testWidgets('recoverable error automatically returns to Home when ready', (
@@ -62,7 +62,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(harness.location, authenticatedRoutePath);
-      expect(find.byType(AuthenticatedPlaceholderScreen), findsOneWidget);
+      expect(find.byType(GroupHomeScreen), findsOneWidget);
     });
 
     testWidgets('recoverable error returns to Profile Setup when missing', (

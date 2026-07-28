@@ -341,6 +341,8 @@ Device Ownerでない一般emulator:
 
 test runはevent timestampsから同期p95を算出する。
 
+Phase 2のGroupフローは、1台のAndroid Emulator内で2つの独立したFirebaseApp/Auth sessionを使う `integration_test/group_flow_test.dart` でも検証する。これはA/Bの認可境界とsnapshot listenerの反映を自動検証し、2台Emulatorによる画面操作smoke testを置き換えるものではない。
+
 ## 12. Performance test
 
 ### Firestore

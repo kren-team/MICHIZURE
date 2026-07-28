@@ -200,8 +200,8 @@ integration_test/group_flow_test.dart
 ### Firestore変更
 
 - `groups`, `groups/{id}/members`, `groupInvites`
-- group create 3-doc atomic write
-- join / leave / owner transfer transaction
+- group create 3-doc transaction
+- joinはuser/inviteをreadするtransactionとgroup atomic increment、leave / owner transferもtransaction
 - max 40、single group、invite expiry / revoke Rules
 - raw invite tokenを保存しない
 

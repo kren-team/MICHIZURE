@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../features/auth/presentation/authenticated_placeholder_screen.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
+import '../features/group/presentation/group_create_screen.dart';
+import '../features/group/presentation/group_home_screen.dart';
+import '../features/group/presentation/group_invite_screen.dart';
+import '../features/group/presentation/group_join_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/profile/presentation/profile_setup_screen.dart';
 import 'providers.dart';
@@ -15,6 +18,9 @@ const String registerRoutePath = '/register';
 const String authenticatedRoutePath = '/home';
 const String profileSetupRoutePath = '/profile-setup';
 const String profileRoutePath = '/profile';
+const String groupCreateRoutePath = '/group/create';
+const String groupJoinRoutePath = '/group/join';
+const String groupInviteRoutePath = '/group/invite';
 const String recoverableErrorRoutePath = '/error';
 
 enum AuthRouteState {
@@ -131,7 +137,7 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       ),
       GoRoute(
         path: authenticatedRoutePath,
-        builder: (context, state) => const AuthenticatedPlaceholderScreen(),
+        builder: (context, state) => const GroupHomeScreen(),
       ),
       GoRoute(
         path: profileSetupRoutePath,
@@ -140,6 +146,18 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       GoRoute(
         path: profileRoutePath,
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: groupCreateRoutePath,
+        builder: (context, state) => const GroupCreateScreen(),
+      ),
+      GoRoute(
+        path: groupJoinRoutePath,
+        builder: (context, state) => const GroupJoinScreen(),
+      ),
+      GoRoute(
+        path: groupInviteRoutePath,
+        builder: (context, state) => const GroupInviteScreen(),
       ),
       GoRoute(
         path: recoverableErrorRoutePath,
