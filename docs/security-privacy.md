@@ -108,9 +108,9 @@ Task内容をgroup memberへ公開しない。groupにはfailure userとDebtだ�
 ## 8. Installed app privacy
 
 - package inventoryはPlay policy上もsensitive dataとして扱う。
-- debug/demo flavorの `QUERY_ALL_PACKAGES` で得た結果をnetworkへ送らない。
+- debug source set（将来のdemo flavor）の `QUERY_ALL_PACKAGES` で得た結果をnetworkへ送らない。
 - FirestoreのDebtにはpackage名やカテゴリを持たせない。
-- local DataStoreはapp sandboxに置き、cloud backup対象外設定を検討する。
+- local DataStoreはapp sandboxに置き、Phase 3で`android:allowBackup="false"`としてcloud / device backup対象外にする。
 - ログは件数と結果codeだけにし、package名を出す場合はローカルdebug buildに限定する。
 - Production Play配布前にbroad package visibilityの許可可能性を審査し、不可なら選択UIをscoped visibilityへ縮退する。
 

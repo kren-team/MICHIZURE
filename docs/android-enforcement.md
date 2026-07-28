@@ -39,7 +39,7 @@
 | provisioning | fresh emulator + `adb shell dpm set-device-owner` |
 | distribution | debug/demo APKのsideload |
 | Usage Access | Settingsまたはdebug adb app-op |
-| package visibility | demo flavorのみ`QUERY_ALL_PACKAGES` |
+| package visibility | Phase 3はdebug source setのみ`QUERY_ALL_PACKAGES`。将来demo flavorへ分離 |
 | background execution | Device Owner要件を満たす`systemExempted` Foreground Service |
 
 ML KitとFlutterFireの現行要件もminSdk 23で整合するが、Task GuardのMVPは`ACTIVITY_RESUMED`が明確なAPI 29以上に限定する。
@@ -355,7 +355,20 @@ WorkManagerのdelayはsystem optimizationで遅延し得る。Device Owner FGS�
 - non-launchable system component
 - DPM testでfailedを返したpackage
 
-Android 11+ package visibilityによりinstalled app列挙はfilterされる。demo flavorではsideload + `QUERY_ALL_PACKAGES`を採用するが、Production Play配布では審査対象であり、scoped launcher queryへの縮退を用意する。
+Android 11+ package visibilityによりinstalled app列挙はfilterされる。Phase 3のdebug source setではsideload + `QUERY_ALL_PACKAGES`を採用し、Phase 11でdemo flavorへ分離する。Production Play配布では審査対象であり、scoped launcher queryへ縮退する。
+
+### 13.1 Phase 3実装境界
+
+Phase 3ではpackage suspensionを呼ばず、次だけを実装する。
+
+- `ACTION_MAIN` + `CATEGORY_LAUNCHER`のactivityをuser-facing catalogとして取得する。
+- 自app、active Device Admin、active launcher、default dialer、Settings、permission controller、installer / uninstaller / verifierをAndroid APIから動的に特定し、理由付きで選択不可にする。
+- debug source setだけに`QUERY_ALL_PACKAGES`を宣言し、main/releaseはlauncher intentの`<queries>`に限定する。
+- labelとpackage nameをversion 1 MethodChannelでFlutterへ返す。icon転送はPhase 11のpolishまで行わず、Flutterのgeneric iconを使う。
+- 選択package nameをPreferences DataStore `selected_lock_apps`へ保存する。app backupは無効化する。
+- 読込時に現在のcatalogと再照合し、uninstall済みまたは保護対象になったpackageをローカル選択から除去する。
+
+catalogの`isSelectable`は静的な事前診断である。Phase 6で実際に`setPackagesSuspended()`を呼ぶ際は、DPMが返すfailed package配列を最終authorityとして扱い、catalog判定だけで成功を仮定しない。
 
 ## 14. Reboot / app update / process death
 

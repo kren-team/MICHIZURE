@@ -275,8 +275,9 @@ android/app/src/debug/AndroidManifest.xml
 ### Native Kotlin
 
 - `MichizureDeviceAdminReceiver`
-- `getCapabilities`, `openUsageAccessSettings`, `listLockableApps`
-- debug/demo flavorのpackage visibility
+- `getCapabilities`, `openUsageAccessSettings`, `openNotificationSettings`, `listLockableApps`
+- `getSelectedPackages`, `saveSelectedPackages`
+- debug source setのbroad package visibilityとmain/releaseのscoped query
 - DataStore selected package IDs
 - versioned MethodChannel contract
 

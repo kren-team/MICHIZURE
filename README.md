@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証とプロフィール、Phase 2ではグループ作成・招待・参加・リアルタイムメンバー一覧・所有者移譲・退出を追加しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証とプロフィール、Phase 2ではGroup機能、Phase 3ではDevice Owner等の端末診断、lock候補catalog、端末内app選択保存を追加しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -129,6 +129,16 @@ firebase emulators:exec \
   --only auth,firestore \
   "flutter test integration_test/group_flow_test.dart -d emulator-5554"
 ```
+
+Phase 3のAndroid bridge、launcher app catalog、DataStore選択復元だけを接続済みEmulatorで検証する場合は、Firebase Emulatorを必要としません。
+
+```bash
+flutter test integration_test/device_setup_flow_test.dart \
+  -d emulator-5554 \
+  --no-uninstall
+```
+
+Device Ownerを含む初回セットアップは [demo-plan.md](docs/demo-plan.md#6-apk-installとdevice-owner-provisioning) を参照してください。Device Owner appは通常のアンインストール対象にできないため、端末テストでは`--no-uninstall`を使用します。
 
 CIは同じcheckに加えてAndroid debug APKをbuildします。ローカルでAPKを検証するにはAndroid SDKを設定してから実行します。
 
