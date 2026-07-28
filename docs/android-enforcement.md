@@ -54,7 +54,9 @@ monitoring/
   TaskGuardService
   UsageEventSource
   ForegroundTransitionClassifier
-  SystemInterruptionGate
+  AndroidInterruptionProbe
+  SystemFlowLease
+  TaskGuardTimePolicy
 enforcement/
   PackageCatalog
   PackageSuspender
@@ -72,10 +74,9 @@ platform/
 ### `TaskGuardService`
 
 - Task開始をユーザーがMICHIZURE Activity内から行った直後にstartする。
-- 5秒以内にforegroundへ昇格し、残時間と監視中であることをnotificationに表示する。
+- `startForegroundService`後に直ちにforegroundへ昇格し、監視中であることをongoing notificationに表示する。
 - Task running中はUsageEventsをpollする。
-- failure後は未解決obligationがある間、`LockGuardian` modeで同じserviceを継続できる。
-- 全Task / obligation解決後にstopする。
+- Phase 5ではsuccess / failure terminalをoutboxへ保存した時点でserviceを停止する。Phase 6のlock guardianは別責務として追加する。
 - `START_STICKY`だけを復元保証にせず、永続snapshotからidempotentに再構築する。
 
 ### `PackageSuspender`
@@ -134,6 +135,7 @@ preflight中に必要なSettings画面へ移動し、Activity復帰後にもう�
 - API 29+の `ACTIVITY_RESUMED` だけをforeground候補に使用する。
 - `(timestamp, package, class, eventType)` を短期dedupeする。
 - cursorはevent timestampで進め、wall clock jumpを検出したら安全な短いwindowを再queryする。
+- Phase 5実装は1秒overlapを再queryし、短期signature setで重複を除去する。開始時wall/elapsedの進行差が60秒を超えた場合は履歴を推測せず`recovery_detected_violation`へfail-closedする。
 - eventは数日しか保持されないため、長期監査には使わない。
 - Usage Accessが失われqueryできなければ `monitor_capability_lost` failure。
 
@@ -215,6 +217,8 @@ running Task中は原則leaseを発行しない。Task開始前のpermission/set
 
 READ_PHONE_STATE等の追加権限とPlay policyを実装時に再確認する。Emulator MVPのacceptanceには着信を含めず、synthetic interruption testでclassifierを検証する。call stateを確認できない場合、dialerを常時ignoreせずcandidateとする。
 
+Phase 5の`AndroidInterruptionProbe`はcall stateを常に未確認として返し、電話関連permissionを追加しない。従って実dialerは常時allowlistせず、通常のforeign candidateになる。classifier自体のverified call branchだけをsynthetic JVM testで固定する。
+
 ### 7.4 OS dialog
 
 - runtime permissionはTask開始前に完了
@@ -250,9 +254,11 @@ terminalEvent
 - wall `expectedEndWallMs` を使う。
 - boot count変更を検出する。
 - clock rollback / 大幅jumpをdiagnosticに記録し、安全側のpolicyを適用する。
-- Task期間中の再bootをMVPでは `recovery_detected_violation` failureとする合理的仮定も許容する。実装前にUXを固定しテストする。
+- Phase 5 MVPはTask期間中にboot countが変わり、wall deadline前なら`recovery_detected_violation` failureとする。再起動時点ですでにwall deadline以後ならdeadline terminalへ収束させる。このwall clock依存はMVP trust boundaryであり、二重terminal防止を優先する。
 
 UI Timerはnative terminal判定を上書きしない。
+
+Phase 5のnative recordはPreferences DataStore（credential-protected app sandbox）へ保存する。通常のprocess recreationとActivity再生成は復元対象だが、user unlock前のboot receiver復元と`am force-stop`はPhase 10まで保証しない。
 
 ## 9. Failure処理順序
 
@@ -260,21 +266,54 @@ UI Timerはnative terminal判定を上書きしない。
 sequenceDiagram
     participant Guard
     participant Store
-    participant DPM
     participant Dart
     participant Firestore
 
     Guard->>Guard: terminal CAS running→failed
-    Guard->>Store: pending failure + obligation snapshotをatomic保存
-    Guard->>DPM: effective package setをsuspend
-    DPM-->>Guard: success / failed packages
+    Guard->>Store: pending terminal eventをatomic保存
     Guard-->>Dart: taskFailed(eventId, no package names)
     Dart->>Firestore: idempotent failure transaction
     Firestore-->>Dart: Debt committed
-    Dart->>Guard: markFailureSynced(debtId)
+    Dart->>Guard: ackTaskEvent(eventId)
 ```
 
-OS封印をcloud書き込みより先に行う。Firestoreがofflineでもfailureした端末だけは即座に封印される。
+Phase 5はDPMを呼ばず、Firestoreがofflineでもterminal eventをstable UUID付きoutboxに保持して再配送する。Phase 6では同じterminal境界でlock obligationを先にlocal保存・適用し、cloud書き込み前にOS封印する。
+
+### 9.1 Phase 5 channel contract
+
+MethodChannel `com.kren.michizure/device_control/v1`:
+
+```text
+startTaskGuard(taskSessionId, startedAtEpochMs, expectedEndAtEpochMs, guardConfigVersion)
+stopTaskGuard(taskSessionId)
+getTaskGuardState()
+ackTaskEvent(eventId)
+```
+
+EventChannel `com.kren.michizure/task_events/v1`:
+
+```text
+contractVersion
+eventId
+taskSessionId
+eventType: taskFailed | deadlineReached
+occurredAtEpochMs
+reason: foreign_app_foreground | monitor_capability_lost |
+        recovery_detected_violation | null
+```
+
+unknown fieldを含むpayload、unknown reason、package名を含むpayloadはDart adapterが拒否する。EventChannel再購読と`getTaskGuardState`で未ack eventを同じIDのまま再送し、Firestore transaction成功後のackだけがnative Task recordを削除する。
+
+### 9.2 Foreground Service permission
+
+Phase 5で追加するpermissionは次の2つだけである。
+
+```xml
+android.permission.FOREGROUND_SERVICE
+android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED
+```
+
+serviceは`android:foregroundServiceType="systemExempted"`かつ`exported=false`である。MVPのDevice Owner appは`systemExempted`の許可条件を満たす。`POST_NOTIFICATIONS`と`PACKAGE_USAGE_STATS`はPhase 3 preflightで既に導入済みで、Task開始前に確認する。Camera、Accessibility、phone state、releaseの`QUERY_ALL_PACKAGES`は追加しない。一般Play公開版ではDevice Ownerを前提にできないため、このFGS構成をそのまま提供しない。
 
 ## 10. Lock obligation
 

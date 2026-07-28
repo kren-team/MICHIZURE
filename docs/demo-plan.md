@@ -264,7 +264,32 @@ lock target: MICHIZURE Demo SNS
 6. 期限後にTaskがsucceededへ収束し、Homeへ戻れることを確認する。
 7. 別Taskを開始し「失敗として中断」を選び、失敗結果と`group人数 × 10`回のDebt生成を確認する。
 
-Phase 4ではforeign app自動検知、Foreground Service、package suspensionをまだ実装していない。別アプリ遷移によるfailure smokeはPhase 5以降で実施する。`am force-stop`は通常のprocess killより強くreceiver/serviceも停止するため、Phase 5のguard復元保証とは分けて記録する。
+Phase 5でforeign app自動検知とForeground Serviceを実装した。package suspensionはPhase 6まで行わない。`am force-stop`は通常のprocess killより強くreceiver/serviceも停止するため、START_STICKYによるprocess recreation保証とは分けて記録する。
+
+### Phase 5 Task Guard smoke
+
+1. Firebase Emulator、`emulator-5554`、debug APKを起動し、Device Owner / Usage Access / notification / lock targetがReadyであることを確認する。
+2. 1分以上のTaskを開始し、notification shadeで「Taskを監視中」が表示されることを確認する。
+3. 次でserviceがforeground実行中であることを確認する。
+
+   ```bash
+   adb shell dumpsys activity services com.kren.michizure
+   ```
+
+4. MICHIZURE内に1秒以上留まり、Taskがrunningのままであることを確認する。
+5. HomeまたはChromeを開いて600ms以上留まり、MICHIZUREへ戻る。Taskがfailed、同じTask IDのDebtが1件、active pointerがnullであることをFirestore Emulator UIで確認する。
+6. 同じeventの再配送後もDebtが増えず、serviceが停止してnotificationが消えることを確認する。
+7. 別Taskでは次を実行し、画面OFF中にfailureにならないことを確認する。
+
+   ```bash
+   adb shell input keyevent KEYCODE_SLEEP
+   adb shell input keyevent KEYCODE_WAKEUP
+   ```
+
+8. notification shadeを開閉するだけではfailureにならず、shadeからforeign appを開いた場合はfailureになることを確認する。
+9. Task開始後にUsage Accessをrevokeし、crashせず`monitor_capability_lost`へ収束することを確認する。
+
+Phase 5のincoming call gateは追加permissionを持たないsynthetic classifier testだけである。実着信の除外はProduction permission / Play policy判断後の課題とする。
 
 ### Scene 1: Group
 

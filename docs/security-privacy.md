@@ -38,6 +38,8 @@ Phase 2のgroup作成・参加・退出・所有者移譲は、user/group/member
 
 Phase 4のTask開始はTask documentと`users.activeTaskSessionId`、手動失敗はTask・user pointer・same-ID DebtをtransactionとRules after-stateで結ぶ。`request.time`でclient時刻の近傍とsuccess deadlineを検証するが、clientが内容・duration・手動failureを正直に送ることや、端末時計を±60秒の範囲で操作しないことまでは証明しない。Cloud FunctionsなしのMVPではこのtrust boundaryを受容し、Productionではtrusted backend、App Check / device attestation、server-issued start leaseを検討する。
 
+Phase 5のTask GuardはUsageEvents履歴をKotlin process内だけで短時間評価する。native outboxは`eventId`、Task ID、terminal種別、発生時刻、reasonだけを保存し、foreground package名、class名、履歴、インストール済み一覧をDart・Firestore・analytics・Production logへ渡さない。Rulesはnative eventの真正性を検証できないため、patched clientがfailure reasonを偽装できる点はMVP trust boundaryである。
+
 ## 3. Threat model
 
 | Threat | MVP対策 | 残余リスク / Production |
@@ -90,6 +92,8 @@ Production:
 | failed user / Debt | group-visible behavior | Firestore | MVP indefinite |
 | Contribution | group-visible fitness count | Firestore | MVP indefinite |
 | installed package names | sensitive app inventory | native local only | selection / obligation lifetime |
+| foreground UsageEvents | sensitive usage history | Kotlin process memory only | polling windowの判定完了まで |
+| pending Task terminal event | operational metadata | native local DataStore | Firestore ackまで |
 | camera frame | highly sensitive | process memory only | frame処理完了まで |
 | pose landmarks | biometric-adjacent derived data | process memory only | state updateまで |
 | aggregate angle/state | ephemeral fitness telemetry | memory、debug test only | session |

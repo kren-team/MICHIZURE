@@ -212,13 +212,13 @@ leaveではownerを拒否し、`users.activeTaskSessionId == null`、member削�
 - owner本人
 - before running、after failed
 - `endedAt` は `request.time ± 60秒`
-- Phase 4では`failureReason == user_aborted`、non-empty failureEventId
+- `failureReason`は`user_aborted`、`foreign_app_foreground`、`monitor_capability_lost`、`recovery_detected_violation`のいずれかで、non-empty `failureEventId`
 - `debtId == taskId`
 - after user pointer null
 - after-state `debts/{taskId}` が存在しTask fieldと一致
 - `groupMemberCountAtFailure` がDebt / current group countと一致
 
-terminal Taskの再update/deleteは拒否する。同一failureのretryは既存stateをreadしてclient側no-opとする。`foreign_app_foreground`等のPhase 5 reasonはschema enumとして予約しているが、Phase 4 Rulesでは書き込めない。
+terminal Taskの再update/deleteは拒否する。同一failureのretryは既存stateをreadしてclient側no-opとする。`debug_demo`と未知のreasonは拒否する。Rulesはeventが本物のnative検知かを証明できないため、改変clientによるfailure生成はMVP trust boundaryである。
 
 ## 8. `debts/{debtId}`
 

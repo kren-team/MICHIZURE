@@ -140,9 +140,9 @@ feature間で共用するのは安定したDomain value objectまたは`core`の
 |---|---|---|---|
 | auth user | Firebase Auth SDK | Riverpod auth stream | token lifecycleをSDKへ委譲 |
 | profile / group | Firestore | SDK offline cache | 共有・Rules対象 |
-| running Task metadata | Firestore | Phase 5以降のnative DataStore | Phase 4はFirestore pointerから復元 |
+| running Task metadata | Firestore | native Preferences DataStore | Firestore pointerと同一Task IDで照合 |
 | UI countdown | Firestore `expectedEndAt` と注入Clockのwall time | 1秒tickerで再描画 | 保存counterをauthorityにしない |
-| native guard deadline（Phase 5以降） | Firestore deadlineを起点にした`SystemClock.elapsedRealtime` | native DataStore | 同一bootのwall clock変更耐性 |
+| native guard deadline | Firestore deadlineを起点にした`SystemClock.elapsedRealtime` | native DataStore | 同一bootのwall clock変更耐性 |
 | Debt / Contribution | Firestore | SDK offline cache | transactionとrealtime |
 | 選択パッケージ | native DataStore | Flutter view state | installed-app inventoryをcloudへ出さない |
 | lock obligation | native DataStore + Firestore Debt | OS suspended state | failure直後の即時強制と共有解除 |
@@ -151,7 +151,7 @@ feature間で共用するのは安定したDomain value objectまたは`core`の
 | squat sequence | Kotlin state machine | UI current count | 低遅延・frameをDartへ転送しない |
 | pending failure / rep | native/Dart outbox | Firestore event | offline retryと冪等性 |
 
-Phase 4では`users/{uid}.activeTaskSessionId`を起動時routingの入口にし、該当TaskをFirestoreから購読する。残り時間は毎回`max(0, expectedEndAt - wallNow)`で導出し、期限到達後は`request.time >= expectedEndAt`をRulesで再検証するsuccess transactionへ収束させる。native Task record、monotonic deadline、failure outboxはPhase 5で追加し、Phase 4のUI Timerは表示更新以外の権威を持たない。
+`users/{uid}.activeTaskSessionId`を起動時routingの入口にし、該当TaskをFirestoreから購読する。残り時間は毎回`max(0, expectedEndAt - wallNow)`で導出する。Phase 5では開始直後に同じTask ID、wall/elapsed deadline、boot count、開始時lock target snapshotをnative DataStoreへ保存する。native terminal eventがTask成功・失敗の入口となり、UI Timerは表示更新以外の権威を持たない。
 
 ## 7. Platform Channel契約
 
@@ -159,8 +159,8 @@ channel名はapplicationId配下でversionを含める。
 
 | 種別 | channel | 主な操作 |
 |---|---|---|
-| MethodChannel | `com.kren.michizure/device_control/v1` | Phase 3: `getCapabilities`, `openUsageAccessSettings`, `openNotificationSettings`, `listLockableApps`, `getSelectedPackages`, `saveSelectedPackages`; 後続: `startTaskGuard`, `stopTaskGuard`, `applyObligation`, `resolveObligation`, `reconcileLocks` |
-| EventChannel | `com.kren.michizure/task_events/v1` | `guardStarted`, `foreignAppCandidate`, `taskFailed`, `deadlineReached`, `capabilityLost`, `nativeError` |
+| MethodChannel | `com.kren.michizure/device_control/v1` | Phase 3操作に加え、`startTaskGuard`, `stopTaskGuard`, `getTaskGuardState`, `ackTaskEvent`; Phase 6以降でlock操作を追加 |
+| EventChannel | `com.kren.michizure/task_events/v1` | terminal eventだけを送る: `taskFailed`, `deadlineReached` |
 | EventChannel | `com.kren.michizure/squat_events/v1` | `calibrating`, `stateChanged`, `repCompleted`, `qualityWarning`, `detectorError` |
 | PlatformView | `com.kren.michizure/pose_preview/v1` | native camera preview overlay |
 
@@ -194,13 +194,14 @@ sequenceDiagram
     User->>Android: foreign appを開く
     Android-->>Native: UsageEvents.ACTIVITY_RESUMED
     Native->>Native: interruption filter + dwell
-    Native->>Android: selected packagesをsuspend
+    Native->>Native: terminal eventを同一eventIdでoutbox保存
     Native-->>Flutter: taskFailed(eventId)
     Flutter->>Firestore: transaction: task failed + debt + user pointer clear
     Firestore-->>Flutter: committed
+    Flutter->>Native: ackTaskEvent(eventId)
 ```
 
-Firestore開始が失敗した場合はGuardを開始しない。failure後のFirestore transactionが失敗した場合は、Native封印を維持しoutboxから同一IDで再送する。
+Firestore開始が失敗した場合はGuardを開始しない。failure後のFirestore transactionが失敗した場合は、native outboxから同一IDで再送する。Phase 5はpackageをsuspendしない。Phase 6がterminal eventを起点にlocal obligationを作成し、cloud同期より先に封印する境界を追加する。
 
 ### 8.2 スクワット返済
 
