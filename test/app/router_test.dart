@@ -9,6 +9,9 @@ import 'package:michizure/features/auth/presentation/login_screen.dart';
 import 'package:michizure/features/group/presentation/group_home_screen.dart';
 import 'package:michizure/features/profile/domain/user_profile.dart';
 import 'package:michizure/features/profile/presentation/profile_setup_screen.dart';
+import 'package:michizure/features/task/presentation/running_task_screen.dart';
+
+import '../features/task/support/fake_task_repository.dart';
 
 void main() {
   group('route state matrix', () {
@@ -46,6 +49,15 @@ void main() {
 
       expect(harness.location, authenticatedRoutePath);
       expect(find.byType(GroupHomeScreen), findsOneWidget);
+    });
+
+    testWidgets('a restored active Task redirects to Running Task', (
+      tester,
+    ) async {
+      final harness = await _pumpRouter(tester, AuthRouteState.runningTask);
+
+      expect(harness.location, runningTaskRoutePath);
+      expect(find.byType(RunningTaskScreen), findsOneWidget);
     });
 
     testWidgets('recoverable error automatically returns to Home when ready', (
@@ -124,6 +136,9 @@ Future<_RouterHarness> _pumpRouter(
           (ref) => Stream.value(const AuthUser(id: 'alice')),
         ),
         currentProfileProvider.overrideWith((ref) => Stream.value(_profile)),
+        activeTaskSessionProvider.overrideWith(
+          (ref) => Stream.value(runningTaskFixture()),
+        ),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),

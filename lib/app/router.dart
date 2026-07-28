@@ -12,6 +12,8 @@ import '../features/group/presentation/group_invite_screen.dart';
 import '../features/group/presentation/group_join_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/profile/presentation/profile_setup_screen.dart';
+import '../features/task/presentation/running_task_screen.dart';
+import '../features/task/presentation/task_composer_screen.dart';
 import 'providers.dart';
 
 const String splashRoutePath = '/splash';
@@ -25,6 +27,8 @@ const String groupJoinRoutePath = '/group/join';
 const String groupInviteRoutePath = '/group/invite';
 const String deviceSetupRoutePath = '/device-setup';
 const String appSelectionRoutePath = '/device-setup/apps';
+const String taskComposerRoutePath = '/task/new';
+const String runningTaskRoutePath = '/task/running';
 const String recoverableErrorRoutePath = '/error';
 
 enum AuthRouteState {
@@ -32,6 +36,7 @@ enum AuthRouteState {
   signedOut,
   profileSetup,
   ready,
+  runningTask,
   recoverableError,
 }
 
@@ -79,11 +84,16 @@ final appRouteStateProvider = Provider<AsyncValue<AuthRouteState>>((ref) {
           .when(
             loading: () => const AsyncLoading(),
             error: (error, stackTrace) => AsyncError(error, stackTrace),
-            data: (profile) => AsyncData(
-              profile == null
-                  ? AuthRouteState.profileSetup
-                  : AuthRouteState.ready,
-            ),
+            data: (profile) {
+              if (profile == null) {
+                return const AsyncData(AuthRouteState.profileSetup);
+              }
+              return AsyncData(
+                profile.activeTaskSessionId == null
+                    ? AuthRouteState.ready
+                    : AuthRouteState.runningTask,
+              );
+            },
           );
     },
   );
@@ -120,6 +130,8 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
                   location == recoverableErrorRoutePath
               ? authenticatedRoutePath
               : null,
+        AuthRouteState.runningTask =>
+          location == runningTaskRoutePath ? null : runningTaskRoutePath,
         AuthRouteState.recoverableError =>
           location == recoverableErrorRoutePath
               ? null
@@ -170,6 +182,14 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       GoRoute(
         path: appSelectionRoutePath,
         builder: (context, state) => const AppSelectionScreen(),
+      ),
+      GoRoute(
+        path: taskComposerRoutePath,
+        builder: (context, state) => const TaskComposerScreen(),
+      ),
+      GoRoute(
+        path: runningTaskRoutePath,
+        builder: (context, state) => const RunningTaskScreen(),
       ),
       GoRoute(
         path: recoverableErrorRoutePath,

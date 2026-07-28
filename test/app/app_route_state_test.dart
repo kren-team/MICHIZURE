@@ -51,6 +51,35 @@ void main() {
       const AsyncData(AuthRouteState.ready),
     );
   });
+
+  test('interprets a restored active Task as running', () {
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWithValue(
+          const AsyncData(AuthUser(id: 'alice')),
+        ),
+        currentProfileProvider.overrideWithValue(
+          AsyncData(
+            UserProfile(
+              id: 'alice',
+              displayName: 'Alice',
+              photoUrl: null,
+              groupId: 'group-1',
+              activeTaskSessionId: 'task-1',
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      container.read(appRouteStateProvider),
+      const AsyncData(AuthRouteState.runningTask),
+    );
+  });
 }
 
 final _profile = UserProfile(
