@@ -35,6 +35,35 @@ class ForegroundTransitionClassifierTest {
     }
 
     @Test
+    fun launcherSettingsPermissionControllerAndAppsAreForeignWithoutLease() {
+        val packages =
+            listOf(
+                "com.google.android.apps.nexuslauncher",
+                "com.android.settings",
+                "com.google.android.permissioncontroller",
+                "com.android.chrome",
+                "com.google.android.youtube",
+            )
+
+        packages.forEach { packageName ->
+            val classifier = ForegroundTransitionClassifier(window)
+            assertNull(classifier.onForegroundResume(event(packageName, 2_000)))
+            assertFailure(
+                classifier.evaluate(2_600),
+                TaskGuardFailureReason.FOREIGN_APP_FOREGROUND,
+                2_000,
+            )
+        }
+    }
+
+    @Test
+    fun systemOverlayWithoutAnActivityResumeDoesNotCreateACandidate() {
+        val classifier = ForegroundTransitionClassifier(window)
+
+        assertNull(classifier.evaluate(2_600))
+    }
+
+    @Test
     fun ownAppReturnBeforeDwellCancelsCandidate() {
         val classifier = ForegroundTransitionClassifier(window)
 
