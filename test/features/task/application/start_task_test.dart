@@ -5,17 +5,21 @@ import 'package:michizure/features/task/domain/task_failure.dart';
 
 import '../../enforcement/support/fake_device_control_repository.dart';
 import '../support/fake_task_repository.dart';
+import '../support/fake_native_task_guard.dart';
 
 void main() {
   late FakeTaskRepository tasks;
   late FakeDeviceControlRepository device;
   late StartTask startTask;
+  late FakeNativeTaskGuard guard;
 
   setUp(() {
     tasks = FakeTaskRepository();
     device = FakeDeviceControlRepository()
       ..selectedPackageNames = {'social.app'};
-    startTask = StartTask(tasks, device);
+    guard = FakeNativeTaskGuard();
+    addTearDown(guard.close);
+    startTask = StartTask(tasks, device, guard);
   });
 
   test('preflights the device and starts a normalized Task', () async {
@@ -30,6 +34,7 @@ void main() {
     expect(device.capabilityCalls, 1);
     expect(device.readSelectionCalls, 1);
     expect(tasks.startCalls, 1);
+    expect(guard.startCalls, 1);
     expect(tasks.lastStartRequest?.content, '論文を書く');
   });
 

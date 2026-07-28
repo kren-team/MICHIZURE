@@ -24,4 +24,14 @@ object TaskEventBus {
             sink?.success(event.toWirePayload())
         }
     }
+
+    fun emitError(
+        code: String,
+        message: String,
+        details: Any?,
+    ) {
+        mainHandler.post {
+            sink?.error(code, message, details)
+        }
+    }
 }

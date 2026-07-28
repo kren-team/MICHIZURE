@@ -9,26 +9,31 @@ import 'package:michizure/features/task/domain/task_failure.dart';
 
 import '../../enforcement/support/fake_device_control_repository.dart';
 import '../support/fake_task_repository.dart';
+import '../support/fake_native_task_guard.dart';
 
 void main() {
   late FakeTaskRepository tasks;
   late FakeDeviceControlRepository device;
   late ProviderContainer container;
+  late FakeNativeTaskGuard guard;
 
   setUp(() {
     tasks = FakeTaskRepository();
     device = FakeDeviceControlRepository()
       ..selectedPackageNames = {'social.app'};
+    guard = FakeNativeTaskGuard();
     container = ProviderContainer(
       overrides: [
         taskRepositoryProvider.overrideWithValue(tasks),
         deviceControlRepositoryProvider.overrideWithValue(device),
+        nativeTaskGuardProvider.overrideWithValue(guard),
         taskEventIdGeneratorProvider.overrideWithValue(
           const _FixedEventIdGenerator(),
         ),
       ],
     );
     addTearDown(container.dispose);
+    addTearDown(guard.close);
   });
 
   test('start is single-flight', () async {
@@ -87,9 +92,11 @@ void main() {
       isTrue,
     );
     expect(tasks.succeedCalls, 1);
+    expect(guard.stopCalls, 1);
 
     expect(await controller.abort(ownerUid: 'alice', taskId: 'task-1'), isTrue);
     expect(tasks.failCalls, 1);
+    expect(guard.stopCalls, 2);
     expect(tasks.lastFailureEventId, 'manual_task-1_fixed');
     expect(
       container.read(taskCommandControllerProvider).value?.debt?.totalReps,

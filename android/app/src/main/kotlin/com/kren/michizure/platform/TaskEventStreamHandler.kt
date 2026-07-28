@@ -34,7 +34,7 @@ class TaskEventStreamHandler(
                     }
                 }
                 .onFailure {
-                    events.error(
+                    TaskEventBus.emitError(
                         DeviceControlContract.ERROR_NATIVE_STATE_CORRUPT,
                         "The pending task event could not be read.",
                         DeviceControlContract.versionedPayload(),
