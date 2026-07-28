@@ -8,23 +8,25 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var deviceControlChannel: MethodChannel? = null
+    private var deviceControlHandler: DeviceControlMethodHandler? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        deviceControlHandler = DeviceControlMethodHandler(applicationContext)
         deviceControlChannel =
             MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,
                 DeviceControlContract.CHANNEL_NAME,
             ).also {
-                it.setMethodCallHandler(
-                    DeviceControlMethodHandler(applicationContext),
-                )
+                it.setMethodCallHandler(deviceControlHandler)
             }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         deviceControlChannel?.setMethodCallHandler(null)
         deviceControlChannel = null
+        deviceControlHandler?.close()
+        deviceControlHandler = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }
