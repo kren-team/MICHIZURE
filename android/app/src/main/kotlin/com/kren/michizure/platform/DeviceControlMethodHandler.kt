@@ -272,32 +272,6 @@ class DeviceControlMethodHandler(
         command: StartTaskGuardCommand,
         result: MethodChannel.Result,
     ) {
-        val capabilities =
-            runCatching { capabilitiesProvider.getCapabilities() }.getOrElse {
-                postNativeUnavailable(result)
-                return
-            }
-        val capabilityError =
-            when {
-                capabilities["isDeviceOwner"] != true ->
-                    DeviceControlContract.ERROR_NOT_DEVICE_OWNER
-                capabilities["hasUsageAccess"] != true ->
-                    DeviceControlContract.ERROR_USAGE_ACCESS_MISSING
-                capabilities["hasNotificationPermission"] != true ->
-                    DeviceControlContract.ERROR_NOTIFICATION_PERMISSION_MISSING
-                capabilities["isUserUnlocked"] != true ||
-                    Build.VERSION.SDK_INT < 29 ->
-                    DeviceControlContract.ERROR_NATIVE_UNAVAILABLE
-                else -> null
-            }
-        if (capabilityError != null) {
-            postTypedError(
-                result,
-                capabilityError,
-                "Task monitoring is not available on this device.",
-            )
-            return
-        }
         val selectedPackages =
             runCatching { selectedPackageStore.read() }.getOrElse {
                 postNativeStateError(result)
@@ -333,6 +307,54 @@ class DeviceControlMethodHandler(
                 postNativeStateError(result)
                 return
             }
+        val pendingEvent =
+            runCatching { nativeTaskStore.readPendingEvent() }.getOrElse {
+                postNativeStateError(result)
+                return
+            }
+        if (pendingEvent != null) {
+            TaskEventBus.emit(pendingEvent)
+            postSuccess(
+                result,
+                DeviceControlContract.versionedPayload(
+                    mapOf(
+                        "taskSessionId" to persisted.taskSessionId,
+                        "isRunning" to false,
+                        "hasPendingEvent" to true,
+                    ),
+                ),
+            )
+            return
+        }
+        val capabilities =
+            runCatching { capabilitiesProvider.getCapabilities() }.getOrElse {
+                persistCapabilityFailure(persisted, taskClock)
+                postNativeUnavailable(result)
+                return
+            }
+        val capabilityError =
+            when {
+                capabilities["isDeviceOwner"] != true ->
+                    DeviceControlContract.ERROR_NOT_DEVICE_OWNER
+                capabilities["hasUsageAccess"] != true ->
+                    DeviceControlContract.ERROR_USAGE_ACCESS_MISSING
+                capabilities["hasNotificationPermission"] != true ->
+                    DeviceControlContract.ERROR_NOTIFICATION_PERMISSION_MISSING
+                capabilities["hasBroadPackageVisibility"] != true ||
+                    capabilities["isUserUnlocked"] != true ||
+                    Build.VERSION.SDK_INT < 29 ->
+                    DeviceControlContract.ERROR_NATIVE_UNAVAILABLE
+                else -> null
+            }
+        if (capabilityError != null) {
+            persistCapabilityFailure(persisted, taskClock)
+            postTypedError(
+                result,
+                capabilityError,
+                "Task monitoring is not available on this device.",
+            )
+            return
+        }
         runCatching { TaskGuardService.start(context) }
             .onSuccess {
                 postSuccess(
@@ -341,30 +363,34 @@ class DeviceControlMethodHandler(
                         mapOf(
                             "taskSessionId" to persisted.taskSessionId,
                             "isRunning" to true,
+                            "hasPendingEvent" to false,
                         ),
                     ),
                 )
             }
             .onFailure {
-                val terminal =
-                    TaskGuardTerminal(
-                        kind = TaskGuardTerminalKind.TASK_FAILED,
-                        failureReason =
-                            TaskGuardFailureReason.MONITOR_CAPABILITY_LOST,
-                        originElapsedMs = taskClock.elapsedRealtimeMs(),
-                    )
-                runCatching {
-                    nativeTaskStore.commitTerminal(
-                        persisted.taskSessionId,
-                        terminal,
-                    )
-                }.getOrNull()?.let(TaskEventBus::emit)
+                persistCapabilityFailure(persisted, taskClock)
                 postTypedError(
                     result,
                     DeviceControlContract.ERROR_FOREGROUND_SERVICE_START_DENIED,
                     "The Task monitoring service could not be started.",
                 )
             }
+    }
+
+    private suspend fun persistCapabilityFailure(
+        task: NativeTaskRecord,
+        taskClock: AndroidTaskGuardClock,
+    ) {
+        val terminal =
+            TaskGuardTerminal(
+                kind = TaskGuardTerminalKind.TASK_FAILED,
+                failureReason = TaskGuardFailureReason.MONITOR_CAPABILITY_LOST,
+                originElapsedMs = taskClock.elapsedRealtimeMs(),
+            )
+        runCatching {
+            nativeTaskStore.commitTerminal(task.taskSessionId, terminal)
+        }.getOrNull()?.let(TaskEventBus::emit)
     }
 
     private fun parseStartTaskGuard(arguments: Any?): StartTaskGuardCommand? {

@@ -11,10 +11,10 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.kren.michizure.MainActivity
-import com.kren.michizure.persistence.NativeTaskEvent
 import com.kren.michizure.persistence.NativeTaskRecord
 import com.kren.michizure.persistence.NativeTaskStore
 import com.kren.michizure.platform.TaskEventBus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,7 +53,16 @@ class TaskGuardService : Service() {
             return START_NOT_STICKY
         }
         if (monitorJob?.isActive != true) {
-            monitorJob = serviceScope.launch { monitorPersistedTask() }
+            monitorJob =
+                serviceScope.launch {
+                    try {
+                        monitorPersistedTask()
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        commitCapabilityFailureAndStop()
+                    }
+                }
         }
         return START_STICKY
     }
@@ -75,7 +84,13 @@ class TaskGuardService : Service() {
                 stopGuardService()
                 return
             }
-        if (store.readPendingEvent() != null) {
+        val pendingEvent =
+            runCatching { store.readPendingEvent() }.getOrElse {
+                stopGuardService()
+                return
+            }
+        if (pendingEvent != null) {
+            TaskEventBus.emit(pendingEvent)
             stopGuardService()
             return
         }
@@ -105,6 +120,20 @@ class TaskGuardService : Service() {
         while (serviceScope.isActive) {
             val nowWallMs = clock.wallTimeMs()
             val nowElapsedMs = clock.elapsedRealtimeMs()
+            if (
+                TaskGuardTimePolicy.hasWallClockDiscontinuity(
+                    startedWallMs = record.startedWallMs,
+                    startedElapsedMs = record.startedElapsedMs,
+                    nowWallMs = nowWallMs,
+                    nowElapsedMs = nowElapsedMs,
+                )
+            ) {
+                persistAndEmit(
+                    record,
+                    classifier.onBootDiscontinuity(nowElapsedMs),
+                )
+                return
+            }
             val queryStart = (cursorWallMs - QUERY_OVERLAP_MS)
                 .coerceAtLeast(record.startedWallMs)
             val queryResult = eventSource.queryResumedEvents(queryStart, nowWallMs + 1)

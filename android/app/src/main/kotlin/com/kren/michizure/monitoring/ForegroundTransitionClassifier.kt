@@ -46,8 +46,13 @@ class ForegroundTransitionClassifier(
             candidate = null
             return null
         }
-        if (event.eventElapsedMs >= window.expectedEndElapsedMs) {
+        if (event.eventElapsedMs >= window.expectedEndElapsedMs &&
+            candidate == null
+        ) {
             return commitDeadline(event.eventElapsedMs)
+        }
+        if (event.eventElapsedMs >= window.expectedEndElapsedMs) {
+            return evaluate(event.eventElapsedMs, interruption)
         }
 
         val existing = candidate

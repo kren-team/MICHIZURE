@@ -145,6 +145,18 @@ class ForegroundTransitionClassifierTest {
     }
 
     @Test
+    fun laterForeignResumeCannotReplaceAPreDeadlineCandidateWithSuccess() {
+        val classifier = ForegroundTransitionClassifier(window)
+
+        assertNull(classifier.onForegroundResume(event("com.android.chrome", 9_500)))
+        assertFailure(
+            classifier.onForegroundResume(event("com.example.video", 10_100)),
+            TaskGuardFailureReason.FOREIGN_APP_FOREGROUND,
+            9_500,
+        )
+    }
+
+    @Test
     fun eventAtDeadlineAndNoCandidateProduceOneDeadlineTerminal() {
         val atDeadline = ForegroundTransitionClassifier(window)
         assertDeadline(
