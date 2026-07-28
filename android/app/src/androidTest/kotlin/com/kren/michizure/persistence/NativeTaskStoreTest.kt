@@ -78,7 +78,7 @@ class NativeTaskStoreTest {
         require(error is NativeTaskStoreException)
         assertEquals("activeTaskConflict", error.code)
         assertNotEquals(secondId, store.readTask()?.taskSessionId)
-        store.stop(firstId)
+        assertTrue(store.stop(firstId))
     }
 
     private fun record(taskId: String): NativeTaskRecord {
