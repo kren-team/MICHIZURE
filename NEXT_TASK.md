@@ -1,95 +1,139 @@
-# NEXT TASK: Phase 4 `feature/task-session`
+# NEXT TASK: Phase 5 `feature/android-task-monitor`
 
-## この作業だけを実装する
+## この1 Phaseだけを実装する
 
-ユーザーが内容と時間を指定してTask sessionを開始し、`expectedEndAt`をauthorityとしてcountdown・成功・手動中断による失敗・再起動復元を行う。Phase 0〜3のFirebase、認証、Profile、Group、Device Setup、選択package保存を前提にする。
+Android Foreground Serviceと`UsageStatsManager`を使い、実行中Taskからユーザー操作で離脱したことを誤判定防止filter付きで検知する。typedなnative eventをFlutter Application層へ渡し、Phase 4の冪等failure transactionへ接続する。
 
-UsageStatsによるforeign app自動検知、Foreground Service、実際のpackage suspension、Debt返済、CameraX、ML Kit、スクワット判定は実装しない。
+`DevicePolicyManager.setPackagesSuspended()`、lock obligation、Debt返済UI、CameraX、ML Kit、スクワット判定は実装しない。Phase 5で外部アプリを検知しても実際のpackage suspensionはPhase 6の責務とする。
 
-## 作業開始
-
-1. `AGENTS.md` と全設計文書を読む。
-2. 特に `docs/product-requirements.md`、`docs/architecture.md`、`docs/data-model.md`、`docs/firestore-rules-design.md`、`docs/state-management.md`、`docs/testing.md`、`docs/implementation-plan.md` のPhase 4を確認する。
-3. Phase 3が統合された最新のcleanな `dev` から `feature/task-session` を作る。
-
-## 必須設計制約
-
-- TaskのauthorityはFirestoreの`startedAt`、`durationSec`、`expectedEndAt`、`status`であり、UI Timerだけを信用しない。
-- 1ユーザーにつきactive Taskは1つとし、`users/{uid}.activeTaskSessionId`とTask documentをatomicに更新する。
-- Task開始前にPhase 3のcapabilityと選択packageをpreflightする。未準備なら安全に開始を止める。
-- process再起動後は`expectedEndAt`から残時間を再計算する。
-- offline時にTransaction成功を偽らない。Task startはonline必須としてtyped failureを返す。
-- Phase 4ではforeign app自動検知を実装しない。手動中断だけを明示的なfailure pathとして扱う。
-- 実際のDebt document生成範囲は`docs/implementation-plan.md`とRules設計に従う。後続の返済UIやapp lockを先取りしない。
-
-## 実装対象
+## Branch
 
 ```text
-lib/features/task/domain/
-lib/features/task/application/
-lib/features/task/infrastructure/
-lib/features/task/presentation/
-lib/features/debt/domain/debt.dart
-lib/features/debt/domain/debt_repository.dart
-firestore.rules
-firestore.indexes.json
-firebase/rules-tests/
-test/features/task/
-integration_test/
+feature/android-task-monitor
 ```
 
-Android nativeはTask timing contractのinterfaceまでとし、UsageStats monitorやForeground Serviceは追加しない。
+最新のcleanな`dev`から作成し、統合先は`dev`とする。`main` / `dev`へ直接機能commitしない。
 
-## UI
+## 作業前に読む
 
-- Task Composer: 内容、実行時間
-- Device Setup / selected app preflight結果
-- Running Task: server-derived deadlineから計算した残時間
-- 成功結果
-- 手動中断確認と失敗結果
-- 復元中、offline、Rules deny、競合のsafe typed message
+1. `AGENTS.md`
+2. `README.md`
+3. `docs/product-requirements.md`
+4. `docs/architecture.md`
+5. `docs/data-model.md`
+6. `docs/android-enforcement.md`
+7. `docs/firestore-rules-design.md`
+8. `docs/state-management.md`
+9. `docs/security-privacy.md`
+10. `docs/testing.md`
+11. `docs/demo-plan.md`
+12. `docs/implementation-plan.md`
+13. `docs/adr/0003-android-app-enforcement.md`
+14. Phase 3/4のnative bridge、Task repository、controller、Rules、test
 
-## Firestore
+## Phase 4から引き継ぐ契約
 
-- `taskSessions/{taskId}`
-- `users/{uid}.activeTaskSessionId`
-- 必要なminimal `debts/{taskId}` create
-- start / success / manual failureのatomic invariant
-- unknown field deny、owner限定read/write、immutable field保護
-- task history queryに必要なindex
+- Firestore Taskは`running / succeeded / failed`、1ユーザー1 active pointer。
+- `expectedEndAt`とFirestore `request.time`がterminal競合の権威。
+- `failTaskAndCreateDebt`は`failureEventId`で冪等化し、same-ID Debtをatomic作成する。
+- Phase 4 Rulesがclient writeを許可するfailure reasonは`user_aborted`だけ。Phase 5 reasonを開放する際は、native eventのshapeとTask/Debt after-stateを独立したRules testで追加する。
+- Phase 3の`device_control/v1`契約とDataStore選択packageを壊さない。
+- package名をFirestore、analytics、Production logへ送らない。
 
-MVP trust boundaryとRulesで保証できる範囲を明記し、Cloud Functionsを必須依存にしない。
+## 実装範囲
 
-## 完了条件
+### Kotlin
 
-- Task作成、開始、countdown、成功、手動失敗が動作する。
-- 同一ユーザーの同時開始でもactive Taskが1つを超えない。
-- app process再起動後にrunning Taskが復元される。
-- `expectedEndAt`経過済みなら再起動後に成功へ収束する。
-- 未準備capability、未選択package、offline、競合を安全に扱う。
-- Task stateと`activeTaskSessionId`がTransaction / Rulesで矛盾しない。
-- Flutter unit/widget、Rules、repository integration test、debug APK buildが成功する。
+```text
+android/app/src/main/kotlin/com/kren/michizure/monitoring/
+android/app/src/main/kotlin/com/kren/michizure/persistence/NativeTaskStore.kt
+android/app/src/main/kotlin/com/kren/michizure/platform/TaskEventStreamHandler.kt
+android/app/src/test/
+android/app/src/androidTest/
+```
+
+- `TaskGuardService` foreground service
+- `UsageEvents.Event.ACTIVITY_RESUMED`を使うforeground transition source
+- own app / foreign app / launcher / Settings / permission controller / default dialer等を分類する純粋classifier
+- screen non-interactive、Keyguard、許可済みsystem flow、通話中を考慮するinterruption gate
+- foreign candidateのdwellとown app復帰時cancel
+- native monotonic clockを使うdeadline競合
+- process recreationに耐える最小Task recordとterminal compare-and-set
+- version 1 EventChannel、再購読、同一terminal event ID再送
+- capability喪失をtyped event / errorとして通知
+
+### Flutter
+
+```text
+lib/features/task/infrastructure/native_task_guard.dart
+lib/features/task/application/handle_native_task_event.dart
+lib/features/task/presentation/
+```
+
+- WidgetからEventChannelを直接購読しない。
+- Infrastructure adapterでpayloadを厳密に検証しDomain eventへ変換する。
+- Application handlerがdeadlineと現在Task stateを再確認してsuccess / failureを選ぶ。
+- duplicate eventはPhase 4 repositoryの同一event no-opへ収束させる。
+- Running画面にguard health、capability lost、再試行可能なtyped failureを表示する。
+
+### Firestore
+
+- collection / field schemaは原則変更しない。
+- Phase 5で必要な`foreign_app_foreground`、`monitor_capability_lost`、`recovery_detected_violation`だけを最小限開放する。
+- Task、user pointer、same-ID Debtのatomic invariantを維持する。
+- package名、installed app inventory、raw UsageEventを保存しない。
+
+## 必須動作
+
+- own appのActivity transitionでは失敗しない。
+- interactive中にHome、Recents、foreign appへ移動し、dwellを超えた場合は1回だけfailure eventを生成する。
+- foreign appからdwell内に戻ればcandidateをcancelする。
+- screen off、Keyguard表示ではfailureにしない。
+- permission/settings flowは明示的・短時間のleaseがある場合だけ除外し、無制限allowlistにしない。
+- default dialerは実際の通話状態が確認できる場合だけpauseする。
+- Usage Access喪失、service停止・復元をtypedに扱う。
+- deadlineとforeign eventが競合した場合は、設計済み時刻policyに従い二重terminalを作らない。
+- process / Activity再生成後もhandlerやlistenerを二重登録しない。
+
+## Android permission / manifest
+
+Foreground Service type、notification、Usage Statsに必要なpermissionだけを追加する。追加ごとに用途、runtime flow、API level差、Device Owner条件、Google Play policy、testを文書化する。AccessibilityService、Camera permission、`QUERY_ALL_PACKAGES`のrelease拡張は追加しない。
+
+## Acceptance Criteria
+
+- managed Android EmulatorでTask start後にguard notificationが表示される。
+- Demo foreign app / Home遷移を1秒以内目標で1回のfailureへ変換できる。
+- screen off / Keyguard / own Activity再開はfailureにならない。
+- Usage Accessをrevokeしてもcrashせずcapability failureになる。
+- duplicate native eventでTask / Debtが重複しない。
+- deadline競合でTask terminal stateが1つに収束する。
+- process再起動後にnative Task recordとFirestore Taskを照合できる。
+- package名やraw UsageEventがPlatform payload、Firestore、Production logへ出ない。
+- Phase 3のDevice Setup / App SelectionとPhase 4のTask flowが回帰しない。
+- Flutter、Rules、Kotlin JVM、managed Emulator instrumentation、debug APK buildが成功する。
 
 ## 必須テスト
 
-- valid / invalid task contentとduration
-- concurrent startとsingle-flight
-- start transactionの成功・deny・offline
-- running → succeeded
-- running → failed（manual abort）
-- process restart recovery
-- deadline経過後のrecovery
-- active pointer保護とunknown field deny
-- 他UID Taskのget/update/list deny
-- Phase 3 preflight未達時の開始拒否
+- classifier table: own / Home / Recents / foreign / Settings / permission controller / dialer
+- interactive、screen off、Keyguard、system lease、call state
+- dwell cancel、duplicate UsageEvent、out-of-order event
+- event before Task start、deadline直前、deadline以後
+- Usage Access revoke、service restart、Activity recreation
+- EventChannel contract version、malformed payload、再購読、duplicate terminal event
+- native event handlerのsingle-flight / idempotency
+- Phase 5 failure reasonのRules allow / deny
+- same-ID Debtとactive pointerのtransaction integration
+- manifest permissionとrelease/debug差分
+
+実時間sleepに依存するclassifier testは作らず、virtual monotonic clockを注入する。Device Owner / Usage Accessが必要な動作だけをmanaged Emulator instrumentation laneへ分離する。
 
 ## 推奨commit分割
 
-1. `feat: Task sessionドメインとFirestore repositoryを追加`
-2. `feat: Task開始transactionとpreflightを実装`
-3. `feat: countdownとTask状態遷移UIを追加`
-4. `feat: Task再起動復元を実装`
-5. `test: Task transactionとRules検証を追加`
-6. `docs: Task sessionの実装境界を更新`
+1. `feat: Task Guard foreground serviceと永続recordを追加`
+2. `feat: UsageEvents監視とforeground classifierを実装`
+3. `feat: system interruption filterとdeadline競合を実装`
+4. `feat: native Task eventをFlutter failure処理へ接続`
+5. `test: Task monitorの誤判定と復元を検証`
+6. `docs: Task monitor契約とデモ手順を更新`
 
-Phase 5以降を先取りしない。作業完了時はbranch、commit、Task state machine、Firestore / Rules / Index差分、復元方式、テスト結果、Phase 5へ残したAndroid monitor境界を報告する。
+Phase 5完了後は停止する。Phase 6のpackage suspension、lock obligation、unlockを先取りしない。

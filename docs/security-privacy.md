@@ -36,6 +36,8 @@ Rulesが信頼できるのは `request.auth`, `request.time`, existing/after doc
 
 Phase 2のgroup作成・参加・退出・所有者移譲は、user/group/member/inviteのbefore/after-stateをRulesで結び、1ユーザー1groupと最大40人をclient UIに依存せず検証する。raw invite tokenはFirestoreへ保存しない。一方、raw tokenを受領した認証済みユーザーは期限内なら参加できるため、tokenはbearer credentialであり、転送された相手の本人性や招待受領者まではMVPで保証しない。
 
+Phase 4のTask開始はTask documentと`users.activeTaskSessionId`、手動失敗はTask・user pointer・same-ID DebtをtransactionとRules after-stateで結ぶ。`request.time`でclient時刻の近傍とsuccess deadlineを検証するが、clientが内容・duration・手動failureを正直に送ることや、端末時計を±60秒の範囲で操作しないことまでは証明しない。Cloud FunctionsなしのMVPではこのtrust boundaryを受容し、Productionではtrusted backend、App Check / device attestation、server-issued start leaseを検討する。
+
 ## 3. Threat model
 
 | Threat | MVP対策 | 残余リスク / Production |

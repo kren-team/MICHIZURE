@@ -212,13 +212,13 @@ leaveではownerを拒否し、`users.activeTaskSessionId == null`、member削�
 - owner本人
 - before running、after failed
 - `endedAt` は `request.time ± 60秒`
-- allowlisted failureReason、non-empty failureEventId
+- Phase 4では`failureReason == user_aborted`、non-empty failureEventId
 - `debtId == taskId`
 - after user pointer null
 - after-state `debts/{taskId}` が存在しTask fieldと一致
 - `groupMemberCountAtFailure` がDebt / current group countと一致
 
-terminal Taskの再update/deleteは拒否する。同一failureのretryは既存stateをreadしてclient側no-opとする。
+terminal Taskの再update/deleteは拒否する。同一failureのretryは既存stateをreadしてclient側no-opとする。`foreign_app_foreground`等のPhase 5 reasonはschema enumとして予約しているが、Phase 4 Rulesでは書き込めない。
 
 ## 8. `debts/{debtId}`
 
@@ -226,6 +226,7 @@ terminal Taskの再update/deleteは拒否する。同一failureのretryは既存
 
 - current group member
 - または `failedUserId == auth.uid`。失敗ユーザーがgroupを退出できないルールにしているため通常はmember条件にも一致する。
+- failure transactionの冪等性確認に限り、未作成の`debts/{taskId}`を同じTaskのownerがgetできる。無関係なmissing IDと未認証getは拒否する。
 
 ### Create
 
@@ -240,6 +241,8 @@ terminal Taskの再update/deleteは拒否する。同一failureのretryは既存
 - `createdAt == request.time`
 - `lockExpiresAt == task.endedAt + task.lockDurationSec`
 - aggregate / close fields初期値
+
+Phase 4ではinitial Debtのcreate/getだけを開放し、Contribution、Debt completion、expiration updateは後続Phaseまでdefault denyとする。
 
 ### Contribution update
 

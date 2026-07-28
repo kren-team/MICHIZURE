@@ -343,6 +343,22 @@ test runはevent timestampsから同期p95を算出する。
 
 Phase 2のGroupフローは、1台のAndroid Emulator内で2つの独立したFirebaseApp/Auth sessionを使う `integration_test/group_flow_test.dart` でも検証する。これはA/Bの認可境界とsnapshot listenerの反映を自動検証し、2台Emulatorによる画面操作smoke testを置き換えるものではない。
 
+Phase 4はDart unit/widgetでcontent・duration・Clock・single-flight・routing・countdown・復元を検証し、`firebase/rules-tests/src/tasks_debt_creation.test.js`でTask/user/Debtのatomic invariant、owner query、terminal immutable、1/5/40人のDebt量を検証する。`integration_test/task_session_flow_test.dart`はAndroid上のFirebase SDKを使い、同時startが1件だけ成功すること、manual failureと同一event再送がsame-ID Debtへ収束することを確認する。
+
+```bash
+firebase emulators:exec \
+  --project demo-michizure \
+  --only auth,firestore \
+  "flutter drive \
+    --driver=test_driver/integration_test.dart \
+    --target=integration_test/task_session_flow_test.dart \
+    -d emulator-5554 \
+    --no-dds \
+    --host-vmservice-port=51004"
+```
+
+Device Owner packageはtest終了時の自動uninstallをDPMが拒否する場合がある。test runnerが`All tests passed`かつexit code 0を返したことを合否とし、`DELETE_FAILED_DEVICE_POLICY_MANAGER`だけをtest failureと誤認しない。
+
 ## 12. Performance test
 
 ### Firestore
