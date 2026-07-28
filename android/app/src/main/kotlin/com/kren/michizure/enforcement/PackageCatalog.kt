@@ -144,6 +144,12 @@ class AndroidPackageCatalog(
                 resolveInfo.activityInfo?.packageName?.let(packages::add)
             }
         }
+        val verificationIntent =
+            Intent(Intent.ACTION_PACKAGE_NEEDS_VERIFICATION)
+                .setDataAndType(packageUri, PACKAGE_ARCHIVE_MIME_TYPE)
+        queryBroadcastReceivers(verificationIntent).forEach { resolveInfo ->
+            resolveInfo.activityInfo?.packageName?.let(packages::add)
+        }
         return packages
     }
 
@@ -191,6 +197,18 @@ class AndroidPackageCatalog(
             )
         } else {
             packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun queryBroadcastReceivers(intent: Intent): List<ResolveInfo> {
+        return if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.queryBroadcastReceivers(
+                intent,
+                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()),
+            )
+        } else {
+            packageManager.queryBroadcastReceivers(intent, PackageManager.MATCH_ALL)
         }
     }
 
