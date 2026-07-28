@@ -140,8 +140,9 @@ feature間で共用するのは安定したDomain value objectまたは`core`の
 |---|---|---|---|
 | auth user | Firebase Auth SDK | Riverpod auth stream | token lifecycleをSDKへ委譲 |
 | profile / group | Firestore | SDK offline cache | 共有・Rules対象 |
-| running Task metadata | Firestore | native DataStore | 共有状態と即時復元の両立 |
-| countdown during same boot | `SystemClock.elapsedRealtime` | UI derived state | wall clock変更耐性 |
+| running Task metadata | Firestore | Phase 5以降のnative DataStore | Phase 4はFirestore pointerから復元 |
+| UI countdown | Firestore `expectedEndAt` と注入Clockのwall time | 1秒tickerで再描画 | 保存counterをauthorityにしない |
+| native guard deadline（Phase 5以降） | Firestore deadlineを起点にした`SystemClock.elapsedRealtime` | native DataStore | 同一bootのwall clock変更耐性 |
 | Debt / Contribution | Firestore | SDK offline cache | transactionとrealtime |
 | 選択パッケージ | native DataStore | Flutter view state | installed-app inventoryをcloudへ出さない |
 | lock obligation | native DataStore + Firestore Debt | OS suspended state | failure直後の即時強制と共有解除 |
@@ -149,6 +150,8 @@ feature間で共用するのは安定したDomain value objectまたは`core`の
 | pose frame | memory only | なし | 保存・送信禁止 |
 | squat sequence | Kotlin state machine | UI current count | 低遅延・frameをDartへ転送しない |
 | pending failure / rep | native/Dart outbox | Firestore event | offline retryと冪等性 |
+
+Phase 4では`users/{uid}.activeTaskSessionId`を起動時routingの入口にし、該当TaskをFirestoreから購読する。残り時間は毎回`max(0, expectedEndAt - wallNow)`で導出し、期限到達後は`request.time >= expectedEndAt`をRulesで再検証するsuccess transactionへ収束させる。native Task record、monotonic deadline、failure outboxはPhase 5で追加し、Phase 4のUI Timerは表示更新以外の権威を持たない。
 
 ## 7. Platform Channel契約
 

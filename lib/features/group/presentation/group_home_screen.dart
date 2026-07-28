@@ -166,6 +166,13 @@ final class _GroupDashboardViewState
         Text('${group.memberCount} / ${Group.maximumMemberCount} 人'),
         const SizedBox(height: 16),
         FilledButton.icon(
+          key: const Key('task-composer-route-button'),
+          onPressed: command.isLoading ? null : () => context.go('/task/new'),
+          icon: const Icon(Icons.timer),
+          label: const Text('Taskを始める'),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
           key: const Key('group-invite-route-button'),
           onPressed: command.isLoading
               ? null

@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証とプロフィール、Phase 2ではGroup機能、Phase 3ではDevice Owner等の端末診断、lock候補catalog、端末内app選択保存を追加しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証とプロフィール、Phase 2ではGroup機能、Phase 3ではDevice Owner等の端末診断、lock候補catalog、端末内app選択保存を追加しました。Phase 4ではTaskの開始・期限基準countdown・再起動復元・成功・手動失敗とminimal Debt生成を実装しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -115,7 +115,7 @@ Flutterのformat / analyze / test、Firestore Rules Test、追跡対象のsecret
 ./tool/check_all.sh
 ```
 
-Firestore Rulesはdefault denyです。本人の `users/{uid}` と、所属メンバーに限定したgroup/member操作、hash化招待を許可し、group作成・参加・退出・所有者移譲は関連documentのafter-stateまで検証します。Rules testだけを実行する場合は次を使います。
+Firestore Rulesはdefault denyです。本人の `users/{uid}`、所属メンバーに限定したgroup/member操作、hash化招待を許可します。group操作に加え、Task開始・成功・手動失敗ではTask、user pointer、same-ID Debtのafter-stateを検証します。Rules testだけを実行する場合は次を使います。
 
 ```bash
 npm --prefix firebase/rules-tests test
@@ -136,6 +136,20 @@ Phase 3のAndroid bridge、launcher app catalog、DataStore選択復元だけを
 flutter test integration_test/device_setup_flow_test.dart \
   -d emulator-5554 \
   --no-uninstall
+```
+
+Phase 4のTask start競合、active pointer、手動失敗とsame-ID Debtの冪等性は、Auth / Firestore Emulatorと接続済みAndroid Emulatorで検証します。
+
+```bash
+firebase emulators:exec \
+  --project demo-michizure \
+  --only auth,firestore \
+  "flutter drive \
+    --driver=test_driver/integration_test.dart \
+    --target=integration_test/task_session_flow_test.dart \
+    -d emulator-5554 \
+    --no-dds \
+    --host-vmservice-port=51004"
 ```
 
 Device Ownerを含む初回セットアップは [demo-plan.md](docs/demo-plan.md#6-apk-installとdevice-owner-provisioning) を参照してください。Device Owner appは通常のアンインストール対象にできないため、端末テストでは`--no-uninstall`を使用します。

@@ -308,6 +308,8 @@ android/app/src/debug/AndroidManifest.xml
 
 ## Phase 4 — `feature/task-session`
 
+Status: implemented on `feature/task-session`; merge先は`dev`。
+
 ### 目的
 
 Task作成、Firestore start transaction、countdown、success、手動abort failure、Debt生成contractを実装する。Android foreign app自動検知は次Phase。
@@ -337,12 +339,12 @@ firebase/rules-tests/tasks_debt_creation.test.*
 ### UI
 
 - Task Composer、Preflight、Running Task、Result
-- countdown、guardはまだ`notAvailable`表示またはfeature flagで開始不可
+- countdownは有効。foreign app自動監視が未実装であることをRunning画面へ明示
 - manual abort確認
 
 ### Native Kotlin
 
-- Task timing contract interfaceのみ。自動monitor未実装
+- Phase 3のcapability / selected package preflightを再利用。Task monitor、Foreground Service、native Task永続化は未実装
 
 ### 完了条件
 
@@ -369,6 +371,15 @@ firebase/rules-tests/tasks_debt_creation.test.*
 3. `feat: countdownとsuccess処理を実装`
 4. `feat: failureとDebt生成transactionを実装`
 5. `test: Task状態遷移とRulesを検証`
+
+### 実装結果
+
+- Firestore Taskとuser pointerをstart / successでatomic更新
+- manual abortはTask・pointer・same-ID Debtをatomic更新し、同一event retryをno-op化
+- `expectedEndAt - Clock.now()`でcountdownを導出し、process再起動後もprofile pointerから復元
+- Controller single-flight、typed failure、Phase 3のfresh capability / package preflight
+- Task owner限定read/query、unknown field deny、terminal immutable、initial Debtだけを許可するRules
+- task history composite indexとcontent / failureEventIdの単項index exemption
 
 ---
 

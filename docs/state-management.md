@@ -139,6 +139,10 @@ Domainへ`Clock`を注入し、次を分離する。
 
 UI Timerは表示更新だけに使い、成功判定のsource of truthにしない。
 
+Phase 4の`RunningTaskScreen`は1秒tickerを再描画triggerにだけ使用し、注入された`Clock.now()`とTaskの`expectedEndAt`からremainingを毎回導出する。期限到達時は`TaskCommandController`がsingle-flightでsuccess transactionを呼び、Firestore snapshotと`users.activeTaskSessionId`の更新へ収束する。process再起動時はAuth/Profile streamが復元したactive pointerをrouterが解釈し、`activeTaskSessionProvider`がTaskを再購読する。期限経過済みなら同じsuccess pathを自動実行し、失敗時は明示的な再試行を表示する。
+
+Phase 4のcommand stateは`TaskCommandController`がstart / success / manual abortを直列化する。Firestore transactionが1 active Task、terminal transition、Debt生成の本質的な整合性を担い、button disableはUX上の補助に留める。
+
 ## 10. 過剰設計を避ける基準
 
 - CRUDを1回呼ぶだけならControllerからRepositoryを呼ぶ。

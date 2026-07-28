@@ -135,6 +135,8 @@ clientは128 bit以上の暗号学的乱数tokenを生成し、共有するの�
 
 foreground package名は保存しない。
 
+Phase 4実装ではcreate時に`serverRecordedAt=server timestamp`を必須とし、`startedAt`を`request.time ± 60秒`、`expectedEndAt`を`startedAt + durationSec`としてRulesでも検証する。現在clientが書き込めるfailure transitionは手動中断の`user_aborted`だけであり、他のreasonはPhase 5のnative event contractとRules testを追加するまで開放しない。
+
 ### 4.6 `debts/{debtId}`
 
 | field | type | 必須 | 説明 |
@@ -275,6 +277,8 @@ write:
 3. `debts/{taskId}` をcreate
 
 `totalReps = group.memberCount * 10`。再送時にtaskが既に同じfailureEventIdでfailedかつDebtが存在すれば成功済みとして扱う。
+
+Phase 4の手動失敗event IDはcommandごとに暗号学的乱数を含み、同一event IDによるtransaction retryではterminal Taskとsame-ID Debtをreadしてno-opへ収束する。missing Debtのtransaction readは、同じIDのTask ownerにだけRulesで許可する。
 
 ### 5.8 1 rep確定
 

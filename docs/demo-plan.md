@@ -254,6 +254,18 @@ lock target: MICHIZURE Demo SNS
 
 ## 10. Main demo script
 
+### Phase 4 smoke（monitor導入前）
+
+1. Auth / Firestore EmulatorとDevice Owner設定済み`emulator-5554`を起動する。
+2. ログインし、Group所属とDevice Setup全項目、封印対象1件以上を確認する。
+3. Task画面で「勉強する / 1分」を開始し、Running画面のcountdownを確認する。
+4. process終了相当の`adb shell am force-stop com.kren.michizure`を実行する。
+5. `adb shell monkey -p com.kren.michizure 1`またはlauncherから再起動し、保存counterではなく`expectedEndAt`から短くなった残時間が復元されることを確認する。
+6. 期限後にTaskがsucceededへ収束し、Homeへ戻れることを確認する。
+7. 別Taskを開始し「失敗として中断」を選び、失敗結果と`group人数 × 10`回のDebt生成を確認する。
+
+Phase 4ではforeign app自動検知、Foreground Service、package suspensionをまだ実装していない。別アプリ遷移によるfailure smokeはPhase 5以降で実施する。`am force-stop`は通常のprocess killより強くreceiver/serviceも停止するため、Phase 5のguard復元保証とは分けて記録する。
+
 ### Scene 1: Group
 
 1. Aでregister/loginしgroup作成。

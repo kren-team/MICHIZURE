@@ -1,4 +1,30 @@
 {
-  "indexes": [],
-  "fieldOverrides": []
+  "indexes": [
+    {
+      "collectionGroup": "taskSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "taskSessions",
+      "fieldPath": "content",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskSessions",
+      "fieldPath": "failureEventId",
+      "indexes": []
+    }
+  ]
 }
