@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/domain/auth_user.dart';
 import '../features/auth/infrastructure/firebase_auth_repository.dart';
+import '../features/enforcement/domain/device_control_repository.dart';
+import '../features/enforcement/infrastructure/device_control_channel.dart';
 import '../features/group/domain/group.dart';
 import '../features/group/domain/group_invite.dart';
 import '../features/group/domain/group_member.dart';
@@ -25,6 +27,12 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 final authStateProvider = StreamProvider<AuthUser?>((ref) {
   return ref.watch(authRepositoryProvider).authStateChanges();
+});
+
+final deviceControlRepositoryProvider = Provider<DeviceControlRepository>((
+  ref,
+) {
+  return MethodChannelDeviceControlRepository();
 });
 
 final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
