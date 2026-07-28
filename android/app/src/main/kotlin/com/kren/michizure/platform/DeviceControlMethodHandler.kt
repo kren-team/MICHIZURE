@@ -77,7 +77,18 @@ class DeviceControlMethodHandler(
             }
             DeviceControlContract.METHOD_GET_SELECTED_PACKAGES -> {
                 scope.launch {
-                    runCatching { selectedPackageStore.read() }
+                    runCatching {
+                        val stored = selectedPackageStore.read()
+                        val selectable =
+                            packageCatalog.listLockableApps()
+                                .filter { it.isSelectable }
+                                .mapTo(linkedSetOf()) { it.packageName }
+                        val reconciled = stored.intersect(selectable)
+                        if (reconciled != stored) {
+                            selectedPackageStore.save(reconciled)
+                        }
+                        reconciled
+                    }
                         .onSuccess { packages ->
                             postSuccess(
                                 result,

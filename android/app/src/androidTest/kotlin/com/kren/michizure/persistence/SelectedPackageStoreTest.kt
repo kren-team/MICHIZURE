@@ -15,9 +15,14 @@ class SelectedPackageStoreTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val firstStore = SelectedPackageStore(context)
         val expected = setOf("demo.social", "demo.video")
+        val original = firstStore.read()
 
-        firstStore.save(expected)
+        try {
+            firstStore.save(expected)
 
-        assertEquals(expected, SelectedPackageStore(context).read())
+            assertEquals(expected, SelectedPackageStore(context).read())
+        } finally {
+            firstStore.save(original)
+        }
     }
 }
