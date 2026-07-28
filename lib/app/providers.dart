@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/time/clock.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/domain/auth_user.dart';
 import '../features/auth/infrastructure/firebase_auth_repository.dart';
@@ -16,6 +17,12 @@ import '../features/group/infrastructure/secure_invite_token_generator.dart';
 import '../features/profile/domain/profile_repository.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/profile/infrastructure/firestore_profile_repository.dart';
+import '../features/task/application/start_task.dart';
+import '../features/task/application/task_event_id_generator.dart';
+import '../features/task/domain/task_repository.dart';
+import '../features/task/domain/task_session.dart';
+import '../features/task/infrastructure/firestore_task_repository.dart';
+import '../features/task/infrastructure/secure_task_event_id_generator.dart';
 
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
   return FirebaseAuth.instance;
@@ -38,6 +45,8 @@ final deviceControlRepositoryProvider = Provider<DeviceControlRepository>((
 final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
   return FirebaseFirestore.instance;
 });
+
+final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return FirestoreProfileRepository(ref.watch(firebaseFirestoreProvider));
@@ -76,4 +85,37 @@ final currentGroupMembersProvider = StreamProvider<List<GroupMember>>((ref) {
     return Stream.value(const []);
   }
   return ref.watch(groupRepositoryProvider).watchMembers(groupId);
+});
+
+final taskRepositoryProvider = Provider<TaskRepository>((ref) {
+  return FirestoreTaskRepository(
+    ref.watch(firebaseFirestoreProvider),
+    ref.watch(clockProvider),
+  );
+});
+
+final taskEventIdGeneratorProvider = Provider<TaskEventIdGenerator>((ref) {
+  return SecureTaskEventIdGenerator();
+});
+
+final startTaskProvider = Provider<StartTask>((ref) {
+  return StartTask(
+    ref.watch(taskRepositoryProvider),
+    ref.watch(deviceControlRepositoryProvider),
+  );
+});
+
+final activeTaskSessionProvider = StreamProvider<TaskSession?>((ref) {
+  final profile = ref.watch(currentProfileProvider);
+  return profile.when(
+    loading: () => const Stream.empty(),
+    error: (error, stackTrace) => Stream.error(error, stackTrace),
+    data: (value) {
+      final taskId = value?.activeTaskSessionId;
+      if (taskId == null) {
+        return Stream.value(null);
+      }
+      return ref.watch(taskRepositoryProvider).watchTask(taskId);
+    },
+  );
 });
