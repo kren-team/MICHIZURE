@@ -42,6 +42,8 @@ Phase 5のTask GuardはUsageEvents履歴をKotlin process内だけで短時間�
 
 Phase 6はFirestoreでTask failureとsame-ID Debtが確定した後、Task開始時のnative package snapshotからDebt ID別obligationを作る。package一覧、DPMの失敗package名、owned suspensionはlocal DataStoreだけに保存し、Platform Channelは件数とtyped codeだけを返す。offline中はPhase 5 outboxを保持するが、cloud確定前にはlockしないため、network断中の即時強制は今回の要件選択では保証しない。
 
+Phase 9はCameraXの`ImageProxy`をML Kit callback完了時にcloseし、landmarkから得た角度・状態もsession memoryだけに保持する。Native→Dart契約はquality、FSM state、stable rep identity、latencyだけをfield allowlistで受け付け、frame、bitmap、landmark、skeleton座標の追加fieldを拒否する。Firestoreへ渡るのはPhase 8で定義済みの1 rep Contributionだけである。
+
 ## 3. Threat model
 
 | Threat | MVP対策 | 残余リスク / Production |

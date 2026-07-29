@@ -1,10 +1,10 @@
-# NEXT TASK: Phase 9 `feature/squat-detection`
+# NEXT TASK: Phase 10 `feature/recovery-reconciliation`
 
 ## 目的
 
-CameraX + ML Kit Pose DetectionをAndroid端末内で実行し、Kotlinの決定的な状態機械が受理したスクワット1回をPhase 8の`ContributionController.recordAcceptedRep()`へ渡す。
+Phase 4〜9で実装したTask、native failure outbox、Debt、App Lock obligation、Contribution outboxを、Activity再生成、process death、reboot、network再接続後に同じstable IDへ安全に収束させる。
 
-Camera画像・動画・raw landmarkは保存せず、外部送信しない。Phase 8のFirestore transaction、Outbox、Debt realtime、App Lock解除を作り直さない。
+Phase 11のデモpolish、seed、画面の大規模な装飾は実装しない。
 
 ## Branch
 
@@ -12,7 +12,7 @@ Camera画像・動画・raw landmarkは保存せず、外部送信しない。Ph
 git fetch origin
 git switch dev
 git pull --ff-only origin dev
-git switch -c feature/squat-detection
+git switch -c feature/recovery-reconciliation
 ```
 
 ## 最初に読む
@@ -20,102 +20,65 @@ git switch -c feature/squat-detection
 1. `AGENTS.md`
 2. `README.md`
 3. `docs/architecture.md`
-4. `docs/squat-detection.md`
-5. `docs/data-model.md`
+4. `docs/data-model.md`
+5. `docs/android-enforcement.md`
 6. `docs/state-management.md`
 7. `docs/security-privacy.md`
 8. `docs/testing.md`
 9. `docs/implementation-plan.md`
-10. `docs/adr/0004-on-device-pose-detection.md`
+10. 関連ADR
 
 ## In scope
 
-### Android / Kotlin
-
-- CameraX `Preview` + `ImageAnalysis`
-- `STRATEGY_KEEP_ONLY_LATEST`とsingle analyzer executor
-- ML Kit base Pose Detection bundled model / `STREAM_MODE`
-- frame rotation / front camera mirrorの正規化
-- landmark quality gate、side selection、angle / hip drop / velocity feature
-- median + EMA smoothing
-- `CALIBRATING → STANDING → DESCENDING → BOTTOM → ASCENDING → STANDING`
-- depth、ROM、minimum duration、hysteresis、refractoryによる1 cycle 1 rep
-- success / failure / cancellationを含む全pathで`ImageProxy.close()`
-- lifecycle-safe start / stop / duplicate command
-
-### Flutter / Native contract
-
-- versioned typed Method/Event Channel
-- Dartへ送るのはquality、FSM state、accepted rep event、最小latency metadataのみ
-- rep eventごとにstable `squatSessionId` + monotonic `sequence`
-- Phase 8の`ContributionRequest`へ変換し`recordAcceptedRep()`を呼ぶ
-- frame、bitmap、landmark列をPlatform Channelへ送らない
-
-### UI
-
-- Camera permissionとrationale
-- Squat setup、全身を映すガイド、calibration状態
-- preview、quality warning、detected / pending / confirmed
-- 選択したDebt IDと残回数
-- terminal Debt / route離脱でcameraとanalyzerを停止
-
-### Debug / test
-
-- synthetic feature/landmark sourceはdebug/test source setだけ
-- Fake rep commandをrelease artifactへ含めない
-- debug source使用時は明確なbanner
-- 実ユーザー画像・動画をfixtureにしない
+- app bootstrap時の段階的`RecoveryCoordinator`
+- running Taskとnative Task Guard contextの照合・復元
+- pending terminal eventのsame-ID再送とFirestore ack後削除
+- native lock obligationとDPM実状態のreconcile
+- active / terminal Debtとlocal obligationの照合
+- Contribution Outboxのauth user単位flush
+- offline / reconnect、Activity recreation、process recreation、package replace、boot
+- corrupted local stateのtyped degraded / fatal診断
+- wall clock / elapsed clock / boot discontinuityの既存policy適用
 
 ## Out of scope
 
-- Cloud/OpenAI画像判定
-- Camera frame / landmarkの保存・送信
-- 複数人tracking
-- Contribution transaction / Rulesの再設計
-- App Lock obligation方式の変更
-- Phase 10 recovery全般
-- Phase 11 polish
+- Debt / Contribution schemaの再設計
+- lock方式の変更
+- Camera判定thresholdの再調整
+- demo target、seed、golden、Phase 11 UI polish
+- Cloud Functions必須化
 
 ## 必須不変条件
 
-- 1 frameを1 repとして数えない。
-- STANDINGから始まりBOTTOMを経てSTANDINGへ戻った有効cycleだけ1 rep。
-- shallow motion、bottom bounce、tracking loss、極端なframe gapでcountしない。
-- frame / bitmap / raw landmarkはDart、Firestore、analytics、logへ出さない。
-- `ImageProxy`は全completion pathで必ずcloseする。
-- Phase 8の1 rep / immutable event / Outbox冪等性を維持する。
-- release buildにFake/Synthetic選択routeやdebug event commandを含めない。
+- stable task / debt / event IDを作り直さない。
+- remote terminal Taskをrunningへ戻さない。
+- pending eventはFirestore ackまたは正規terminal reject前に消さない。
+- terminal Debt 1件だけを理由に、他のactive obligationが要求するpackageを解除しない。
+- logoutやFirebase errorだけを理由にunsuspendしない。
+- Camera frame、package inventory、UsageEventsをrecovery payloadへ追加しない。
+- Firestoreを高頻度pollingしない。
 
 ## Acceptance Criteria
 
-- 有効なスクワットcycleだけが1つのPhase 8 eventを生成する。
-- shallow、jitter、二重bottom、tracking loss、しゃがみ開始で誤countしない。
-- Camera/ML Kit結果からUI counter反映までp95 500ms目標を計測できる。
-- permission拒否、camera unavailable、ML failureをtyped failureとして表示する。
-- route離脱・terminal Debt・process lifecycleでcamera resourceを解放する。
-- accepted repがpending / confirmed / rejectedへPhase 8経路で遷移する。
-- Android debug Emulatorではsynthetic sourceで決定的デモができ、releaseには含まれない。
+- running TaskがActivity / process再生成後にcountdownとTask Guardへ復元される。
+- offline中のnative terminal eventが再接続後にsame-ID Task / Debtへ収束する。
+- active lockがprocess / package replace / reboot後も維持される。
+- offline中にterminal化したDebtが再接続後に正しくobligation解除へ収束する。
+- pending Contributionが二重計上なしでflushされる。
+- local state破損やcapability喪失をクラッシュではなくtyped diagnosticとして表示する。
+- recovery matrixを自動テストし、force-stopと通常process killの保証差を報告する。
 
 ## Tests
 
-- Kotlin pure FSM table test: valid cycle、shallow、bounce、tracking loss、duration、ROM、refractory
-- feature / angle / smoothing / side-selection unit
-- analyzer: rotation、mirror、latest-frame、全path `ImageProxy.close`
-- Platform Channel contract/version/invalid payload
-- Flutter Widget: permission、calibration、quality、counter、pending/confirmed/rejected
-- Android instrumentation: CameraX lifecycle、ML Kit initialization、latency
-- release artifact / manifestにFake routeがないこと
-- Phase 1〜8回帰、Rules Test、Contribution統合テスト
-
-## 推奨commit分割
-
-1. `feat: Pose featureとquality gateを追加`
-2. `feat: スクワット状態機械を実装`
-3. `feat: CameraXとML Kitを統合`
-4. `feat: Squat native contractとUIを接続`
-5. `test: スクワット誤検出とlifecycleを検証`
-6. `docs: Phase 9結果と次Phaseを更新`
+- Dart RecoveryCoordinator unit / provider lifecycle
+- Task / terminal outbox idempotency
+- Contribution Outbox duplicate / auth switch
+- Kotlin lock / Task context restoration
+- Activity recreation / process kill / `adb install -r` / reboot
+- network off→on
+- clock / boot discontinuity
+- Phase 1〜9回帰、Rules Test、Kotlin / instrumentation、debug APK build
 
 ## 停止条件
 
-Phase 9完了後は停止する。Phase 10 recovery / reconciliationは開始しない。
+Phase 10完了後は停止する。Phase 11 `feature/demo-polish`は開始しない。

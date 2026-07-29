@@ -363,6 +363,8 @@ Phase 7はDebt converter、remaining/overdue導出、providerのgroup切替・lo
 
 Phase 8はDomain/Application/Widget testでevent ID、strict converter、single-flight、offline pending、retry、Controller再生成後のOutbox復元、明示的Debt選択、safe typed failureを検証する。`firebase/rules-tests/src/contributions.test.js`はatomic 3-document write、duplicate immutable event、missing write、UID/group境界、delta/timestamp/extra field、49/50への20 client競合、5 user・50 rep集計を検証する。`integration_test/debt_contribution_test.dart`は3 FirebaseApp/Auth clientでduplicate no-op、最終1 rep競合、全clientのcompleted/summary realtime、Android DataStore-backed Outbox復元を検証する。
 
+Phase 9はpure Kotlinでangle / quality / side stickiness / rotation / mirror / frame leaseとFSMを検証する。FSM matrixには1/2/100 reps、浅い屈伸、bottom bounce、threshold jitter、順序不正、100ms/300ms tracking loss、frame gap、重複・逆順frame、500ms/7秒動作を含める。Flutterではversion mismatch、malformed / private payload、permission、session固定、native rep重複、Outbox、terminal Debt停止、start中route離脱を検証する。Android instrumentationではCAMERA宣言、ML Kit STREAM detector初期化、PlatformView相当のattach/detach、debug synthetic sequenceを検証する。
+
 ```bash
 firebase emulators:exec \
   --project demo-michizure \

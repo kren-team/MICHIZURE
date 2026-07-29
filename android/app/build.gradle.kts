@@ -26,6 +26,11 @@ android {
 
 dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+    val cameraXVersion = "1.6.1"
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
 
     testImplementation("junit:junit:4.13.2")
     // Keep aligned with Flutter's integration_test AndroidX Test baseline.
