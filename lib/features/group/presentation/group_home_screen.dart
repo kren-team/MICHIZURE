@@ -172,6 +172,13 @@ final class _GroupDashboardViewState
           label: const Text('Taskを始める'),
         ),
         const SizedBox(height: 12),
+        OutlinedButton.icon(
+          key: const Key('lock-status-route-button'),
+          onPressed: () => context.go('/lock-status'),
+          icon: const Icon(Icons.lock_outline),
+          label: const Text('アプリ封印状態'),
+        ),
+        const SizedBox(height: 12),
         FilledButton.icon(
           key: const Key('group-invite-route-button'),
           onPressed: command.isLoading

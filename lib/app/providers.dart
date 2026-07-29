@@ -7,6 +7,8 @@ import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/domain/auth_user.dart';
 import '../features/auth/infrastructure/firebase_auth_repository.dart';
 import '../features/enforcement/domain/device_control_repository.dart';
+import '../features/enforcement/domain/app_lock_repository.dart';
+import '../features/enforcement/infrastructure/app_lock_channel.dart';
 import '../features/enforcement/infrastructure/device_control_channel.dart';
 import '../features/group/domain/group.dart';
 import '../features/group/domain/group_invite.dart';
@@ -42,6 +44,10 @@ final deviceControlRepositoryProvider = Provider<DeviceControlRepository>((
   ref,
 ) {
   return MethodChannelDeviceControlRepository();
+});
+
+final appLockRepositoryProvider = Provider<AppLockRepository>((ref) {
+  return MethodChannelAppLockRepository();
 });
 
 final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {

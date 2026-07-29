@@ -7,22 +7,27 @@ import 'package:michizure/features/task/application/handle_native_task_event.dar
 import 'package:michizure/features/task/domain/native_task_guard.dart';
 import 'package:michizure/features/task/domain/task_failure.dart';
 import 'package:michizure/features/task/domain/task_session.dart';
+import 'package:michizure/features/enforcement/domain/enforcement_failure.dart';
 
 import '../support/fake_native_task_guard.dart';
 import '../support/fake_task_repository.dart';
+import '../../enforcement/support/fake_app_lock_repository.dart';
 
 void main() {
   late FakeTaskRepository tasks;
   late FakeNativeTaskGuard guard;
   late ProviderContainer container;
+  late FakeAppLockRepository appLock;
 
   setUp(() {
     tasks = FakeTaskRepository();
     guard = FakeNativeTaskGuard();
+    appLock = FakeAppLockRepository();
     container = ProviderContainer(
       overrides: [
         taskRepositoryProvider.overrideWithValue(tasks),
         nativeTaskGuardProvider.overrideWithValue(guard),
+        appLockRepositoryProvider.overrideWithValue(appLock),
       ],
     );
     addTearDown(container.dispose);
@@ -40,6 +45,7 @@ void main() {
       await _flush();
 
       expect(tasks.failCalls, 1);
+      expect(appLock.applyCalls, 1);
       expect(tasks.lastFailureEventId, 'native-event-1');
       expect(guard.acknowledgedEventIds, ['native-event-1']);
       expect(
@@ -51,6 +57,7 @@ void main() {
       await _flush();
       expect(tasks.failCalls, 1);
       expect(guard.acknowledgeCalls, 1);
+      expect(appLock.applyCalls, 1);
     },
   );
 
@@ -68,6 +75,22 @@ void main() {
   );
 
   test(
+    'Firestore-confirmed replay applies lock before native acknowledgement',
+    () async {
+      final terminal = _failedForNativeEvent();
+      tasks.taskStream = Stream.value(terminal);
+      container.read(taskGuardControllerProvider);
+
+      guard.emit(_failureEvent(terminal));
+      await _flush();
+
+      expect(tasks.failCalls, 1);
+      expect(appLock.applyCalls, 1);
+      expect(guard.acknowledgedEventIds, ['native-event-1']);
+    },
+  );
+
+  test(
     'offline failure stays pending and retry uses the same event ID',
     () async {
       tasks.failError = const TaskFailure(TaskFailureKind.offline);
@@ -80,6 +103,7 @@ void main() {
 
       expect(tasks.failCalls, 1);
       expect(guard.acknowledgeCalls, 0);
+      expect(appLock.applyCalls, 0);
       expect(
         container.read(taskGuardControllerProvider).phase,
         TaskGuardPhase.retryNeeded,
@@ -89,6 +113,7 @@ void main() {
       await controller.retry();
 
       expect(tasks.failCalls, 2);
+      expect(appLock.applyCalls, 1);
       expect(tasks.lastFailureEventId, 'native-event-1');
       expect(guard.acknowledgedEventIds, ['native-event-1']);
     },
@@ -109,8 +134,35 @@ void main() {
       await _flush();
 
       expect(tasks.succeedCalls, 1);
+      expect(appLock.applyCalls, 0);
       completer.complete();
       await _flush();
+      expect(guard.acknowledgeCalls, 1);
+    },
+  );
+
+  test(
+    'lock capability failure keeps the native event pending for retry',
+    () async {
+      appLock.error = const EnforcementFailure(
+        EnforcementFailureKind.notDeviceOwner,
+      );
+      final controller = container.read(taskGuardControllerProvider.notifier);
+      final task = runningTaskFixture();
+      await controller.ensureStarted(task);
+
+      guard.emit(_failureEvent(task));
+      await _flush();
+
+      expect(tasks.failCalls, 1);
+      expect(appLock.applyCalls, 1);
+      expect(guard.acknowledgeCalls, 0);
+
+      appLock.error = null;
+      await controller.retry();
+
+      expect(tasks.failCalls, 2);
+      expect(appLock.applyCalls, 2);
       expect(guard.acknowledgeCalls, 1);
     },
   );
@@ -179,4 +231,26 @@ NativeTaskEvent _deadlineEvent(TaskSession task) {
 Future<void> _flush() async {
   await Future<void>.delayed(Duration.zero);
   await Future<void>.delayed(Duration.zero);
+}
+
+TaskSession _failedForNativeEvent() {
+  final failed = failedTaskFixture();
+  return TaskSession(
+    id: failed.id,
+    ownerUid: failed.ownerUid,
+    groupId: failed.groupId,
+    content: failed.content,
+    durationSeconds: failed.durationSeconds,
+    startedAt: failed.startedAt,
+    serverRecordedAt: failed.serverRecordedAt,
+    expectedEndAt: failed.expectedEndAt,
+    status: failed.status,
+    endedAt: failed.endedAt,
+    failureReason: TaskFailureReason.foreignAppForeground,
+    failureEventId: 'native-event-1',
+    groupMemberCountAtFailure: failed.groupMemberCountAtFailure,
+    debtId: failed.debtId,
+    lockDurationSeconds: failed.lockDurationSeconds,
+    guardConfigVersion: failed.guardConfigVersion,
+  );
 }

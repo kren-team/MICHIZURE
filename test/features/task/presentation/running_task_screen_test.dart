@@ -10,6 +10,7 @@ import 'package:michizure/features/task/presentation/running_task_screen.dart';
 
 import '../support/fake_task_repository.dart';
 import '../support/fake_native_task_guard.dart';
+import '../../enforcement/support/fake_app_lock_repository.dart';
 
 void main() {
   testWidgets('restores a running Task from expectedEndAt midway', (
@@ -105,6 +106,7 @@ Future<void> _pumpRunning(
       overrides: [
         taskRepositoryProvider.overrideWithValue(repository),
         nativeTaskGuardProvider.overrideWithValue(taskGuard),
+        appLockRepositoryProvider.overrideWithValue(FakeAppLockRepository()),
         activeTaskSessionProvider.overrideWithValue(AsyncData(task)),
         clockProvider.overrideWithValue(clock),
       ],
