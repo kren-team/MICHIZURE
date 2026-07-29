@@ -47,7 +47,16 @@ class SquatMethodHandler(
             }
             SquatContract.METHOD_START_SESSION -> startSession(call.arguments, result)
             SquatContract.METHOD_STOP_SESSION -> {
+                val payload = call.arguments as? Map<*, *>
                 val id = stringArgument(call.arguments, "squatSessionId")
+                if (payload?.containsKey("squatSessionId") == true && id == null) {
+                    result.error(
+                        SquatContract.ERROR_CONTRACT_MISMATCH,
+                        "The squat stop payload is invalid.",
+                        SquatContract.versioned(),
+                    )
+                    return
+                }
                 result.success(
                     SquatContract.versioned(
                         mapOf(

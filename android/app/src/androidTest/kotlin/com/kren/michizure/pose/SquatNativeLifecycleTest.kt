@@ -16,6 +16,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class SquatNativeLifecycleTest {
@@ -102,6 +104,56 @@ class SquatNativeLifecycleTest {
 
         assertEquals(1, updates.count { it.repCompleted })
         assertEquals(1, detector.repSequence)
+    }
+
+    @Test
+    fun cameraProviderFailureIsDeliveredAsTypedEvent() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        val owner = TestLifecycleOwner()
+        val failureDelivered = CountDownLatch(1)
+        val events = mutableListOf<Map<String, Any?>>()
+        lateinit var manager: SquatSessionManager
+
+        SquatEventBus.setListener { event ->
+            events += event
+            if (event["type"] == "detectorError") failureDelivered.countDown()
+        }
+        try {
+            instrumentation.runOnMainSync {
+                owner.resume()
+                manager =
+                    SquatSessionManager(owner) { _, _, _, onFailure ->
+                        object : PoseSource {
+                            override fun start() {
+                                onFailure("cameraUnavailable")
+                            }
+
+                            override fun close() = Unit
+                        }
+                    }
+                val preview = PreviewView(context)
+                manager.attachPreview(preview)
+                manager.start(
+                    NativeSquatSession(
+                        squatSessionId = "session-12345678",
+                        debtId = "debt-1",
+                    ),
+                )
+            }
+
+            assertTrue(failureDelivered.await(2, TimeUnit.SECONDS))
+            val failure = events.single { it["type"] == "detectorError" }
+            assertEquals("cameraUnavailable", failure["code"])
+            assertEquals("session-12345678", failure["squatSessionId"])
+        } finally {
+            instrumentation.runOnMainSync {
+                manager.close()
+                owner.destroy()
+            }
+            SquatEventBus.setListener(null)
+        }
     }
 }
 

@@ -6,6 +6,7 @@ final class FakeSquatDetector implements SquatDetector {
   final controller = StreamController<SquatDetectorEvent>.broadcast();
   CameraPermissionState permission = CameraPermissionState.granted;
   SquatDetectorFailure? failure;
+  Completer<void>? startBlocker;
   final List<SquatDetectorSession> starts = [];
   final List<String?> stops = [];
 
@@ -33,6 +34,7 @@ final class FakeSquatDetector implements SquatDetector {
   Future<void> start(SquatDetectorSession session) async {
     if (failure case final value?) throw value;
     starts.add(session);
+    await startBlocker?.future;
   }
 
   @override

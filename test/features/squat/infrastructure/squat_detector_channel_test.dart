@@ -120,6 +120,29 @@ void main() {
         () => detector.parseEvent({'contractVersion': 2, 'eventId': 'bad'}),
         throwsA(isA<SquatDetectorFailure>()),
       );
+      for (final invalidIdentity in [
+        {'eventId': 'session-12345678_2'},
+        {'detectorType': 'synthetic'},
+        {'squatSessionId': 'short'},
+      ]) {
+        expect(
+          () => detector.parseEvent({
+            'contractVersion': 1,
+            'type': 'repCompleted',
+            'eventId': 'session-12345678_1',
+            'occurredAtEpochMs': 1_000,
+            'squatSessionId': 'session-12345678',
+            'sequence': 1,
+            'detectorType': 'mlkit',
+            'detectorVersion': 'squat-v1',
+            'frameObservedElapsedMs': 500,
+            'uiEmittedElapsedMs': 550,
+            'analysisLatencyMs': 50,
+            ...invalidIdentity,
+          }),
+          throwsA(isA<SquatDetectorFailure>()),
+        );
+      }
     },
   );
 }

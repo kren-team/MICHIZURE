@@ -16,7 +16,7 @@ class SquatSessionManager(
         PreviewView,
         LifecycleOwner,
         (PoseFeatureResult, Long) -> Unit,
-        () -> Unit,
+        (String) -> Unit,
     ) -> PoseSource = { view, owner, onFrame, onFailure ->
         CameraMlKitPoseSource(
             context = view.context.applicationContext,
@@ -182,14 +182,14 @@ class SquatSessionManager(
     }
 
     @Synchronized
-    private fun onDetectorFailure() {
+    private fun onDetectorFailure(code: String) {
         val current = session ?: return
         emit(
             type = "detectorError",
             values =
                 mapOf(
                     "squatSessionId" to current.squatSessionId,
-                    "code" to "poseDetectionFailed",
+                    "code" to code,
                 ),
         )
     }

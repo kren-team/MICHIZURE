@@ -68,11 +68,51 @@ class PoseFeatureExtractorTest {
         assertEquals(0.85, result.sample.confidence, 0.001)
     }
 
+    @Test
+    fun keepsTheSelectedSideBrieflyBeforeSwitching() {
+        val first =
+            extractor.extract(
+                frame(
+                    timestampMs = 1_000,
+                    left = standingSide(confidence = 0.90),
+                    right = standingSide(confidence = 0.70),
+                ),
+            ) as PoseFeatureResult.Valid
+        val sticky =
+            extractor.extract(
+                frame(
+                    timestampMs = 1_300,
+                    left = standingSide(confidence = 0.70),
+                    right = standingSide(confidence = 0.95),
+                ),
+            ) as PoseFeatureResult.Valid
+        val switched =
+            extractor.extract(
+                frame(
+                    timestampMs = 1_600,
+                    left = standingSide(confidence = 0.70),
+                    right = standingSide(confidence = 0.95),
+                ),
+            ) as PoseFeatureResult.Valid
+
+        assertEquals(PoseSide.LEFT, first.sample.selectedSide)
+        assertEquals(PoseSide.LEFT, sticky.sample.selectedSide)
+        assertEquals(PoseSide.RIGHT, switched.sample.selectedSide)
+    }
+
+    @Test
+    fun noPoseIsInvalid() {
+        val result = extractor.extract(frame(left = null))
+
+        assertTrue(result is PoseFeatureResult.Invalid)
+    }
+
     private fun frame(
         left: BodySideLandmarks?,
         right: BodySideLandmarks? = null,
+        timestampMs: Long = 1_000,
     ) = PoseLandmarkFrame(
-        timestampMs = 1_000,
+        timestampMs = timestampMs,
         imageWidth = 400,
         imageHeight = 400,
         left = left,

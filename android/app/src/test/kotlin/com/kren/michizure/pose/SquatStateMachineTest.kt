@@ -144,6 +144,22 @@ class SquatStateMachineTest {
         assertEquals(0, detector.repSequence)
     }
 
+    @Test
+    fun oneHundredValidCyclesProduceExactlyOneHundredReps() {
+        val detector = calibratedDetector()
+        val updates = mutableListOf<SquatDetectorUpdate>()
+        var start = 1_100L
+        repeat(100) {
+            updates += validRep(detector, start)
+            val finalStanding = start + 1_150
+            detector.valid(finalStanding + 250, 170.0, 160.0, 0.25)
+            start = finalStanding + 500
+        }
+
+        assertEquals(100, updates.count { it.repCompleted })
+        assertEquals(100, detector.repSequence)
+    }
+
     private fun calibratedDetector(): SquatStateMachine {
         val detector = SquatStateMachine(config)
         repeat(11) { index ->

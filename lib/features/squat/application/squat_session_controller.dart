@@ -104,6 +104,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
   StreamSubscription<SquatDetectorEvent>? _eventSubscription;
   final Set<String> _processedRepEvents = {};
   bool _commandInFlight = false;
+  bool _stopRequested = false;
   late SquatDetector _detector;
   String? _activeSessionId;
 
@@ -150,6 +151,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
   Future<void> requestPermission() async {
     if (_commandInFlight) return;
     _commandInFlight = true;
+    _stopRequested = false;
     state = state.copyWith(
       status: SquatSessionStatus.requestingPermission,
       clearFailure: true,
@@ -187,6 +189,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
       return false;
     }
     _commandInFlight = true;
+    _stopRequested = false;
     final sessionId = ref.read(squatSessionIdGeneratorProvider).generate();
     state = state.copyWith(
       status: SquatSessionStatus.starting,
@@ -204,6 +207,15 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
         SquatDetectorSession(squatSessionId: sessionId, debtId: debtId),
       );
       if (!ref.mounted) return false;
+      if (_stopRequested) {
+        await _detector.stop(squatSessionId: sessionId);
+        state = state.copyWith(
+          status: SquatSessionStatus.idle,
+          clearSession: true,
+          clearWarning: true,
+        );
+        return false;
+      }
       _activeSessionId = sessionId;
       state = state.copyWith(status: SquatSessionStatus.running);
       return true;
@@ -222,7 +234,11 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
   }
 
   Future<void> stop() async {
-    if (_commandInFlight || state.squatSessionId == null) return;
+    if (state.squatSessionId == null) return;
+    if (_commandInFlight) {
+      _stopRequested = true;
+      return;
+    }
     _commandInFlight = true;
     final sessionId = state.squatSessionId;
     state = state.copyWith(status: SquatSessionStatus.stopping);
@@ -230,6 +246,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
       await _detector.stop(squatSessionId: sessionId);
       if (ref.mounted) {
         _activeSessionId = null;
+        _stopRequested = false;
         _processedRepEvents.clear();
         state = state.copyWith(
           status: SquatSessionStatus.idle,
@@ -289,11 +306,13 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
         unawaited(_recordRep(event));
       case SquatDetectorFailed():
         if (event.squatSessionId != sessionId) return;
-        state = state.copyWith(
-          failure: const SquatDetectorFailure(
-            SquatDetectorFailureReason.nativeUnavailable,
-          ),
-        );
+        final reason = event.code == 'cameraUnavailable'
+            ? SquatDetectorFailureReason.cameraUnavailable
+            : SquatDetectorFailureReason.nativeUnavailable;
+        state = state.copyWith(failure: SquatDetectorFailure(reason));
+        if (reason == SquatDetectorFailureReason.cameraUnavailable) {
+          unawaited(stop());
+        }
     }
   }
 

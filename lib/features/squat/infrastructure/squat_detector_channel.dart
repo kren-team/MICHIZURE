@@ -170,16 +170,11 @@ final class MethodChannelSquatDetector implements SquatDetector {
       );
     }
     return switch (raw['type']) {
-      'detectorReady' => SquatDetectorReady(
-        eventId: eventId,
-        occurredAt: occurredAt,
-        squatSessionId: _string(raw, 'squatSessionId'),
-        detectorVersion: _string(raw, 'detectorVersion'),
-      ),
+      'detectorReady' => _readyEvent(raw, eventId, occurredAt),
       'calibrating' || 'stateChanged' => SquatStateChanged(
         eventId: eventId,
         occurredAt: occurredAt,
-        squatSessionId: _string(raw, 'squatSessionId', fallback: _session(raw)),
+        squatSessionId: _sessionId(raw),
         state: _state(_string(raw, 'state')),
         analysisLatencyMs: _nonNegativeInt(
           raw,
@@ -190,24 +185,15 @@ final class MethodChannelSquatDetector implements SquatDetector {
       'qualityWarning' => SquatQualityChanged(
         eventId: eventId,
         occurredAt: occurredAt,
-        squatSessionId: _string(raw, 'squatSessionId'),
+        squatSessionId: _sessionId(raw),
         warning: _quality(raw['quality']),
         analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
       ),
-      'repCompleted' => SquatRepCompleted(
-        eventId: eventId,
-        occurredAt: occurredAt,
-        squatSessionId: _string(raw, 'squatSessionId'),
-        sequence: _positiveInt(raw, 'sequence'),
-        detectorVersion: _string(raw, 'detectorVersion'),
-        frameObservedElapsedMs: _nonNegativeInt(raw, 'frameObservedElapsedMs'),
-        uiEmittedElapsedMs: _nonNegativeInt(raw, 'uiEmittedElapsedMs'),
-        analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
-      ),
+      'repCompleted' => _repEvent(raw, eventId, occurredAt),
       'detectorError' => SquatDetectorFailed(
         eventId: eventId,
         occurredAt: occurredAt,
-        squatSessionId: _string(raw, 'squatSessionId'),
+        squatSessionId: _sessionId(raw),
         code: _string(raw, 'code'),
       ),
       _ => throw const SquatDetectorFailure(
@@ -216,10 +202,68 @@ final class MethodChannelSquatDetector implements SquatDetector {
     };
   }
 
-  String _session(Map<dynamic, dynamic> raw) {
-    final id = raw['eventId'] as String;
-    final separator = id.indexOf('_');
-    return separator > 0 ? id.substring(0, separator) : '';
+  SquatDetectorReady _readyEvent(
+    Map<dynamic, dynamic> raw,
+    String eventId,
+    DateTime occurredAt,
+  ) {
+    if (raw['detectorType'] != 'mlkit') {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return SquatDetectorReady(
+      eventId: eventId,
+      occurredAt: occurredAt,
+      squatSessionId: _sessionId(raw),
+      detectorVersion: _detectorVersion(raw),
+    );
+  }
+
+  SquatRepCompleted _repEvent(
+    Map<dynamic, dynamic> raw,
+    String eventId,
+    DateTime occurredAt,
+  ) {
+    final sessionId = _sessionId(raw);
+    final sequence = _positiveInt(raw, 'sequence');
+    if (sequence > 999999999 ||
+        raw['detectorType'] != 'mlkit' ||
+        eventId != '${sessionId}_$sequence') {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return SquatRepCompleted(
+      eventId: eventId,
+      occurredAt: occurredAt,
+      squatSessionId: sessionId,
+      sequence: sequence,
+      detectorVersion: _detectorVersion(raw),
+      frameObservedElapsedMs: _nonNegativeInt(raw, 'frameObservedElapsedMs'),
+      uiEmittedElapsedMs: _nonNegativeInt(raw, 'uiEmittedElapsedMs'),
+      analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
+    );
+  }
+
+  String _sessionId(Map<dynamic, dynamic> raw) {
+    final value = _string(raw, 'squatSessionId');
+    if (!_sessionIdPattern.hasMatch(value)) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value;
+  }
+
+  String _detectorVersion(Map<dynamic, dynamic> raw) {
+    final value = _string(raw, 'detectorVersion');
+    if (!_detectorVersionPattern.hasMatch(value)) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value;
   }
 
   String _string(Map<dynamic, dynamic> map, String key, {String? fallback}) {
@@ -299,4 +343,8 @@ final class MethodChannelSquatDetector implements SquatDetector {
     'eventId',
     'occurredAtEpochMs',
   };
+  static final RegExp _sessionIdPattern = RegExp(r'^[A-Za-z0-9-]{16,64}$');
+  static final RegExp _detectorVersionPattern = RegExp(
+    r'^[A-Za-z0-9._-]{1,40}$',
+  );
 }

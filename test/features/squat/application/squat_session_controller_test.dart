@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
@@ -130,6 +132,28 @@ void main() {
     await _settle(10);
 
     expect(repository.requests, hasLength(1));
+  });
+
+  test('route leave during native start releases the camera session', () async {
+    final blocker = Completer<void>();
+    final detector = FakeSquatDetector()..startBlocker = blocker;
+    final container = _container(detector, FakeContributionRepository());
+    addTearDown(() async {
+      container.dispose();
+      await detector.close();
+    });
+    final controller = container.read(squatSessionControllerProvider.notifier);
+    container.read(contributionControllerProvider);
+    await _settle();
+
+    final starting = controller.start(debtId: 'debt-a', remainingReps: 1);
+    await _settle();
+    await controller.stop();
+    blocker.complete();
+
+    expect(await starting, isFalse);
+    expect(detector.stops, [sessionId]);
+    expect(container.read(squatSessionControllerProvider).isRunning, isFalse);
   });
 }
 

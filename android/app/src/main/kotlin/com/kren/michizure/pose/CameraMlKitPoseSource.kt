@@ -24,7 +24,7 @@ class CameraMlKitPoseSource(
     private val lifecycleOwner: LifecycleOwner,
     private val previewView: PreviewView,
     private val onFrame: (PoseFeatureResult, Long) -> Unit,
-    private val onFailure: () -> Unit,
+    private val onFailure: (String) -> Unit,
 ) : PoseSource {
     private val analyzerExecutor: ExecutorService =
         Executors.newSingleThreadExecutor { runnable ->
@@ -50,7 +50,7 @@ class CameraMlKitPoseSource(
                     val provider = future.get()
                     cameraProvider = provider
                     bind(provider)
-                }.onFailure { onFailure() }
+                }.onFailure { onFailure("cameraUnavailable") }
             },
             ContextCompat.getMainExecutor(context),
         )
@@ -138,7 +138,7 @@ class CameraMlKitPoseSource(
                         .coerceAtLeast(0)
                 onFrame(extractor.extract(frame), latencyMs)
             }
-            .addOnFailureListener { onFailure() }
+            .addOnFailureListener { onFailure("poseDetectionFailed") }
             .addOnCompleteListener {
                 lease.close()
             }
