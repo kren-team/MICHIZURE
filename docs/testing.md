@@ -365,6 +365,10 @@ Phase 8はDomain/Application/Widget testでevent ID、strict converter、single-
 
 Phase 9はpure Kotlinでangle / quality / side stickiness / rotation / mirror / frame leaseとFSMを検証する。FSM matrixには1/2/100 reps、浅い屈伸、bottom bounce、threshold jitter、順序不正、100ms/300ms tracking loss、frame gap、重複・逆順frame、500ms/7秒動作を含める。Flutterではversion mismatch、malformed / private payload、permission、session固定、native rep重複、Outbox、terminal Debt停止、start中route離脱を検証する。Android instrumentationではCAMERA宣言、ML Kit STREAM detector初期化、PlatformView相当のattach/detach、debug synthetic sequenceを検証する。
 
+Phase 10はDartでAuthの恒久invalid / temporary offline、running / overdue / terminal / missing Task、pending native event、terminal / missing Debt、Contribution pending / duplicate / terminal reject、partial failure、duplicate / concurrent recoveryをfake clock / storeで検証する。Kotlin JVMではlocked boot defer、stale service停止、pending event保持、duplicate start、DPM desired/actual差、複数obligation union、partial failure、Device Owner喪失、uninstall/reinstall、corrupt stateを検証する。instrumentationではreceiverのprivate / direct-boot宣言、device-protected mirror、managed EmulatorのDPM実状態を確認する。
+
+通常process killはmanual launch / boot receiverで復元する。`am force-stop`はAndroid stopped stateのため同じ保証に含めず、次回ユーザー起動時のreconcileだけを確認する。Recovery smokeでAVD wipe、app data clear、Device Owner解除は行わない。
+
 ```bash
 firebase emulators:exec \
   --project demo-michizure \

@@ -7,6 +7,7 @@ import '../../enforcement/application/app_lock_controller.dart';
 import '../../enforcement/domain/app_lock.dart';
 import '../domain/debt.dart';
 import '../domain/debt_failure.dart';
+import 'debt_expiration_controller.dart';
 
 final debtLockReleaseControllerProvider =
     NotifierProvider<DebtLockReleaseController, DebtLockReleaseState>(
@@ -76,6 +77,14 @@ final class DebtLockReleaseController extends Notifier<DebtLockReleaseState> {
           .watchFailedUserActiveDebts(userId)
           .listen(
             (snapshot) {
+              unawaited(
+                ref
+                    .read(debtExpirationControllerProvider.notifier)
+                    .expireOverdue(
+                      snapshot.value,
+                      ref.read(clockProvider).now().toUtc(),
+                    ),
+              );
               for (final debt in snapshot.value) {
                 _trackDebt(debt.id, userId, generation);
               }

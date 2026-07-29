@@ -44,6 +44,8 @@ Phase 6はFirestoreでTask failureとsame-ID Debtが確定した後、Task開始
 
 Phase 9はCameraXの`ImageProxy`をML Kit callback完了時にcloseし、landmarkから得た角度・状態もsession memoryだけに保持する。Native→Dart契約はquality、FSM state、stable rep identity、latencyだけをfield allowlistで受け付け、frame、bitmap、landmark、skeleton座標の追加fieldを拒否する。Firestoreへ渡るのはPhase 8で定義済みの1 rep Contributionだけである。
 
+Phase 10のdevice-protected boot snapshotにはactive lock obligationのstable ID、Task ID、選択済みpackage snapshot、絶対/elapsed期限、boot count、MICHIZURE-owned suspensionだけを保存する。全installed-app inventory、UsageEvents、Task本文、Auth情報、Camera / pose dataは複製しない。Recoveryは既存Rules対象のowner pointer、Task、Debtだけをserver sourceで読み、Rulesやwrite権限を広げない。Authの一時network failureではlogoutせず、恒久invalid credentialだけをtyped codeでsign outする。logoutはlock stateの削除理由にしない。
+
 ## 3. Threat model
 
 | Threat | MVP対策 | 残余リスク / Production |

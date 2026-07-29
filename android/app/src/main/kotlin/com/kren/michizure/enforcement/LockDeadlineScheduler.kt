@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.kren.michizure.monitoring.TaskGuardRecovery
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,10 +58,16 @@ class LockReconcileReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                LockCoordinator(context.applicationContext).reconcile()
-            } catch (_: Exception) {
-                // The persisted degraded state is surfaced on the next Flutter
-                // reconciliation. A boot/deadline broadcast must not crash the DPC.
+                // Lock and Task recovery are independent. One degraded feature
+                // must not prevent the other from converging.
+                runCatching {
+                    LockCoordinator(context.applicationContext).reconcile()
+                }
+                if (intent.action in taskRecoveryActions) {
+                    runCatching {
+                        TaskGuardRecovery(context.applicationContext).reconcile()
+                    }
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -72,7 +79,18 @@ class LockReconcileReceiver : BroadcastReceiver() {
         private val supportedActions =
             setOf(
                 ACTION_DEADLINE,
+                Intent.ACTION_LOCKED_BOOT_COMPLETED,
                 Intent.ACTION_BOOT_COMPLETED,
+                Intent.ACTION_USER_UNLOCKED,
+                Intent.ACTION_MY_PACKAGE_REPLACED,
+                Intent.ACTION_PACKAGE_ADDED,
+                Intent.ACTION_PACKAGE_REMOVED,
+                Intent.ACTION_PACKAGE_REPLACED,
+            )
+        private val taskRecoveryActions =
+            setOf(
+                Intent.ACTION_BOOT_COMPLETED,
+                Intent.ACTION_USER_UNLOCKED,
                 Intent.ACTION_MY_PACKAGE_REPLACED,
             )
     }

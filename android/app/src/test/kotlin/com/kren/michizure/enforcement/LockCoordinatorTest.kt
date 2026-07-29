@@ -115,6 +115,44 @@ class LockCoordinatorTest {
         assertEquals(2, suspender.applyCalls)
     }
 
+    @Test
+    fun staleOwnedRecordIsRemovedWhenOsNoLongerReportsSuspension() = runBlocking {
+        store.state =
+            PersistedLockState(
+                ownedSuspensions = setOf("stale.app"),
+            )
+
+        val result = coordinator(setOf("unused.app")).reconcile()
+
+        assertTrue(result.state.ownedSuspensions.isEmpty())
+        assertEquals(0, suspender.releaseCalls)
+    }
+
+    @Test
+    fun packageUninstallStaysDegradedAndReinstallIsResuspended() = runBlocking {
+        val coordinator = coordinator(setOf("social.app"))
+        coordinator.applyObligation("debt-a", "task-a", 1_000, 20_000)
+        suspender.unavailable = setOf("social.app")
+        suspender.suspended.clear()
+
+        val uninstalled = coordinator.reconcile()
+
+        assertEquals(
+            LockLocalState.DEGRADED,
+            uninstalled.state.obligations.getValue("debt-a").localState,
+        )
+        assertTrue(uninstalled.state.ownedSuspensions.isEmpty())
+
+        suspender.unavailable = emptySet()
+        val reinstalled = coordinator.reconcile()
+
+        assertEquals(
+            LockLocalState.ENFORCED,
+            reinstalled.state.obligations.getValue("debt-a").localState,
+        )
+        assertTrue("social.app" in reinstalled.state.ownedSuspensions)
+    }
+
     private fun coordinator(
         packages: Set<String>,
         taskId: String = "task-a",
@@ -156,6 +194,7 @@ private class InMemoryLockStateStore : LockStateStore {
 private class FakePackageSuspender : PackageSuspender {
     var deviceOwner = true
     var failOnApply: Set<String> = emptySet()
+    var unavailable: Set<String> = emptySet()
     var beforeChange: (() -> Unit)? = null
     val suspended = linkedSetOf<String>()
     var applyCalls = 0
@@ -168,6 +207,7 @@ private class FakePackageSuspender : PackageSuspender {
             requestedPackages = packageNames,
             changedPackages = suspended.intersect(packageNames),
             failedPackages = emptySet(),
+            unavailablePackages = unavailable.intersect(packageNames),
         )
     }
 
@@ -179,7 +219,12 @@ private class FakePackageSuspender : PackageSuspender {
             return PackageSuspensionResult(emptySet(), emptySet(), emptySet())
         }
         beforeChange?.invoke()
-        val failed = if (suspended) packageNames.intersect(failOnApply) else emptySet()
+        val failed =
+            if (suspended) {
+                packageNames.intersect(failOnApply + unavailable)
+            } else {
+                emptySet()
+            }
         val changed = packageNames - failed
         if (suspended) {
             applyCalls += 1

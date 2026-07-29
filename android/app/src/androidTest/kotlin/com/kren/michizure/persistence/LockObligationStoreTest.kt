@@ -36,9 +36,12 @@ class LockObligationStoreTest {
             }
 
             val restored = LockObligationStore(context).read()
+            val bootRestored = DeviceProtectedLockStateStore(context).read()
 
             assertEquals(obligation, restored.obligations[debtId])
             assertEquals(true, "example.target" in restored.ownedSuspensions)
+            assertEquals(obligation, bootRestored.obligations[debtId])
+            assertEquals(true, "example.target" in bootRestored.ownedSuspensions)
             first.update {
                 it.copy(
                     obligations = it.obligations - debtId,

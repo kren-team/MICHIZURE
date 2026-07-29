@@ -26,6 +26,10 @@ import '../features/group/infrastructure/secure_invite_token_generator.dart';
 import '../features/profile/domain/profile_repository.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/profile/infrastructure/firestore_profile_repository.dart';
+import '../features/recovery/application/recovery_coordinator.dart';
+import '../features/recovery/domain/recovery.dart';
+import '../features/recovery/infrastructure/firebase_recovery_auth_gateway.dart';
+import '../features/recovery/infrastructure/firestore_recovery_remote_store.dart';
 import '../features/squat/domain/squat_detector.dart';
 import '../features/squat/infrastructure/secure_squat_session_id_generator.dart';
 import '../features/squat/infrastructure/squat_detector_channel.dart';
@@ -65,6 +69,14 @@ final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
 });
 
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
+
+final recoveryAuthGatewayProvider = Provider<RecoveryAuthGateway>((ref) {
+  return FirebaseRecoveryAuthGateway(ref.watch(firebaseAuthProvider));
+});
+
+final recoveryRemoteStoreProvider = Provider<RecoveryRemoteStore>((ref) {
+  return FirestoreRecoveryRemoteStore(ref.watch(firebaseFirestoreProvider));
+});
 
 final debtRepositoryProvider = Provider<DebtRepository>((ref) {
   return FirestoreDebtRepository(ref.watch(firebaseFirestoreProvider));
@@ -189,6 +201,19 @@ final startTaskProvider = Provider<StartTask>((ref) {
     ref.watch(taskRepositoryProvider),
     ref.watch(deviceControlRepositoryProvider),
     ref.watch(nativeTaskGuardProvider),
+  );
+});
+
+final recoveryCoordinatorProvider = Provider<RecoveryCoordinator>((ref) {
+  return RecoveryCoordinator(
+    authGateway: ref.watch(recoveryAuthGatewayProvider),
+    remoteStore: ref.watch(recoveryRemoteStoreProvider),
+    taskRepository: ref.watch(taskRepositoryProvider),
+    debtRepository: ref.watch(debtRepositoryProvider),
+    nativeTaskGuard: ref.watch(nativeTaskGuardProvider),
+    appLockRepository: ref.watch(appLockRepositoryProvider),
+    submitContribution: ref.watch(submitContributionProvider),
+    clock: ref.watch(clockProvider),
   );
 });
 

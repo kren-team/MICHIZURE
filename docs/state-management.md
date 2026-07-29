@@ -50,9 +50,10 @@ RecoveryState
   checkingLocal
   enforcingLocks
   restoringAuth
-  flushingOutbox
+  flushingNativeEvent
   reconcilingRemote
-  ready | degraded | fatal
+  flushingOutbox
+  ready | degraded | actionRequired | failed
 ```
 
 `AsyncValue`だけで業務状態を表現しない。例えば「読み込み成功だがoffline cache」「ローカル検出済みだが未確定」は独立したfieldとして保持する。
@@ -60,6 +61,7 @@ RecoveryState
 ## 4. Provider lifetime
 
 - auth streamとRecoveryCoordinatorはapp scopeで維持する。
+- Task Guard、Debt terminal release、Contribution Outbox retryもapp scopeで維持し、route離脱だけで停止しない。
 - user docはログイン中だけ維持する。
 - group doc、members、active debtsはGroup dashboardが表示中、またはlock reconciliationが必要な間だけ維持する。
 - Debt contributionsはDebt detail表示中だけ購読する。
@@ -150,6 +152,10 @@ Phase 6の`AppLockController`はLock Status表示時にnative desired/actual sta
 Phase 7のgroup active Debtは`autoDispose` listenerで画面・group・logoutに追従する。`DebtLockReleaseController`はfailed userのactive queryとnativeに永続化されたunresolved obligation IDごとのdocument listenerを組み合わせ、process再起動後にすでにterminalとなったDebtも復元する。`completed / expired`だけを`releaseObligation`へ渡し、missing、logout、listener error、cache missでは解除しない。期限tickerはexpire transactionのtriggerだけであり、terminal authorityはRulesの`request.time`である。
 
 Phase 8の`ContributionController`は`detected / pending / confirmed / rejected`の件数と直近typed resultを持つ。accepted repをevent ID単位でsingle-flight化し、永続Outboxへ先に保存してからFirestore transactionへ渡す。offline / unknown failureは2秒後および明示retryで同じevent IDを再送し、server ackまたはterminal reject後だけOutboxから削除する。Debt残量とmember summaryの画面authorityは引き続きPhase 7のsnapshot listenerであり、Controllerのローカル件数から推測しない。
+
+Phase 10の`RecoveryController`はcold start、auth user変更、profile listener復帰、foreground、manual retryをapp scopeで調停する。`RecoveryCoordinator`は1回のrunをsingle-flight化し、local lock → Auth → native Task event → remote Task / Debt → Contribution Outboxの依存順で既存Feature境界を呼ぶ。一部Featureの失敗はtyped issueへ集約し、独立Featureの回復を継続する。`ContributionController`とRecoveryが同時にflushしても、`SubmitContribution`がuid単位のflushとevent ID単位のdeliveryを共有する。
+
+`DebtLockReleaseController`はlistener再配信時にもabsolute `lockExpiresAt`からoverdueを再評価する。UI Timerや保存済みremaining値をauthorityにせず、Firestoreの正規expire transactionとterminal snapshotへ収束する。詳細は [Recovery / Reconciliation設計](recovery-reconciliation.md) を参照する。
 
 ## 10. 過剰設計を避ける基準
 

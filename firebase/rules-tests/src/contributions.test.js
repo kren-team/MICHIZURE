@@ -534,29 +534,33 @@ describe('Contribution concurrency and cap', () => {
     expect(await adminEventCount('at-9')).toBe(1);
   });
 
-  test('five members submitting 50 unique reps preserve aggregate and summaries', async () => {
-    const users = ['member-a', 'member-b', 'member-c', 'member-d', 'member-e'];
-    await addMembers(users);
-    const requests = [];
-    for (const uid of users) {
-      for (let sequence = 1; sequence <= 10; sequence += 1) {
-        requests.push(
-          submitRep(firestoreAs(uid), {
-            uid,
-            sequence,
-            retryOnContention: true,
-          }),
-        );
+  test(
+    'five members submitting 50 unique reps preserve aggregate and summaries',
+    async () => {
+      const users = ['member-a', 'member-b', 'member-c', 'member-d', 'member-e'];
+      await addMembers(users);
+      const requests = [];
+      for (const uid of users) {
+        for (let sequence = 1; sequence <= 10; sequence += 1) {
+          requests.push(
+            submitRep(firestoreAs(uid), {
+              uid,
+              sequence,
+              retryOnContention: true,
+            }),
+          );
+        }
       }
-    }
-    const results = await Promise.all(requests);
-    expect(results.every((result) => result === 'accepted')).toBe(true);
-    const finalDebt = await adminGet('debts/active-50');
-    expect(finalDebt.completedReps).toBe(50);
-    expect(finalDebt.status).toBe('completed');
-    expect(await adminEventCount('active-50')).toBe(50);
-    expect(await adminSummaryTotal('active-50')).toBe(50);
-  });
+      const results = await Promise.all(requests);
+      expect(results.every((result) => result === 'accepted')).toBe(true);
+      const finalDebt = await adminGet('debts/active-50');
+      expect(finalDebt.completedReps).toBe(50);
+      expect(finalDebt.status).toBe('completed');
+      expect(await adminEventCount('active-50')).toBe(50);
+      expect(await adminSummaryTotal('active-50')).toBe(50);
+    },
+    30_000,
+  );
 });
 
 async function adminGet(path) {

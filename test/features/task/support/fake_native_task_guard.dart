@@ -15,6 +15,7 @@ final class FakeNativeTaskGuard implements NativeTaskGuard {
   int stateCalls = 0;
   int acknowledgeCalls = 0;
   String? activeTaskId;
+  bool hasPendingEvent = false;
   final List<String> acknowledgedEventIds = [];
 
   void emit(NativeTaskEvent event) => _events.add(event);
@@ -39,8 +40,8 @@ final class FakeNativeTaskGuard implements NativeTaskGuard {
     stateCalls += 1;
     return NativeTaskGuardState(
       taskSessionId: activeTaskId,
-      isRunning: activeTaskId != null,
-      hasPendingEvent: false,
+      isRunning: activeTaskId != null && !hasPendingEvent,
+      hasPendingEvent: hasPendingEvent,
     );
   }
 

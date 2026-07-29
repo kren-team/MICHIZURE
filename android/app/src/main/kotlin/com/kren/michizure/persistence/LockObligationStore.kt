@@ -1,6 +1,7 @@
 package com.kren.michizure.persistence
 
 import android.content.Context
+import android.os.Build
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -17,6 +18,10 @@ private val Context.lockObligationDataStore by preferencesDataStore(
     name = "lock_obligations",
 )
 
+private val Context.bootLockSnapshotDataStore by preferencesDataStore(
+    name = "boot_lock_snapshot",
+)
+
 interface LockStateStore {
     suspend fun read(): PersistedLockState
 
@@ -27,60 +32,121 @@ interface LockStateStore {
 
 class LockObligationStore(context: Context) : LockStateStore {
     private val dataStore = context.lockObligationDataStore
+    private val bootStore = DeviceProtectedLockStateStore(context)
 
     override suspend fun read(): PersistedLockState {
-        return decode(dataStore.data.first())
+        return try {
+            decodeLockState(dataStore.data.first())
+        } catch (error: LockObligationStoreException) {
+            val snapshot = bootStore.read()
+            if (snapshot.obligations.isEmpty() && snapshot.ownedSuspensions.isEmpty()) {
+                throw error
+            }
+            replaceCredentialState(snapshot)
+            snapshot
+        }
     }
 
     override suspend fun update(
         transform: (PersistedLockState) -> PersistedLockState,
     ): PersistedLockState {
-        var updated: PersistedLockState? = null
+        val current = read()
+        val next = transform(current)
+        validateLockState(next)
+        replaceCredentialState(next)
+        bootStore.replace(minimalBootSnapshot(next))
+        return next
+    }
+
+    private suspend fun replaceCredentialState(state: PersistedLockState) {
         dataStore.edit { preferences ->
-            val next = transform(decode(preferences))
-            validate(next)
-            preferences[obligationsKey] =
-                next.obligations.values.mapTo(linkedSetOf(), LockObligationCodec::encode)
-            preferences[ownedSuspensionsKey] = next.ownedSuspensions.toSet()
-            updated = next
-        }
-        return checkNotNull(updated)
-    }
-
-    private fun decode(preferences: Preferences): PersistedLockState {
-        val obligations =
-            preferences[obligationsKey]
-                .orEmpty()
-                .map(LockObligationCodec::decode)
-                .associateBy { it.debtId }
-        return PersistedLockState(
-            obligations = obligations,
-            ownedSuspensions = preferences[ownedSuspensionsKey].orEmpty().toSet(),
-        ).also(::validate)
-    }
-
-    private fun validate(state: PersistedLockState) {
-        if (state.ownedSuspensions.any(String::isBlank) ||
-            state.obligations.values.any {
-                it.debtId.isBlank() ||
-                    it.taskSessionId.isBlank() ||
-                    it.packageNames.isEmpty() ||
-                    it.packageNames.any(String::isBlank) ||
-                    it.createdWallMs < 0 ||
-                    it.expiresWallMs < it.createdWallMs ||
-                    it.createdElapsedMs < 0 ||
-                    it.expiresElapsedMs < it.createdElapsedMs ||
-                    it.bootCount < 0
-            }
-        ) {
-            throw LockObligationStoreException("invalidState")
+            writeLockState(preferences, state)
         }
     }
+}
 
-    companion object {
-        private val obligationsKey = stringSetPreferencesKey("obligations_v1")
-        private val ownedSuspensionsKey =
-            stringSetPreferencesKey("owned_suspensions_v1")
+class DeviceProtectedLockStateStore(context: Context) : LockStateStore {
+    private val storageContext =
+        if (Build.VERSION.SDK_INT >= 24) {
+            context.createDeviceProtectedStorageContext()
+        } else {
+            context
+        }
+    private val dataStore = storageContext.bootLockSnapshotDataStore
+
+    override suspend fun read(): PersistedLockState {
+        return decodeLockState(dataStore.data.first())
+    }
+
+    override suspend fun update(
+        transform: (PersistedLockState) -> PersistedLockState,
+    ): PersistedLockState {
+        val next = transform(read())
+        replace(next)
+        return next
+    }
+
+    suspend fun replace(state: PersistedLockState) {
+        validateLockState(state)
+        dataStore.edit { preferences ->
+            writeLockState(preferences, state)
+        }
+    }
+}
+
+private val obligationsKey = stringSetPreferencesKey("obligations_v1")
+private val ownedSuspensionsKey =
+    stringSetPreferencesKey("owned_suspensions_v1")
+
+private fun decodeLockState(preferences: Preferences): PersistedLockState {
+    val encoded = preferences[obligationsKey].orEmpty()
+    val obligations =
+        encoded
+            .map(LockObligationCodec::decode)
+            .associateBy { it.debtId }
+    if (obligations.size != encoded.size) {
+        throw LockObligationStoreException("duplicateObligation")
+    }
+    return PersistedLockState(
+        obligations = obligations,
+        ownedSuspensions = preferences[ownedSuspensionsKey].orEmpty().toSet(),
+    ).also(::validateLockState)
+}
+
+private fun writeLockState(
+    preferences: androidx.datastore.preferences.core.MutablePreferences,
+    state: PersistedLockState,
+) {
+    preferences[obligationsKey] =
+        state.obligations.values.mapTo(linkedSetOf(), LockObligationCodec::encode)
+    preferences[ownedSuspensionsKey] = state.ownedSuspensions.toSet()
+}
+
+private fun minimalBootSnapshot(state: PersistedLockState): PersistedLockState {
+    return state.copy(
+        obligations =
+            state.obligations.filterValues {
+                it.remoteStatus == LockRemoteStatus.ACTIVE &&
+                    it.localState != LockLocalState.RELEASED
+            },
+    )
+}
+
+private fun validateLockState(state: PersistedLockState) {
+    if (state.ownedSuspensions.any(String::isBlank) ||
+        state.obligations.values.any {
+            it.debtId.isBlank() ||
+                it.taskSessionId.isBlank() ||
+                it.packageNames.isEmpty() ||
+                it.packageNames.any(String::isBlank) ||
+                it.createdWallMs < 0 ||
+                it.expiresWallMs < it.createdWallMs ||
+                it.createdElapsedMs < 0 ||
+                it.expiresElapsedMs < it.createdElapsedMs ||
+                it.bootCount < 0
+        }
+    ) {
+        throw LockObligationStoreException("invalidState")
     }
 }
 
