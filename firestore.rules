@@ -763,6 +763,55 @@ service cloud.firestore {
           == request.resource.data.memberCountAtFailure;
     }
 
+    function validDebtBase(debtId) {
+      return hasExactDebtKeys()
+        && debtId == request.resource.data.failedTaskSessionId
+        && request.resource.data.groupId is string
+        && request.resource.data.failedUserId is string
+        && request.resource.data.memberCountAtFailure is int
+        && request.resource.data.memberCountAtFailure >= 1
+        && request.resource.data.memberCountAtFailure <= 40
+        && request.resource.data.repsPerMember == 10
+        && request.resource.data.totalReps
+          == request.resource.data.memberCountAtFailure * 10
+        && request.resource.data.completedReps is int
+        && request.resource.data.completedReps >= 0
+        && request.resource.data.completedReps
+          <= request.resource.data.totalReps
+        && request.resource.data.status in ['active', 'completed', 'expired']
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.lockExpiresAt is timestamp
+        && (
+          request.resource.data.closedAt == null
+          || request.resource.data.closedAt is timestamp
+        )
+        && (
+          request.resource.data.lastContributionAt == null
+          || request.resource.data.lastContributionAt is timestamp
+        )
+        && (
+          request.resource.data.lastContributionEventId == null
+          || request.resource.data.lastContributionEventId is string
+        )
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    function validDebtExpiration(debtId) {
+      return validDebtBase(debtId)
+        && (
+          resource.data.failedUserId == request.auth.uid
+          || isMember(resource.data.groupId)
+        )
+        && resource.data.status == 'active'
+        && request.time >= resource.data.lockExpiresAt
+        && request.resource.data.status == 'expired'
+        && request.resource.data.closedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'closedAt'
+        ]);
+    }
+
     match /debts/{debtId} {
       allow get: if signedIn()
         && (
@@ -780,7 +829,19 @@ service cloud.firestore {
           || isMember(resource.data.groupId)
         );
       allow create: if signedIn() && validInitialDebt(debtId);
-      allow update, delete: if false;
+      allow update: if signedIn() && validDebtExpiration(debtId);
+      allow delete: if false;
+
+      match /contributions/{uid} {
+        allow get, list: if signedIn()
+          && exists(debtPath(debtId))
+          && isMember(get(debtPath(debtId)).data.groupId);
+        allow create, update, delete: if false;
+      }
+
+      match /contributionEvents/{eventId} {
+        allow read, write: if false;
+      }
     }
 
     match /{document=**} {
