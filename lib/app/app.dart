@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/debt/application/contribution_controller.dart';
 import '../features/debt/application/debt_lock_release_controller.dart';
 import '../features/recovery/application/recovery_controller.dart';
 import '../features/recovery/domain/recovery.dart';
@@ -62,6 +63,7 @@ final class _MichizureAppViewState extends ConsumerState<_MichizureAppView>
   Widget build(BuildContext context) {
     ref.watch(taskGuardControllerProvider);
     ref.watch(debtLockReleaseControllerProvider);
+    ref.watch(contributionControllerProvider);
     ref.watch(recoveryControllerProvider);
     return MaterialApp.router(
       title: 'MICHIZURE',

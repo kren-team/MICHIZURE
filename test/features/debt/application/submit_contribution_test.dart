@@ -86,4 +86,21 @@ void main() {
     expect(repository.requests.single.eventId, first.eventId);
     expect(outbox.entries, hasLength(2));
   });
+
+  test('concurrent recovery flushes share one event delivery', () async {
+    final repository = FakeContributionRepository();
+    final outbox = InMemoryContributionOutbox();
+    final request = contributionRequest();
+    await outbox.put(request);
+    final useCase = SubmitContribution(repository, outbox);
+
+    final first = useCase.flushPending(request.userId);
+    final second = useCase.flushPending(request.userId);
+    final results = await Future.wait([first, second]);
+
+    expect(repository.requests, [request]);
+    expect(results[0].single.status, ContributionSyncStatus.confirmed);
+    expect(results[1].single.status, ContributionSyncStatus.confirmed);
+    expect(outbox.entries, isEmpty);
+  });
 }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
 import 'package:michizure/features/auth/domain/auth_user.dart';
+import 'package:michizure/core/time/clock.dart';
 import 'package:michizure/features/debt/application/debt_lock_release_controller.dart';
 import 'package:michizure/features/debt/domain/debt.dart';
 import 'package:michizure/features/enforcement/domain/app_lock.dart';
@@ -85,12 +86,44 @@ void main() {
       );
     },
   );
+
+  test(
+    'reconnected active snapshot expires overdue Debt canonically',
+    () async {
+      final debtRepository = FakeDebtRepository();
+      final overdue = _debt('debt-a', DebtStatus.active);
+      debtRepository.expireResult = _debt('debt-a', DebtStatus.expired);
+      final lockRepository = FakeAppLockRepository()
+        ..state = _lockState(['debt-a']);
+      final container = _container(
+        debtRepository,
+        lockRepository,
+        now: DateTime.utc(2026, 1, 1, 0, 31),
+      );
+
+      container.read(debtLockReleaseControllerProvider);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      debtRepository.failedUserController.add(
+        DebtSnapshot(
+          value: [overdue],
+          isFromCache: false,
+          hasPendingWrites: false,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(debtRepository.expiredDebtIds, ['debt-a']);
+    },
+  );
 }
 
 ProviderContainer _container(
   FakeDebtRepository debtRepository,
-  FakeAppLockRepository lockRepository,
-) {
+  FakeAppLockRepository lockRepository, {
+  DateTime? now,
+}) {
   final container = ProviderContainer(
     overrides: [
       authStateProvider.overrideWithValue(
@@ -98,6 +131,7 @@ ProviderContainer _container(
       ),
       debtRepositoryProvider.overrideWithValue(debtRepository),
       appLockRepositoryProvider.overrideWithValue(lockRepository),
+      if (now != null) clockProvider.overrideWithValue(_FakeClock(now)),
     ],
   );
   addTearDown(() async {
@@ -105,6 +139,15 @@ ProviderContainer _container(
     await debtRepository.dispose();
   });
   return container;
+}
+
+final class _FakeClock implements Clock {
+  const _FakeClock(this.nowValue);
+
+  final DateTime nowValue;
+
+  @override
+  DateTime now() => nowValue;
 }
 
 DebtSnapshot<Debt?> _snapshot(Debt debt) {

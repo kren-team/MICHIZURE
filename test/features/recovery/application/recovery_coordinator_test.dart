@@ -6,6 +6,7 @@ import 'package:michizure/features/debt/application/submit_contribution.dart';
 import 'package:michizure/features/debt/domain/contribution.dart';
 import 'package:michizure/features/debt/domain/debt.dart';
 import 'package:michizure/features/enforcement/domain/app_lock.dart';
+import 'package:michizure/features/enforcement/domain/enforcement_failure.dart';
 import 'package:michizure/features/recovery/application/recovery_coordinator.dart';
 import 'package:michizure/features/recovery/domain/recovery.dart';
 import 'package:michizure/features/task/domain/task_session.dart';
@@ -127,6 +128,39 @@ void main() {
       },
     );
 
+    test('terminal remote task stops a stale native monitor', () async {
+      final fixture = RecoveryFixture.authenticated();
+      fixture.remote
+        ..pointer = const RecoveryUserPointer(activeTaskSessionId: 'task-1')
+        ..tasks['task-1'] = succeededTaskFixture();
+      fixture.native.activeTaskId = 'task-1';
+
+      final report = await fixture.coordinator.run(RecoveryTrigger.coldStart);
+
+      expect(fixture.native.stopCalls, 1);
+      expect(report.actions, contains(RecoveryAction.taskGuardStopped));
+      expect(report.terminalPhase, RecoveryPhase.degraded);
+    });
+
+    test(
+      'missing pointed Task is action required and guard is not invented',
+      () async {
+        final fixture = RecoveryFixture.authenticated();
+        fixture.remote.pointer = const RecoveryUserPointer(
+          activeTaskSessionId: 'missing-task',
+        );
+
+        final report = await fixture.coordinator.run(RecoveryTrigger.coldStart);
+
+        expect(report.terminalPhase, RecoveryPhase.actionRequired);
+        expect(fixture.native.startCalls, 0);
+        expect(
+          report.issues.map((issue) => issue.kind),
+          contains(RecoveryIssueKind.taskMissing),
+        );
+      },
+    );
+
     test(
       'terminal Debt releases a stale obligation then reconciles union',
       () async {
@@ -196,6 +230,47 @@ void main() {
         expect(fixture.contributions.committed, hasLength(1));
         expect(fixture.outbox.entries, isEmpty);
         expect(report.terminalPhase, RecoveryPhase.ready);
+      },
+    );
+
+    test(
+      'terminal Debt rejects pending Contribution and clears the outbox',
+      () async {
+        final fixture = RecoveryFixture.authenticated();
+        fixture.remote.pointer = const RecoveryUserPointer(
+          activeTaskSessionId: null,
+        );
+        fixture.contributions.failure = const ContributionFailure(
+          ContributionRejectionReason.debtTerminal,
+        );
+        final request = contributionRequest();
+        await fixture.outbox.put(request);
+
+        final report = await fixture.coordinator.run(RecoveryTrigger.coldStart);
+
+        expect(fixture.outbox.entries, isEmpty);
+        expect(report.terminalPhase, RecoveryPhase.ready);
+      },
+    );
+
+    test(
+      'one native recovery failure does not prevent Outbox convergence',
+      () async {
+        final fixture = RecoveryFixture.authenticated();
+        fixture.remote.pointer = const RecoveryUserPointer(
+          activeTaskSessionId: null,
+        );
+        fixture.lock.error = const EnforcementFailure(
+          EnforcementFailureKind.notDeviceOwner,
+        );
+        final request = contributionRequest();
+        await fixture.outbox.put(request);
+
+        final report = await fixture.coordinator.run(RecoveryTrigger.coldStart);
+
+        expect(fixture.outbox.entries, isEmpty);
+        expect(fixture.contributions.committed, hasLength(1));
+        expect(report.terminalPhase, RecoveryPhase.actionRequired);
       },
     );
 

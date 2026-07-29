@@ -16,10 +16,12 @@ final class ContributionDelivery {
 }
 
 final class SubmitContribution {
-  const SubmitContribution(this._repository, this._outbox);
+  SubmitContribution(this._repository, this._outbox);
 
   final ContributionRepository _repository;
   final ContributionOutbox _outbox;
+  final Map<String, Future<ContributionDelivery>> _deliveriesInFlight = {};
+  final Map<String, Future<List<ContributionDelivery>>> _flushesInFlight = {};
 
   Future<ContributionDelivery> recordAcceptedRep(
     ContributionRequest request,
@@ -42,14 +44,28 @@ final class SubmitContribution {
         failure: failure,
       );
     }
-    return _deliver(request);
+    return _deliverSingleFlight(request);
   }
 
-  Future<List<ContributionDelivery>> flushPending(String userId) async {
+  Future<List<ContributionDelivery>> flushPending(String userId) {
+    final current = _flushesInFlight[userId];
+    if (current != null) {
+      return current;
+    }
+    final future = _flushPending(userId);
+    _flushesInFlight[userId] = future;
+    return future.whenComplete(() {
+      if (identical(_flushesInFlight[userId], future)) {
+        _flushesInFlight.remove(userId);
+      }
+    });
+  }
+
+  Future<List<ContributionDelivery>> _flushPending(String userId) async {
     final pending = await _outbox.loadForUser(userId);
     final deliveries = <ContributionDelivery>[];
     for (final request in pending) {
-      final delivery = await _deliver(request);
+      final delivery = await _deliverSingleFlight(request);
       deliveries.add(delivery);
       if (delivery.status == ContributionSyncStatus.pending) {
         break;
@@ -60,6 +76,22 @@ final class SubmitContribution {
 
   Future<int> pendingCount(String userId) async {
     return (await _outbox.loadForUser(userId)).length;
+  }
+
+  Future<ContributionDelivery> _deliverSingleFlight(
+    ContributionRequest request,
+  ) {
+    final current = _deliveriesInFlight[request.eventId];
+    if (current != null) {
+      return current;
+    }
+    final future = _deliver(request);
+    _deliveriesInFlight[request.eventId] = future;
+    return future.whenComplete(() {
+      if (identical(_deliveriesInFlight[request.eventId], future)) {
+        _deliveriesInFlight.remove(request.eventId);
+      }
+    });
   }
 
   Future<ContributionDelivery> _deliver(ContributionRequest request) async {
