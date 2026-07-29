@@ -145,7 +145,9 @@ Phase 4のcommand stateは`TaskCommandController`がstart / success / manual abo
 
 Phase 5の`TaskGuardController`は`idle / starting / monitoring / synchronizing / retryNeeded / terminal`を持つ。native eventの同一IDをsingle-flight化し、offline / channel failureでは2秒後に同じeventをretryする。WidgetはEventChannelを直接購読せず、Running画面はcontroller stateからguard healthと安全なtyped errorだけを表示する。
 
-Phase 6の`AppLockController`はLock Status表示時にnative desired/actual stateをreconcileし、manual retryをsingle-flight化する。Task failure経路はFirestore transaction成功後に`AppLockRepository.applyObligation`を呼び、その成功またはpartial result保存後だけnative Task eventをackする。Debt完済/期限切れをFirestore listenerから`releaseObligation`へ接続するのはPhase 7とする。
+Phase 6の`AppLockController`はLock Status表示時にnative desired/actual stateをreconcileし、manual retryをsingle-flight化する。Task failure経路はFirestore transaction成功後に`AppLockRepository.applyObligation`を呼び、その成功またはpartial result保存後だけnative Task eventをackする。
+
+Phase 7のgroup active Debtは`autoDispose` listenerで画面・group・logoutに追従する。`DebtLockReleaseController`はfailed userのactive queryとnativeに永続化されたunresolved obligation IDごとのdocument listenerを組み合わせ、process再起動後にすでにterminalとなったDebtも復元する。`completed / expired`だけを`releaseObligation`へ渡し、missing、logout、listener error、cache missでは解除しない。期限tickerはexpire transactionのtriggerだけであり、terminal authorityはRulesの`request.time`である。
 
 ## 10. 過剰設計を避ける基準
 

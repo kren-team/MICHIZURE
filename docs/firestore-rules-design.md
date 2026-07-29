@@ -242,7 +242,7 @@ terminal Taskの再update/deleteは拒否する。同一failureのretryは既存
 - `lockExpiresAt == task.endedAt + task.lockDurationSec`
 - aggregate / close fields初期値
 
-Phase 4ではinitial Debtのcreate/getだけを開放し、Contribution、Debt completion、expiration updateは後続Phaseまでdefault denyとする。
+Phase 7では同一group memberまたはfailed userのreadと、下記expiration updateだけを追加した。Contribution、Debt completionはPhase 8までdefault denyを維持する。
 
 ### Contribution update
 
@@ -280,6 +280,7 @@ Debtへ `lastContributionEventId` を置くのはRulesが関連eventを特定す
 ### Summary read
 
 - Debtのcurrent group member。
+- Phase 7はdetail表示中だけ最大40件をread-only購読する。
 
 ### Summary create/update
 

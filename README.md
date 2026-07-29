@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5では離脱検知、Phase 6ではDevice Ownerによるpackage suspensionとDebt別lock obligationを実装しました。次はPhase 7のDebt realtimeです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5では離脱検知、Phase 6ではDevice Ownerによるpackage suspensionとDebt別lock obligation、Phase 7ではGroup Debtのrealtime購読とterminal Debtによる封印解除を実装しました。次はPhase 8のDebt Contributionです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -150,6 +150,17 @@ firebase emulators:exec \
     -d emulator-5554 \
     --no-dds \
     --host-vmservice-port=51004"
+```
+
+Phase 7の2 client Debt realtime（同一failed userの複数Debtを含む）は次で検証します。各clientはgroup scoped、deadline順、最大20件のlistenerを使用します。
+
+```bash
+firebase emulators:exec \
+  --project demo-michizure \
+  --only auth,firestore \
+  "flutter test integration_test/debt_realtime_test.dart \
+    -d emulator-5554 \
+    --no-uninstall"
 ```
 
 Device Ownerを含む初回セットアップは [demo-plan.md](docs/demo-plan.md#6-apk-installとdevice-owner-provisioning) を参照してください。Device Owner appは通常のアンインストール対象にできないため、端末テストでは`--no-uninstall`を使用します。
