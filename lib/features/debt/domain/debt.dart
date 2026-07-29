@@ -57,4 +57,38 @@ final class Debt {
     final remaining = totalReps - completedReps;
     return remaining < 0 ? 0 : remaining;
   }
+
+  bool get isTerminal => status != DebtStatus.active;
+
+  bool isOverdueAt(DateTime now) {
+    return status == DebtStatus.active && !now.toUtc().isBefore(lockExpiresAt);
+  }
+}
+
+final class DebtContributionSummary {
+  const DebtContributionSummary({
+    required this.userId,
+    required this.totalReps,
+    required this.lastEventId,
+    required this.lastContributedAt,
+  });
+
+  static const int schemaVersion = 1;
+
+  final String userId;
+  final int totalReps;
+  final String lastEventId;
+  final DateTime lastContributedAt;
+}
+
+final class DebtSnapshot<T> {
+  const DebtSnapshot({
+    required this.value,
+    required this.isFromCache,
+    required this.hasPendingWrites,
+  });
+
+  final T value;
+  final bool isFromCache;
+  final bool hasPendingWrites;
 }

@@ -537,6 +537,8 @@ lib/features/enforcement/presentation/lock_status/
 
 ## Phase 7 — `feature/debt-realtime`
 
+Status: implemented on `feature/debt-realtime`; merge先は`dev`。
+
 ### 目的
 
 group active Debt、残数、member別summary、completed / expired、failed userのunlock通知をrealtime同期する。
@@ -593,6 +595,17 @@ integration_test/debt_realtime_test.dart
 3. `feat: expirationとhistoryを実装`
 4. `feat: remote terminalをlock解除へ接続`
 5. `test: Debt realtimeとRulesを検証`
+
+### 実装結果
+
+- Group active Debtを`groupId == currentGroup`, `status == active`, `lockExpiresAt asc`, `limit 20`でrealtime購読
+- snapshot metadataをcache / pending write表示へ渡し、group変更・logout・route離脱でlistenerを切替・破棄
+- Group memberの`displayNameSnapshot`を再利用し、users collectionへのN+1 readなしで複数Debtを表示
+- Debt detailだけで最大40件のmember contribution summaryをread-only購読し、Contribution Eventは購読しない
+- overdue検出をtriggerにexpiration transactionを実行し、Rules `request.time >= lockExpiresAt`でactive→expiredだけを許可
+- failed user queryとnative unresolved obligation ID別listenerを組み合わせ、remote completed / expiredを既存の冪等release境界へ接続
+- active/history/failed-user composite indexと`lastContributionEventId`単項index exemptionを追加
+- package名、installed inventory、UsageStats、suspension結果のFirestore schema追加なし
 
 ---
 

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
+import '../features/debt/presentation/debt_detail_screen.dart';
+import '../features/debt/presentation/debt_list_screen.dart';
 import '../features/enforcement/presentation/app_selection/app_selection_screen.dart';
 import '../features/enforcement/presentation/device_setup/device_setup_screen.dart';
 import '../features/enforcement/presentation/lock_status/lock_status_screen.dart';
@@ -29,6 +31,7 @@ const String groupInviteRoutePath = '/group/invite';
 const String deviceSetupRoutePath = '/device-setup';
 const String appSelectionRoutePath = '/device-setup/apps';
 const String lockStatusRoutePath = '/lock-status';
+const String debtListRoutePath = '/debts';
 const String taskComposerRoutePath = '/task/new';
 const String runningTaskRoutePath = '/task/running';
 const String recoverableErrorRoutePath = '/error';
@@ -188,6 +191,17 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       GoRoute(
         path: lockStatusRoutePath,
         builder: (context, state) => const LockStatusScreen(),
+      ),
+      GoRoute(
+        path: debtListRoutePath,
+        builder: (context, state) => const DebtListScreen(),
+        routes: [
+          GoRoute(
+            path: ':debtId',
+            builder: (context, state) =>
+                DebtDetailScreen(debtId: state.pathParameters['debtId']!),
+          ),
+        ],
       ),
       GoRoute(
         path: taskComposerRoutePath,

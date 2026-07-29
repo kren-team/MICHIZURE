@@ -6,6 +6,7 @@ import 'package:michizure/features/enforcement/domain/app_lock_repository.dart';
 final class FakeAppLockRepository implements AppLockRepository {
   AppLockState state = emptyAppLockState;
   Object? error;
+  Object? releaseError;
   int applyCalls = 0;
   int getCalls = 0;
   int reconcileCalls = 0;
@@ -54,6 +55,9 @@ final class FakeAppLockRepository implements AppLockRepository {
     releaseCalls += 1;
     lastReleasedDebtId = debtId;
     lastResolution = resolution;
+    if (releaseError case final value?) {
+      throw value;
+    }
     if (error case final value?) {
       throw value;
     }

@@ -312,6 +312,27 @@ cd android
 
 `AndroidPackageSuspenderTest`は選択可能なlauncher appを一時suspendし、`finally`でunsuspendする。テスト中にEmulatorを終了しない。
 
+### Phase 7 Debt realtime smoke
+
+1. Firebase EmulatorとA/BのAndroid Emulatorを起動し、A/Bを同一groupへ所属させる。
+2. AでTaskを失敗させ、same-ID Debtが作成されることを確認する。
+3. A/B双方のGroup画面で「現在の負債」が1件になり、Debt一覧へdeadline順で表示されることを確認する。
+4. failed user名、残回数、発生時刻、期限がGroup member snapshotから表示され、Task内容やpackage名が表示・保存されないことを確認する。
+5. Aでもう1件Taskを失敗させ、同一failed userのDebtが上書きされず2件表示されることを確認する。
+6. Firestore Emulatorで期限後に正規expire transactionを実行し、Aのnative obligationが解除されることを確認する。他のactive obligationが同じpackageを参照する場合は封印が継続する。
+7. Bを別groupまたは未所属状態にし、旧group Debtが残らずRulesでdirect get/queryも拒否されることを確認する。
+
+自動2 client確認:
+
+```bash
+firebase emulators:exec \
+  --project demo-michizure \
+  --only auth,firestore \
+  "flutter test integration_test/debt_realtime_test.dart \
+    -d emulator-5554 \
+    --no-uninstall"
+```
+
 ### Scene 1: Group
 
 1. Aでregister/loginしgroup作成。

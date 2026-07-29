@@ -1,10 +1,10 @@
-# NEXT TASK: Phase 7 `feature/debt-realtime`
+# NEXT TASK: Phase 8 `feature/debt-contributions`
 
 ## 目的
 
-Phase 6で作成したsame-ID Debtをgroup内へリアルタイム表示し、failed user側ではDebt `completed` / `expired` を受けて既存の `releaseLockObligation(debtId)` 境界へ接続する。
+Phase 7でrealtime表示できるactive Debtへ、Group memberが1 repずつ冪等にContributionを確定できるFirestore transactionとlocal outboxを追加する。
 
-このPhaseはDebtの購読・一覧・詳細・期限切れ収束とlock解除通知だけを扱う。Contribution書込、スクワット、Camera、ML Kitは実装しない。
+このPhaseはContribution Event / member summary / Debt aggregateの整合性、並行返済、offline retryだけを扱う。Camera、ML Kit、スクワット姿勢判定はPhase 9であり実装しない。
 
 ## Branch
 
@@ -12,7 +12,7 @@ Phase 6で作成したsame-ID Debtをgroup内へリアルタイム表示し、fa
 git fetch origin
 git switch dev
 git pull --ff-only origin dev
-git switch -c feature/debt-realtime
+git switch -c feature/debt-contributions
 ```
 
 ## 最初に読む
@@ -22,102 +22,101 @@ git switch -c feature/debt-realtime
 3. `docs/architecture.md`
 4. `docs/data-model.md`
 5. `docs/firestore-rules-design.md`
-6. `docs/android-enforcement.md`
-7. `docs/state-management.md`
-8. `docs/security-privacy.md`
-9. `docs/testing.md`
-10. `docs/implementation-plan.md`
-11. `docs/adr/0002-firebase-backend.md`
-12. `docs/adr/0003-android-app-enforcement.md`
+6. `docs/state-management.md`
+7. `docs/security-privacy.md`
+8. `docs/testing.md`
+9. `docs/implementation-plan.md`
+10. `docs/adr/0002-firebase-backend.md`
 
 ## In scope
 
 ### Domain / Application
 
-- active / completed / expired Debt状態とremaining reps表示
-- group active Debt一覧（`lockExpiresAt asc`, `limit 20`）
-- Debt詳細とmember contribution summaryのread-only表示
-- failed userのactive obligation query
-- overdue active Debtを`request.time`でexpiredへ収束するtransaction
-- remote `completed` / `expired` をPhase 6の`releaseLockObligation`へ冪等接続
-- listenerのattach / detachとtyped offline/error state
+- deterministic Contribution Event ID
+- 1 event = 1 confirmed rep
+- Debt、`contributions/{uid}`、`contributionEvents/{eventId}`のatomic transaction
+- duplicate eventのno-op
+- `completedReps <= totalReps`
+- 最終repでactive→completed、`closedAt`設定
+- terminal / expired Debtへのsubmit拒否
+- local outbox、offline retry、ack、process restart復元
+- detected / pending / confirmed / rejectedのtyped state
 
 ### Infrastructure
 
-- `FirestoreDebtRepository`をquery/listener/expirationへ拡張
-- converterのstrict field validationを維持
-- `firestore.indexes.json`の既存active/history/failed-user indexを検証
-- package名やnative suspension状態をFirestoreへ追加しない
+- `FirestoreContributionRepository`
+- transactionは全read後にwrite
+- Debt aggregateをContribution全件から再集計しない
+- `lastContributionEventId`とsummary `lastEventId`のafter-state link
+- contribution event / summary converterのstrict validation
+- 必要なindex exemption
 
 ### Presentation
 
-- Group dashboardのactive Debt概要
-- Debt List / Debt Detail
-- remaining、failed member、期限、status、member別確定数
-- cached/offline/error/retry表示
-- failed userのLock Statusへremote解除結果を反映
+- Phase 7 Debt detailから「このDebtを返済する」導線
+- Cameraを使わないdebug/手動rep生成をProductionへ追加しない
+- pending / confirmed / offline / full Debtの表示
+- member別summaryの既存realtime表示を更新
 
 ### Firestore Rules
 
-- group memberまたはfailed userだけDebt read
-- group scoped queryを要求
-- activeからexpiredへのdeadline後transitionだけを追加
-- completed/expired terminal immutable
-- contribution writeはPhase 8までdefault deny
+- current group member本人だけが自分のevent / summaryを正規transactionでwrite
+- event create-only、update/delete拒否
+- summary単独write拒否
+- Debt正確な+1、total cap、deadline、status transitionを`getAfter()`で検証
+- Contribution Event全件を通常UI queryしない
 
 ## Out of scope
 
-- Contribution Event / summary write
-- completedReps加算
-- concurrent repayment
-- Squat Detection / Camera
-- fake rep
+- Camera / CameraX
+- ML Kit Pose Detection
+- squat state machine
+- fake pose / fake rep production route
+- package suspension方式の変更
 - Cloud Functions
-- Phase 8以降の先取り
+- Phase 9以降の先取り
 
 ## 必須不変条件
 
-- Debt残数は`totalReps - completedReps`からO(1)で導出し、Contribution Eventsを集計しない。
-- group queryは必ずcurrent `groupId`で制約し、Rulesをfilterとして扱わない。
-- overdue表示だけでterminalとせず、transactionとRules `request.time`でexpiredへ収束する。
-- remote terminalを受けても、Phase 6 reconcilerが他のactive obligationを参照しているpackageは解除しない。
-- logout、listener error、cache missをunlock理由にしない。
-- listenerを画面外でdetachし、無制限queryを作らない。
+- duplicate event IDはDebtもsummaryも二重加算しない。
+- 49/50へ複数clientが同時submitしても最終値は50を超えない。
+- Debt、summary、eventのいずれかが欠けるwriteはRulesで拒否する。
+- offline中のrepはconfirmedとして表示せずoutboxへ保持する。
+- terminal / deadline後のpending eventは再接続時に安全にreject/discardする。
+- package名、画像、landmark、Task内容をContributionへ追加しない。
 
 ## Acceptance Criteria
 
-- failure後、group member側のactive Debt一覧へrealtime反映される。
-- Debt Listは最大20件、deadline順でありContribution Event全件を読まない。
-- outsider / 他group userのDebt get/queryはRulesで拒否される。
-- failed userは自分のDebtを必要最小限読める。
-- deadline前expireは拒否、deadline後だけactive→expired可能。
-- completed / expired Debtの再更新・deleteは拒否される。
-- remote terminal受信で該当obligationをresolveし、他obligationが残るpackageは維持される。
-- offline/cache状態と再接続後の収束をUIで区別する。
-- Firestoreからpackage名、installed inventory、DPM結果を読み書きしない。
+- Group memberの正規eventでDebtと自分のsummaryが正確に1増える。
+- 同一event retryは成功済みno-opとなる。
+- concurrent submitでも`completedReps`が`totalReps`を超えない。
+- 最終repだけがDebtをcompletedへ遷移させる。
+- completed snapshotがPhase 7経由でfailed userのlock obligationを解除する。
+- offline outboxが再接続後に順序送信され、duplicateを作らない。
+- Contribution write以外のPhase 7 read境界とdefault denyを維持する。
 
 ## Tests
 
-- Debt converter valid / unknown field / invalid aggregate
-- active queryのgroup scope / order / limit
-- member / outsider / failed userのRules allow-deny
-- deadline前後のexpiration transaction
-- terminal immutable / delete deny
-- listener initial/update/detach
-- 2 client realtime反映
-- remote completed / expired → native release
-- 2 obligations中1件だけterminalでもlock継続
-- typed offline / Rules denied / native release failure
+- event ID / converter / typed result unit
+- duplicate event
+- missing Debt / summary / event write deny
+- 49/50へ20 concurrent clients
+- 5人Debt 50 repsのaggregate / summary整合
+- deadline / completion race
+- terminal / outsider / other-group deny
+- offline outbox retry / process restoration
+- completed Debt→Phase 7 release integration
+- 既存Phase 1〜7回帰
 
 ## 推奨commit分割
 
-1. `feat: Debt repositoryとactive queryを追加`
-2. `feat: Debt一覧と詳細を実装`
-3. `feat: Debt期限切れ収束を実装`
-4. `feat: remote terminalをlock解除へ接続`
-5. `test: Debt realtimeとRulesを検証`
-6. `docs: Phase 7結果と次Phaseを更新`
+1. `feat: Contribution eventとsummary modelを追加`
+2. `feat: idempotent rep transactionを実装`
+3. `feat: Contribution outboxを追加`
+4. `feat: Debt返済状態をUIへ接続`
+5. `test: Contribution並行更新とRulesを検証`
+6. `docs: Phase 8結果と次Phaseを更新`
 
 ## 停止条件
 
-Phase 7完了後は停止する。Phase 8のContribution実装を開始しない。
+Phase 8完了後は停止する。Phase 9のCamera / Squat Detectionを開始しない。

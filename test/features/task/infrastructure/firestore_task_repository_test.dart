@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/features/debt/domain/debt.dart';
+import 'package:michizure/features/debt/infrastructure/firestore_debt_repository.dart';
 import 'package:michizure/features/task/domain/task_failure.dart';
 import 'package:michizure/features/task/domain/task_session.dart';
 import 'package:michizure/features/task/infrastructure/firestore_task_repository.dart';

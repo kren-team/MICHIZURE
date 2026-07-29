@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
 import 'package:michizure/features/auth/domain/auth_user.dart';
+import 'package:michizure/features/debt/domain/debt.dart';
 import 'package:michizure/features/group/domain/group.dart';
 import 'package:michizure/features/group/domain/group_failure.dart';
 import 'package:michizure/features/group/domain/group_member.dart';
@@ -50,6 +51,8 @@ void main() {
       members: _members,
     );
 
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('group-leave-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('退出'));
@@ -70,6 +73,8 @@ void main() {
       members: _members,
     );
 
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('group-leave-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('退出'));
@@ -100,6 +105,15 @@ Future<void> _pumpHome(
         currentProfileProvider.overrideWithValue(AsyncData(profile)),
         currentGroupProvider.overrideWithValue(AsyncData(group)),
         currentGroupMembersProvider.overrideWithValue(AsyncData(members)),
+        activeGroupDebtsProvider.overrideWithValue(
+          const AsyncData(
+            DebtSnapshot(
+              value: <Debt>[],
+              isFromCache: false,
+              hasPendingWrites: false,
+            ),
+          ),
+        ),
       ],
       child: const MaterialApp(home: GroupHomeScreen()),
     ),

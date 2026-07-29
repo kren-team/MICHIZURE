@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../app/providers.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/presentation/auth_failure_message.dart';
+import '../../debt/application/debt_lock_release_controller.dart';
+import '../../debt/domain/debt.dart';
 import '../application/group_controller.dart';
 import '../domain/group.dart';
 import '../domain/group_member.dart';
@@ -15,6 +17,7 @@ final class GroupHomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(debtLockReleaseControllerProvider);
     final profile = ref.watch(currentProfileProvider).value;
     if (profile == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -108,6 +111,7 @@ final class _GroupDashboardViewState
     final membersState = ref.watch(currentGroupMembersProvider);
     final command = ref.watch(groupControllerProvider);
     final authCommand = ref.watch(authControllerProvider);
+    final debtsState = ref.watch(activeGroupDebtsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -138,6 +142,7 @@ final class _GroupDashboardViewState
               authUser.id,
               profile.displayName,
               command,
+              debtsState,
             ),
           );
         },
@@ -152,6 +157,7 @@ final class _GroupDashboardViewState
     String userId,
     String displayName,
     AsyncValue<Object?> command,
+    AsyncValue<DebtSnapshot<List<Debt>>> debtsState,
   ) {
     final isOwner = group.ownerUid == userId;
     final transferCandidates = members
@@ -170,6 +176,19 @@ final class _GroupDashboardViewState
           onPressed: command.isLoading ? null : () => context.go('/task/new'),
           icon: const Icon(Icons.timer),
           label: const Text('Taskを始める'),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          key: const Key('debt-list-route-button'),
+          onPressed: () => context.go('/debts'),
+          icon: const Icon(Icons.fitness_center),
+          label: Text(
+            debtsState.when(
+              loading: () => '現在の負債を確認',
+              error: (error, stackTrace) => '現在の負債（読込エラー）',
+              data: (snapshot) => '現在の負債（${snapshot.value.length}件）',
+            ),
+          ),
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(

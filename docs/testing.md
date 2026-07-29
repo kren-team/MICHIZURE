@@ -359,6 +359,8 @@ Phase 2のGroupフローは、1台のAndroid Emulator内で2つの独立したFi
 
 Phase 4はDart unit/widgetでcontent・duration・Clock・single-flight・routing・countdown・復元を検証し、`firebase/rules-tests/src/tasks_debt_creation.test.js`でTask/user/Debtのatomic invariant、owner query、terminal immutable、1/5/40人のDebt量を検証する。`integration_test/task_session_flow_test.dart`はAndroid上のFirebase SDKを使い、同時startが1件だけ成功すること、manual failureと同一event再送がsame-ID Debtへ収束することを確認する。
 
+Phase 7はDebt converter、remaining/overdue導出、providerのgroup切替・logout・detach、一覧/detailのcache/empty/error/複数Debt、terminal snapshotからのnative releaseをDart testで検証する。`firebase/rules-tests/src/debt_lifecycle.test.js`はgroup/failed-user read境界、scoped query、期限前後のexpire、terminal immutable、Contribution write denyを独立して検証する。`integration_test/debt_realtime_test.dart`は2つのFirebaseApp/Auth clientで同一groupの初回追加と同一failed userの2 Debtを確認する。
+
 ```bash
 firebase emulators:exec \
   --project demo-michizure \
