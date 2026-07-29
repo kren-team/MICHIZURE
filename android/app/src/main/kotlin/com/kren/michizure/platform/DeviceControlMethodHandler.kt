@@ -8,6 +8,10 @@ import android.os.Looper
 import android.os.Build
 import android.provider.Settings
 import com.kren.michizure.enforcement.AndroidPackageCatalog
+import com.kren.michizure.enforcement.LockCoordinator
+import com.kren.michizure.enforcement.LockCoordinatorException
+import com.kren.michizure.enforcement.LockReconciliationResult
+import com.kren.michizure.enforcement.LockRemoteStatus
 import com.kren.michizure.enforcement.PackageCatalog
 import com.kren.michizure.monitoring.AndroidTaskGuardClock
 import com.kren.michizure.monitoring.TaskGuardFailureReason
@@ -33,6 +37,7 @@ class DeviceControlMethodHandler(
     private val selectedPackageStore: SelectedPackageStore =
         SelectedPackageStore(context),
     private val nativeTaskStore: NativeTaskStore = NativeTaskStore(context),
+    private val lockCoordinator: LockCoordinator = LockCoordinator(context),
 ) : MethodChannel.MethodCallHandler {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -237,6 +242,59 @@ class DeviceControlMethodHandler(
                         .onFailure { postNativeStateError(result) }
                 }
             }
+            DeviceControlContract.METHOD_APPLY_LOCK_OBLIGATION -> {
+                val command = parseApplyLockObligation(call.arguments)
+                if (command == null) {
+                    postContractError(result, "The lock obligation payload is invalid.")
+                    return
+                }
+                scope.launch {
+                    runCatching {
+                        lockCoordinator.applyObligation(
+                            debtId = command.debtId,
+                            taskSessionId = command.taskSessionId,
+                            createdWallMs = command.createdAtEpochMs,
+                            expiresWallMs = command.expiresAtEpochMs,
+                        )
+                    }.onSuccess {
+                        postSuccess(result, lockResultPayload(it))
+                    }.onFailure {
+                        postLockError(result, it)
+                    }
+                }
+            }
+            DeviceControlContract.METHOD_GET_LOCK_STATE,
+            DeviceControlContract.METHOD_RECONCILE_LOCKS,
+            -> {
+                scope.launch {
+                    runCatching { lockCoordinator.reconcile() }
+                        .onSuccess {
+                            postSuccess(result, lockResultPayload(it))
+                        }
+                        .onFailure {
+                            postLockError(result, it)
+                        }
+                }
+            }
+            DeviceControlContract.METHOD_RELEASE_LOCK_OBLIGATION -> {
+                val command = parseReleaseLockObligation(call.arguments)
+                if (command == null) {
+                    postContractError(result, "The lock release payload is invalid.")
+                    return
+                }
+                scope.launch {
+                    runCatching {
+                        lockCoordinator.resolveObligation(
+                            debtId = command.debtId,
+                            status = command.status,
+                        )
+                    }.onSuccess {
+                        postSuccess(result, lockResultPayload(it))
+                    }.onFailure {
+                        postLockError(result, it)
+                    }
+                }
+            }
             else -> result.notImplemented()
         }
     }
@@ -422,6 +480,94 @@ class DeviceControlMethodHandler(
         return value?.takeIf(String::isNotBlank)
     }
 
+    private fun parseApplyLockObligation(arguments: Any?): ApplyLockCommand? {
+        val payload = arguments as? Map<*, *> ?: return null
+        val debtId = payload["debtId"] as? String ?: return null
+        val taskSessionId = payload["taskSessionId"] as? String ?: return null
+        val createdAtEpochMs =
+            (payload["createdAtEpochMs"] as? Number)?.toLong() ?: return null
+        val expiresAtEpochMs =
+            (payload["expiresAtEpochMs"] as? Number)?.toLong() ?: return null
+        if (debtId.isBlank() ||
+            taskSessionId.isBlank() ||
+            createdAtEpochMs < 0 ||
+            expiresAtEpochMs < createdAtEpochMs
+        ) {
+            return null
+        }
+        return ApplyLockCommand(
+            debtId = debtId,
+            taskSessionId = taskSessionId,
+            createdAtEpochMs = createdAtEpochMs,
+            expiresAtEpochMs = expiresAtEpochMs,
+        )
+    }
+
+    private fun parseReleaseLockObligation(arguments: Any?): ReleaseLockCommand? {
+        val payload = arguments as? Map<*, *> ?: return null
+        val debtId = payload["debtId"] as? String ?: return null
+        val status =
+            when (payload["resolution"]) {
+                LockRemoteStatus.COMPLETED.wireValue -> LockRemoteStatus.COMPLETED
+                LockRemoteStatus.EXPIRED.wireValue -> LockRemoteStatus.EXPIRED
+                else -> return null
+            }
+        return debtId.takeIf(String::isNotBlank)?.let {
+            ReleaseLockCommand(it, status)
+        }
+    }
+
+    private fun lockResultPayload(
+        result: LockReconciliationResult,
+    ): Map<String, Any?> {
+        val obligations =
+            result.state.obligations.values
+                .sortedBy { it.expiresWallMs }
+                .map { obligation ->
+                    mapOf(
+                        "debtId" to obligation.debtId,
+                        "taskSessionId" to obligation.taskSessionId,
+                        "expiresAtEpochMs" to obligation.expiresWallMs,
+                        "remoteStatus" to obligation.remoteStatus.wireValue,
+                        "localState" to obligation.localState.wireValue,
+                        "targetCount" to obligation.packageNames.size,
+                        "enforcedCount" to
+                            obligation.packageNames
+                                .intersect(result.state.ownedSuspensions)
+                                .size,
+                        "failedCount" to obligation.failedPackages.size,
+                        "errorCode" to obligation.lastErrorCode,
+                    )
+                }
+        return DeviceControlContract.versionedPayload(
+            mapOf(
+                "obligations" to obligations,
+                "effectiveTargetCount" to result.desiredPackages.size,
+                "ownedSuspensionCount" to result.state.ownedSuspensions.size,
+                "appliedCount" to result.appliedPackages.size,
+                "releasedCount" to result.releasedPackages.size,
+                "failedCount" to result.failedPackages.size,
+                "nextDeadlineEpochMs" to result.nextDeadlineWallMs,
+            ),
+        )
+    }
+
+    private fun postLockError(
+        result: MethodChannel.Result,
+        error: Throwable,
+    ) {
+        val code =
+            when (error) {
+                is LockCoordinatorException -> error.code
+                else -> DeviceControlContract.ERROR_NATIVE_STATE_CORRUPT
+            }
+        postTypedError(
+            result,
+            code,
+            "The Android app lock state could not be reconciled.",
+        )
+    }
+
     private fun postSuccess(
         result: MethodChannel.Result,
         payload: Map<String, Any?>,
@@ -478,4 +624,16 @@ private data class StartTaskGuardCommand(
     val startedAtEpochMs: Long,
     val expectedEndAtEpochMs: Long,
     val guardConfigVersion: Int,
+)
+
+private data class ApplyLockCommand(
+    val debtId: String,
+    val taskSessionId: String,
+    val createdAtEpochMs: Long,
+    val expiresAtEpochMs: Long,
+)
+
+private data class ReleaseLockCommand(
+    val debtId: String,
+    val status: LockRemoteStatus,
 )
