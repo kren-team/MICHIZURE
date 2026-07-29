@@ -56,10 +56,10 @@ Firebase Emulator Suiteは本番性能の代替ではないが、デモのintern
   cleartextをdebug applicationだけで許可
   QUERY_ALL_PACKAGES
 
-将来のdebugDemo（Phase 11）
-  FakeSquatDetector / SyntheticLandmark source
-  debug banner
-  short lock duration override option
+現在のPhase 11 debug
+  productionと同じCameraX / ML Kit / FSM
+  任意Debt・Contribution・failure・unlock commandなし
+  debug-only broad package visibilityとFirebase Emulator接続
 
 release
   live config injected
@@ -68,9 +68,9 @@ release
   production detector only
 ```
 
-デモ中は実要件と同じ30分lockでもDebt完済で解除できる。時間切れを見せる予備scenarioだけdebug overrideを使う。
+デモ中は実要件と同じ30分lockでもDebt完済で解除できる。期限やContributionを短縮・偽装するdebug overrideは用意しない。
 
-## 4. Deterministic demo target（Phase 11予定）
+## 4. Deterministic demo target（Phase 11実装済み）
 
 preinstalled appはAVD imageごとにpackage名・suspend可否が違うため、別applicationIdの小さなdebug target APKを用意する。
 
@@ -100,13 +100,19 @@ Device Ownerは通常の既存個人端末へ後付けする手順ではない�
 
 ## 6. APK installとDevice Owner provisioning
 
-Phase 3時点のartifact:
+MICHIZURE artifact:
 
 ```text
 build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-Phase 11で予定する`tools/demo-target`はまだ未実装であり、このPhaseではChrome等の選択可能な既存launcher appを選択復元テストに使う。実際のsuspendは行わない。
+`tools/demo-target`をbuildしてAへinstallする。
+
+```bash
+./android/gradlew -p tools/demo-target assembleDebug
+adb -s emulator-5554 install -r \
+  tools/demo-target/app/build/outputs/apk/debug/app-debug.apk
+```
 
 Device Owner設定はfactory reset済みで、Google account、他user、work profile、既存Device OwnerがないAVDでのみ行う。Device Ownerは通常アプリのruntime permissionではなく、アプリ自身が取得することもできない。
 
@@ -170,7 +176,19 @@ capability診断画面で次をgreenにする。
 - target suspendable（Phase 6以降）
 - Firebase Emulator connected
 
-### 7.1 Phase 3 smoke test
+### 7.1 当日preflight
+
+preflightは状態を変更せず、Firebase Emulatorへの到達、端末接続、Device Owner、Usage Access、通知、user unlock、demo targetのinstall / unsuspendedだけを確認する。
+
+```bash
+MICHIZURE_DEVICE_SERIAL=emulator-5554 ./tool/demo_preflight.sh
+MICHIZURE_DEVICE_SERIAL=emulator-5556 \
+  MICHIZURE_REQUIRE_CAMERA=1 ./tool/demo_preflight.sh
+```
+
+Auth user、Group、封印対象件数、active Task / Debt / obligationはprivacyとstorage境界を保つためshellから抜き出さず、アプリUIで確認する。失敗項目はUIまたは既存adb provisioning手順で修正してから再実行する。
+
+### 7.2 Device setup smoke test
 
 1. Home右上の「端末セットアップ」を開く。
 2. Device Owner、Usage Access、通知、アプリ一覧、Android APIがgreenであることを確認する。
@@ -198,7 +216,7 @@ cd android
 
 ## 8. Firebase Emulator Suite
 
-Phase 0で予定する`firebase.json`:
+現在の`firebase.json`:
 
 ```json
 {
@@ -241,7 +259,7 @@ Emulator接続はFirebase initialize直後、Auth / Firestore instanceの最初�
 | A | `alice@example.test` | Alice | owner / failed user |
 | B | `bob@example.test` | Bob | contributor |
 
-credentialはdemo-only固定値を発表資料へ載せず、当日runbookのlocal fileで管理する。Firebase EmulatorをresetするたびUIから登録するか、Phase 11のseed scriptを使用する。
+credentialはdemo-only固定値を発表資料へ載せず、当日runbookの追跡外local fileで管理する。Firebase Emulatorをresetした場合はUIの正規フローから登録する。Rulesを迂回するseed APIや固定credentialはProduction / debug appへ追加しない。
 
 Group:
 
@@ -264,7 +282,7 @@ lock target: MICHIZURE Demo SNS
 6. 期限後にTaskがsucceededへ収束し、Homeへ戻れることを確認する。
 7. 別Taskを開始し「失敗として中断」を選び、失敗結果と`group人数 × 10`回のDebt生成を確認する。
 
-Phase 5でforeign app自動検知とForeground Serviceを実装した。package suspensionはPhase 6まで行わない。`am force-stop`は通常のprocess killより強くreceiver/serviceも停止するため、START_STICKYによるprocess recreation保証とは分けて記録する。
+foreign app自動検知、Foreground Service、package suspensionは実装済みである。`am force-stop`は通常のprocess killより強くreceiver/serviceも停止するため、START_STICKYによるprocess recreation保証とは分けて記録する。
 
 ### Phase 5 Task Guard smoke
 
@@ -301,7 +319,7 @@ Phase 5のincoming call gateは追加permissionを持たないsynthetic classifi
 6. launcherから選択対象を起動し、Androidのsuspended app案内になることを確認する。
 7. app processを通常killして再起動し、Lock Statusとsuspend状態が維持されることを確認する。
 8. `adb shell dumpsys package <target-package>`と`adb shell dumpsys device_policy`を診断に使用する。package名を共有ログやanalyticsへ転送しない。
-9. Phase 7未実装のためDebt完済解除は行わない。期限解除はinexact alarmまたはapp再起動時reconcileで確認する。
+9. Debt完済ではPhase 7 terminal listenerからobligationを解除し、他のactive obligationがなければunsuspendされることを確認する。
 
 instrumentation:
 
@@ -356,11 +374,11 @@ firebase emulators:exec \
 2. Phase 8画面で選択中のDebt ID、残回数、pending / confirmedを示す。
 3. camera setupで「画像は保存・送信しない」を示す。
 4. 当日のcameraが安定ならreal CameraX + ML Kit。
-5. 不安定ならSyntheticLandmark sourceを選択し、DEBUG表示を見せる。
+5. cameraが不安定なら実カメラScenario Cを未達として記録し、数値fixtureのinstrumentation結果をML精度の代用として説明しない。
 6. repごとにBのconfirmed count、Aのremainingが更新される。
 7. 20 repsでDebt completed。
 
-Phase 9実装前のPhase 8 smokeではProduction UIからrepを生成しない。`integration_test/debt_contribution_test.dart`を使い、3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。
+`integration_test/debt_contribution_test.dart`では3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。Production UIのrep生成はCameraX + ML Kitだけを使用する。
 
 ## 10. Phase 10 Recovery smoke
 
@@ -403,11 +421,11 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 
 ### Phase 9 Camera / Squat smoke
 
-1. Bでactive Debt詳細から「このDebtを返済する」を開く。
+1. Bでactive Debt詳細から「この負債を返済する」を開く。
 2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
 3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
 4. host webcamを使う場合は全身がframeへ入る距離で1秒以上直立する。
-5. 深くしゃがんで完全に立ち、端末検出、Outbox投入、Firestore確定、Debt残数の順に更新されることを確認する。
+5. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
 6. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
 7. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
 
@@ -428,15 +446,14 @@ adb -s emulator-5554 shell pm clear-permission-flags \
 2. Demo SNSを再度開き、起動できることを示す。
 3. B側でもcompletedを確認。
 
-## 11. Camera fallback ladder
+## 11. Camera確認順
 
 1. physical Android + real cameraをBとして使用
 2. host webcam passthrough
-3. Android Emulator Virtual Sceneで人物入力が可能なら使用
-4. `SyntheticLandmarkPoseSource`で本番FSMを動かす
-5. `FakeSquatDetector`でcloud / UI / unlock flowだけを動かす
+3. Android Emulatorで人物入力が現実的な場合のみ使用
+4. camera E2Eができない場合はKotlin synthetic numeric fixtureでFSM回帰だけ確認
 
-4と5を区別して説明する。Syntheticは本番FSMをtestし、Fakeはrep eventを直接生成する。FakeでML精度を実証したと主張しない。
+4はProduction UIの代替入力ではなくtest laneである。実カメラ精度、latency、Scenario Cを成功したとは報告しない。
 
 ## 12. False-positive mini demo
 

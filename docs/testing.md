@@ -257,6 +257,8 @@ Emulator offline cacheはtest間でclearし、前回runを読まない。
 
 golden image testはテーマ安定後のPhase 11で主要画面だけ追加する。
 
+Phase 11ではpixel差分に依存するgoldenを追加せず、状態別Primary Action、開始不能理由、招待取消確認、terminal Debtの返済不可、2倍text scale、camera feedback semanticsをWidget testで固定した。フォント・host描画差によるCI不安定性より、操作可能性と意味の検証を優先する。
+
 ## 9. Android instrumentation
 
 ### Platform Channel contract
@@ -442,3 +444,17 @@ firebase emulators:exec --project demo-michizure \
 ```
 
 実際のCIではworking directoryとemulator lifecycleをscript化し、shell commandをcopy-pasteで重複管理しない。
+
+## 15. Phase 11 final lanes
+
+通常CIは次を実行する。
+
+1. `./tool/check_all.sh`
+2. `flutter build apk --debug`（step timeout 15分）
+3. `./android/gradlew -p tools/demo-target assembleDebug --no-daemon`（step timeout 5分）
+
+Rulesの5 member / 50 Contribution高競合testは競合量を維持し、そのtestだけ30秒timeoutを持つ。global timeout変更や無条件retryは使わない。
+
+release境界はDart testでmain/debug manifestとproduction sourceを検査し、最終ローカルgateで`processReleaseMainManifest`とrelease APKをbuildする。`QUERY_ALL_PACKAGES`とcleartextはdebugだけ、fake / synthetic pose実装は`android/app/src/main`に置かない。
+
+Device Owner、UsageStats、Camera、2 Emulator E2Eは一般GitHub-hosted runnerでは再現しない。managed Emulatorの`connectedDebugAndroidTest`と [final-checklist.md](final-checklist.md) のmanual gateを合否記録として残し、retryで隠さない。
