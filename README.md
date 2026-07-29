@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0〜8でFirebase、Group、Task、Android離脱検知・封印、Debt realtime、冪等Contribution / Outboxを構築しました。Phase 9ではCameraX + ML Kit Pose Detection、決定的なKotlin状態機械、Camera permission、返済画面とContribution接続を実装しました。次はPhase 10の復元・reconciliationです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0〜9でFirebase、Group、Task、Android離脱検知・封印、Debt realtime、冪等Contribution / Outbox、CameraX + ML Kit Pose Detectionを構築しました。Phase 10ではAuth、Task Guard、App Lock、Debt、Contribution Outboxをprocess death、boot、network再接続、package変更後に収束させるRecovery基盤を実装しました。次はPhase 11のデモ仕上げです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -25,13 +25,14 @@
 5. [Firestore Rules設計](docs/firestore-rules-design.md)
 6. [Android封印・離脱検知](docs/android-enforcement.md)
 7. [スクワット判定](docs/squat-detection.md)
-8. [Flutter状態管理](docs/state-management.md)
-9. [セキュリティとプライバシー](docs/security-privacy.md)
-10. [テスト戦略](docs/testing.md)
-11. [実装計画](docs/implementation-plan.md)
-12. [Emulatorデモ計画](docs/demo-plan.md)
-13. [コスト見積もり](docs/cost-estimation.md)
-14. [次の1ブランチの作業](NEXT_TASK.md)
+8. [Recovery / Reconciliation](docs/recovery-reconciliation.md)
+9. [Flutter状態管理](docs/state-management.md)
+10. [セキュリティとプライバシー](docs/security-privacy.md)
+11. [テスト戦略](docs/testing.md)
+12. [実装計画](docs/implementation-plan.md)
+13. [Emulatorデモ計画](docs/demo-plan.md)
+14. [コスト見積もり](docs/cost-estimation.md)
+15. [次の1ブランチの作業](NEXT_TASK.md)
 
 技術判断の理由は [ADR一覧](docs/adr/) にあります。後続Agentは作業前に [AGENTS.md](AGENTS.md) も必ず読んでください。
 

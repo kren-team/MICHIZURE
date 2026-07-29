@@ -362,6 +362,45 @@ firebase emulators:exec \
 
 Phase 9実装前のPhase 8 smokeではProduction UIからrepを生成しない。`integration_test/debt_contribution_test.dart`を使い、3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。
 
+## 10. Phase 10 Recovery smoke
+
+AVD wipe、app data clear、Device Owner解除、対象appのuninstallは行わない。
+
+### 通常process kill
+
+```bash
+adb shell am kill com.kren.michizure
+adb shell monkey -p com.kren.michizure 1
+```
+
+running Taskでは`expectedEndAt`由来の残時間、Foreground Service notification、native Task IDを確認する。active lockでは対象packageのsuspend状態とLock UIが復元されることを確認する。
+
+### package replace
+
+```bash
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+adb shell dumpsys device_policy
+```
+
+`MY_PACKAGE_REPLACED`後もDevice Ownerを維持し、active obligationのeffective unionが再適用されることを確認する。
+
+### reboot
+
+```bash
+adb reboot
+adb wait-for-device
+adb shell dumpsys device_policy
+adb shell monkey -p com.kren.michizure 1
+```
+
+`LOCKED_BOOT_COMPLETED`ではdevice-protected最小snapshotからlockを照合し、user unlock後にTask GuardとFirestoreを照合する。Firebase Emulator hostへ再接続できない間はlogout / unlockを行わず`degraded`表示とする。
+
+### network復帰
+
+Task failure / Contribution pendingを作った後にnetworkを戻し、same event IDで1回だけTask / Debt / Contributionへ収束することを確認する。Debt terminal snapshot再配信ではobligationがreleaseされる。
+
+`adb shell am force-stop com.kren.michizure`は通常killとは異なる。実行した場合、receiver / serviceはユーザーがappを再起動するまで復元されないため、常時自動復元のAcceptanceには数えない。既存DPM suspensionは維持され、次回明示起動でreconcileされることを確認する。
+
 ### Phase 9 Camera / Squat smoke
 
 1. Bでactive Debt詳細から「このDebtを返済する」を開く。

@@ -757,6 +757,8 @@ lib/features/squat/
 
 ## Phase 10 — `feature/recovery-reconciliation`
 
+**実装済み。** app scope RecoveryCoordinator、Auth token再検証、Task / native event / Debt / Contribution収束、device-protected lock snapshot、boot / unlock / package変更receiverを追加した。Firestore schema / Rules / Index変更はない。
+
 ### 目的
 
 Task、failure outbox、Debt、lock、Contributionをprocess death、reboot、network再接続後に収束させる。

@@ -425,13 +425,17 @@ catalogの`isSelectable`は静的な事前診断である。Phase 6で実際に`
 
 ## 14. Reboot / app update / process death
 
-- Phase 6はbackup無効のcredential-protected Preferences DataStoreにlock obligationを持つ。
-- `BOOT_COMPLETED` receiverはuser unlock後に期限内effective setを再適用し、期限後をreleaseする。unlock前のdevice-protected snapshotはPhase 10で追加する。
+- backup無効のcredential-protected Preferences DataStoreをlock obligationの完全stateとする。
+- Phase 10は更新ごとにactive obligationとMICHIZURE-owned suspensionだけをdevice-protected snapshotへmirrorする。`LOCKED_BOOT_COMPLETED`はunlock前もこの最小snapshotからeffective setを再適用する。
+- `BOOT_COMPLETED` / `USER_UNLOCKED` / `MY_PACKAGE_REPLACED`はTask snapshotとpending eventを確認し、pending eventがなければTask Guardを冪等に復元する。
 - Firebase状態はuser unlock / Flutter bootstrap後にreconcileする。
 - app update後もDevice OwnerとDPM suspensionは残る前提で差分確認する。
-- package uninstall/reinstallはapp startまたは手動reconcileで再検査する。package変更broadcastによる即時reconcileはPhase 10で追加する。
+- package add / remove / replace broadcastはlock unionを再検査する。uninstall済みpackageをowned setから除外し、active obligationは期限内保持してreinstall時に再適用する。
 - app data clear、Device Owner解除、emulator wipeはMVP trust boundary外。
 - logoutやFirebase token expirationでlockを解除しない。
+- 通常process killとboot後unlockは復元対象だが、`am force-stop`後はAndroidのstopped stateが解除されるまでreceiver / service自動復元を保証しない。既存DPM suspensionは残し、次回明示起動でreconcileする。
+
+credential state破損時はvalidなdevice-protected mirrorから修復する。両stateを消去するfallbackは行わず、復元不能なら`nativeStateCorrupt`へ縮退する。codec versionは1を維持し、未知versionを黙って読み替えない。詳細は [Recovery / Reconciliation設計](recovery-reconciliation.md) を参照する。
 
 ## 15. Capability / error codes
 

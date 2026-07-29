@@ -252,18 +252,21 @@ sequenceDiagram
 
 ## 9. 復元と収束
 
-起動時の `RecoveryCoordinator` は次の順序を守る。
+Phase 10のapp scope `RecoveryCoordinator` は次の順序を守る。
 
 1. native DataStoreからrunning Task、pending outbox、lock obligationsを読む。
 2. DevicePolicyManagerの現在状態とeffective lockを照合し、不足する封印を先に適用する。
 3. Firebase Authを復元する。
-4. pending failure / Contribution Eventを同一IDで再送する。
-5. `users/{uid}.activeTaskSessionId` のTaskと対象Debtをserver sourceで再取得する。
+4. pending native failureをdeadline successより優先して同一IDで再配送する。
+5. `users/{uid}.activeTaskSessionId` のTaskとobligation対象Debtをserver sourceで再取得する。
 6. Task deadline、Debt status、lock deadlineを評価する。
-7. resolved obligationを除去し、余分なsuspensionだけを解除する。
-8. snapshot listenerを画面・foreground serviceの必要範囲で登録する。
+7. resolved obligationを除去し、MICHIZURE-ownedかつ余分なsuspensionだけを解除する。
+8. Contribution Outboxを同一event IDでflushする。
+9. snapshot listenerを画面・app scope controllerの必要範囲で登録する。
 
 解除に必要なremote stateを取得できない場合は、期限内はfail-closed、期限後はローカルdeadlineで解除する。ネットワーク復帰後にFirestoreの `expired` へ収束させる。
+
+Coordinator自体とContribution deliveryはsingle-flightであり、listener、foreground、manual retryが競合してもstable IDを作り直さない。lock / Task / Debt / Contributionのauthority、trigger、read cost、`force-stop`境界は [Recovery / Reconciliation設計](recovery-reconciliation.md) を正とする。
 
 ## 10. デプロイ構成の分離
 
