@@ -5,8 +5,8 @@ import android.os.Build
 import android.os.UserManager
 import com.kren.michizure.monitoring.AndroidTaskGuardClock
 import com.kren.michizure.monitoring.TaskGuardClock
-import com.kren.michizure.persistence.LockObligationStore
 import com.kren.michizure.persistence.DeviceProtectedLockStateStore
+import com.kren.michizure.persistence.LockObligationStore
 import com.kren.michizure.persistence.LockStateStore
 import com.kren.michizure.persistence.NativeTaskStore
 import com.kren.michizure.persistence.NativeTaskRecord
