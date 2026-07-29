@@ -6,6 +6,9 @@ import '../core/time/clock.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/domain/auth_user.dart';
 import '../features/auth/infrastructure/firebase_auth_repository.dart';
+import '../features/debt/domain/debt.dart';
+import '../features/debt/domain/debt_repository.dart';
+import '../features/debt/infrastructure/firestore_debt_repository.dart';
 import '../features/enforcement/domain/device_control_repository.dart';
 import '../features/enforcement/domain/app_lock_repository.dart';
 import '../features/enforcement/infrastructure/app_lock_channel.dart';
@@ -56,6 +59,10 @@ final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
 
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
+final debtRepositoryProvider = Provider<DebtRepository>((ref) {
+  return FirestoreDebtRepository(ref.watch(firebaseFirestoreProvider));
+});
+
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return FirestoreProfileRepository(ref.watch(firebaseFirestoreProvider));
 });
@@ -94,6 +101,38 @@ final currentGroupMembersProvider = StreamProvider<List<GroupMember>>((ref) {
   }
   return ref.watch(groupRepositoryProvider).watchMembers(groupId);
 });
+
+final activeGroupDebtsProvider =
+    StreamProvider.autoDispose<DebtSnapshot<List<Debt>>>((ref) {
+      final profile = ref.watch(currentProfileProvider);
+      return profile.when(
+        loading: () => const Stream.empty(),
+        error: (error, stackTrace) => Stream.error(error, stackTrace),
+        data: (value) {
+          final groupId = value?.groupId;
+          if (groupId == null) {
+            return Stream.value(
+              const DebtSnapshot(
+                value: <Debt>[],
+                isFromCache: false,
+                hasPendingWrites: false,
+              ),
+            );
+          }
+          return ref.watch(debtRepositoryProvider).watchActiveDebts(groupId);
+        },
+      );
+    });
+
+final debtProvider = StreamProvider.autoDispose
+    .family<DebtSnapshot<Debt?>, String>((ref, debtId) {
+      return ref.watch(debtRepositoryProvider).watchDebt(debtId);
+    });
+
+final debtContributionsProvider = StreamProvider.autoDispose
+    .family<DebtSnapshot<List<DebtContributionSummary>>, String>((ref, debtId) {
+      return ref.watch(debtRepositoryProvider).watchContributions(debtId);
+    });
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   return FirestoreTaskRepository(

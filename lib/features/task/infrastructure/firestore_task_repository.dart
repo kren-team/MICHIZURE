@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/time/clock.dart';
 import '../../debt/domain/debt.dart';
+import '../../debt/infrastructure/firestore_debt_repository.dart';
 import '../domain/task_failure.dart';
 import '../domain/task_repository.dart';
 import '../domain/task_session.dart';
@@ -358,75 +359,6 @@ TaskSession taskSessionFromFirestore(String taskId, Map<String, dynamic> data) {
     debtId: debtId as String?,
     lockDurationSeconds: lockDurationSeconds as int,
     guardConfigVersion: guardConfigVersion as int,
-  );
-}
-
-Debt debtFromFirestore(String debtId, Map<String, dynamic> data) {
-  const expectedKeys = {
-    'groupId',
-    'failedUserId',
-    'failedTaskSessionId',
-    'memberCountAtFailure',
-    'repsPerMember',
-    'totalReps',
-    'completedReps',
-    'status',
-    'createdAt',
-    'lockExpiresAt',
-    'closedAt',
-    'lastContributionAt',
-    'lastContributionEventId',
-    'schemaVersion',
-  };
-  final statusValue = data['status'];
-  final status = statusValue is String
-      ? DebtStatus.fromWireValue(statusValue)
-      : null;
-  final memberCount = data['memberCountAtFailure'];
-  final repsPerMember = data['repsPerMember'];
-  final totalReps = data['totalReps'];
-  final completedReps = data['completedReps'];
-  final createdAt = data['createdAt'];
-  final lockExpiresAt = data['lockExpiresAt'];
-  final closedAt = data['closedAt'];
-  final lastContributionAt = data['lastContributionAt'];
-  final lastContributionEventId = data['lastContributionEventId'];
-  if (!_sameKeys(data.keys.toSet(), expectedKeys) ||
-      data['groupId'] is! String ||
-      data['failedUserId'] is! String ||
-      data['failedTaskSessionId'] != debtId ||
-      memberCount is! int ||
-      memberCount < 1 ||
-      memberCount > 40 ||
-      repsPerMember != Debt.repsPerMemberMvp ||
-      totalReps != memberCount * Debt.repsPerMemberMvp ||
-      completedReps is! int ||
-      completedReps < 0 ||
-      completedReps > totalReps ||
-      status == null ||
-      createdAt is! Timestamp ||
-      lockExpiresAt is! Timestamp ||
-      (closedAt != null && closedAt is! Timestamp) ||
-      (lastContributionAt != null && lastContributionAt is! Timestamp) ||
-      (lastContributionEventId != null && lastContributionEventId is! String) ||
-      data['schemaVersion'] != Debt.schemaVersion) {
-    throw const TaskFailure(TaskFailureKind.invalidData);
-  }
-  return Debt(
-    id: debtId,
-    groupId: data['groupId'] as String,
-    failedUserId: data['failedUserId'] as String,
-    failedTaskSessionId: data['failedTaskSessionId'] as String,
-    memberCountAtFailure: memberCount,
-    repsPerMember: repsPerMember as int,
-    totalReps: totalReps as int,
-    completedReps: completedReps,
-    status: status,
-    createdAt: createdAt.toDate().toUtc(),
-    lockExpiresAt: lockExpiresAt.toDate().toUtc(),
-    closedAt: (closedAt as Timestamp?)?.toDate().toUtc(),
-    lastContributionAt: (lastContributionAt as Timestamp?)?.toDate().toUtc(),
-    lastContributionEventId: lastContributionEventId as String?,
   );
 }
 
