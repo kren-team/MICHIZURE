@@ -38,7 +38,17 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
   Widget build(BuildContext context) {
     final setup = ref.watch(deviceSetupControllerProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Device Setup')),
+      appBar: AppBar(
+        title: const Text('端末セットアップ'),
+        actions: [
+          IconButton(
+            tooltip: '端末状態を再確認',
+            onPressed: () =>
+                ref.read(deviceSetupControllerProvider.notifier).refresh(),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: setup.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => _LoadError(
@@ -60,25 +70,23 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
-              const Text(
-                '強制封印は、adbでDevice Ownerに設定したハッカソン用managed Emulatorだけで利用できます。',
-              ),
+              const Text('封印機能は、開発者が準備したハッカソン用の管理端末で利用できます。'),
               const SizedBox(height: 20),
               _CapabilityTile(
                 key: const Key('device-owner-capability'),
-                title: 'Device Owner',
+                title: '管理端末',
                 ready: state.capabilities.isDeviceOwner,
                 detail: state.capabilities.isDeviceOwner
-                    ? 'Managed demoとして認識されています'
-                    : 'アプリ自身では取得できません。PCからadb provisioningが必要です',
+                    ? 'デモ用の管理端末として準備済みです'
+                    : 'この設定はアプリ内では変更できません。デモ担当者へ確認してください',
               ),
               _CapabilityTile(
                 key: const Key('usage-access-capability'),
-                title: 'Usage Access',
+                title: '利用状況へのアクセス',
                 ready: state.capabilities.hasUsageAccess,
                 detail: state.capabilities.hasUsageAccess
-                    ? '利用状況へのアクセスが許可されています'
-                    : '離脱検知には設定画面での許可が必要です',
+                    ? '別アプリへの移動を端末内で検知できます'
+                    : '約束中の別アプリ移動を検知するため許可が必要です',
                 actionLabel: state.capabilities.hasUsageAccess ? null : '設定を開く',
                 onAction: () => ref
                     .read(deviceSetupControllerProvider.notifier)
@@ -89,8 +97,8 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
                 title: '通知',
                 ready: state.capabilities.hasNotificationPermission,
                 detail: state.capabilities.hasNotificationPermission
-                    ? '通知を表示できます'
-                    : '後続Phaseの監視通知に許可が必要です',
+                    ? '約束の監視中であることを通知できます'
+                    : '約束の監視中であることを表示するため許可が必要です',
                 actionLabel: state.capabilities.hasNotificationPermission
                     ? null
                     : '設定を開く',
@@ -107,14 +115,20 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
                 detail:
                     state.capabilities.packageVisibility ==
                         PackageVisibility.broad
-                    ? 'debug buildのデモ用一覧を利用できます'
+                    ? 'デモ用のアプリ一覧を利用できます'
                     : '公開buildではAndroidのscoped visibilityに限定されます',
               ),
               _CapabilityTile(
-                title: 'Android enforcement API',
-                ready:
-                    state.capabilities.supportsHardEnforcement &&
-                    state.capabilities.isUserUnlocked,
+                key: const Key('user-unlocked-capability'),
+                title: '端末のロック解除',
+                ready: state.capabilities.isUserUnlocked,
+                detail: state.capabilities.isUserUnlocked
+                    ? '端末内の復元データを利用できます'
+                    : '端末のロックを解除してから再確認してください',
+              ),
+              _CapabilityTile(
+                title: '封印機能',
+                ready: state.capabilities.supportsHardEnforcement,
                 detail: 'Android API ${state.capabilities.sdkInt}',
               ),
               if (state.commandFailure case final failure?) ...[
@@ -132,6 +146,16 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
                 icon: const Icon(Icons.apps),
                 label: Text('封印対象アプリを選ぶ（${state.savedPackageNames.length}件）'),
               ),
+              if (state.capabilities.isManagedDemoReady &&
+                  state.savedPackageNames.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const Key('device-setup-task-route-button'),
+                  onPressed: () => context.go('/task/new'),
+                  icon: const Icon(Icons.timer_outlined),
+                  label: const Text('約束の設定へ進む'),
+                ),
+              ],
             ],
           ),
         ),

@@ -26,7 +26,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.selectedPackageNames, {'video.app'});
-    expect(find.text('選択を端末に保存しました'), findsOneWidget);
+    expect(find.text('封印対象を保存しました'), findsOneWidget);
 
     await _pump(tester, repository);
     expect(_checkbox(tester, 'video.app').value, isTrue);

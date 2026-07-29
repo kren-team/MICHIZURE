@@ -98,7 +98,7 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
     final shouldAbort = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Taskを中断しますか？'),
+        title: const Text('約束を中断しますか？'),
         content: const Text('中断は失敗として記録され、グループにスクワット負債が発生します。'),
         actions: [
           TextButton(
@@ -142,7 +142,7 @@ final class _RunningTaskView extends StatelessWidget {
   Widget build(BuildContext context) {
     final error = command.whenOrNull(error: (error, stackTrace) => error);
     return Scaffold(
-      appBar: AppBar(title: const Text('Task実行中')),
+      appBar: AppBar(title: const Text('約束を実行中')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -166,7 +166,12 @@ final class _RunningTaskView extends StatelessWidget {
                   style: Theme.of(context).textTheme.displayMedium,
                 ),
                 const SizedBox(height: 8),
-                const Text('終了時刻から残り時間を再計算しています', textAlign: TextAlign.center),
+                const Text('終了予定時刻から残り時間を計算しています', textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                const Text(
+                  '別のアプリへ移動すると、この約束は失敗になります。',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 16),
                 Card(
                   child: Padding(
@@ -233,13 +238,13 @@ final class _RunningTaskView extends StatelessWidget {
 
 String _guardStatusMessage(TaskGuardPhase phase, Duration remaining) {
   return switch (phase) {
-    TaskGuardPhase.idle || TaskGuardPhase.starting => 'Task監視を開始しています',
+    TaskGuardPhase.idle || TaskGuardPhase.starting => '約束の監視を開始しています',
     TaskGuardPhase.monitoring when remaining == Duration.zero =>
       '端末内のdeadline判定を確定しています',
     TaskGuardPhase.monitoring => '端末内で外部アプリへの移動を監視中です',
-    TaskGuardPhase.synchronizing => 'Task結果を安全に同期しています',
+    TaskGuardPhase.synchronizing => '約束の結果を安全に同期しています',
     TaskGuardPhase.retryNeeded => '監視または結果同期に再試行が必要です',
-    TaskGuardPhase.terminal => 'Task結果を確定しました',
+    TaskGuardPhase.terminal => '約束の結果を確定しました',
   };
 }
 
@@ -263,7 +268,7 @@ final class _TaskResultView extends StatelessWidget {
   Widget build(BuildContext context) {
     final succeeded = task.status == TaskSessionStatus.succeeded;
     return Scaffold(
-      appBar: AppBar(title: Text(succeeded ? 'Task完了' : 'Task失敗')),
+      appBar: AppBar(title: Text(succeeded ? '約束達成' : '約束失敗')),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -279,7 +284,7 @@ final class _TaskResultView extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                succeeded ? '約束を達成しました' : 'Taskは失敗として記録されました',
+                succeeded ? '約束を達成しました' : '約束は失敗として記録されました',
                 key: Key(
                   succeeded ? 'task-success-title' : 'task-failed-title',
                 ),
@@ -289,8 +294,19 @@ final class _TaskResultView extends StatelessWidget {
               if (!succeeded && debtReps != null) ...[
                 const SizedBox(height: 8),
                 Text('発生した負債: $debtReps回'),
+                const SizedBox(height: 8),
+                const Text('グループのメンバーがスクワットで一緒に返済できます。'),
               ],
               const SizedBox(height: 24),
+              if (!succeeded && task.debtId != null) ...[
+                FilledButton.icon(
+                  key: const Key('task-result-debt-button'),
+                  onPressed: () => context.go('/debts/${task.debtId}'),
+                  icon: const Icon(Icons.fitness_center),
+                  label: const Text('発生した負債を見る'),
+                ),
+                const SizedBox(height: 8),
+              ],
               FilledButton(
                 key: const Key('task-result-home-button'),
                 onPressed: () => context.go('/home'),
@@ -317,7 +333,7 @@ final class _TaskLoadError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(noActiveTask ? '実行中のTaskはありません。' : 'Taskを復元できませんでした。'),
+            Text(noActiveTask ? '実行中の約束はありません。' : '約束を復元できませんでした。'),
             if (onRetry != null)
               FilledButton(onPressed: onRetry, child: const Text('再試行')),
             TextButton(

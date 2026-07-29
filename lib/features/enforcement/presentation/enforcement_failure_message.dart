@@ -17,7 +17,7 @@ String enforcementFailureMessage(Object error) {
     EnforcementFailureKind.unsuspensionPartialFailure =>
       '一部のアプリを解除できませんでした。端末状態を確認して再試行してください。',
     EnforcementFailureKind.taskSnapshotMissing =>
-      'Task開始時の封印対象を復元できませんでした。診断画面で再試行してください。',
+      '約束開始時の封印対象を復元できませんでした。端末状態を再確認してください。',
     EnforcementFailureKind.nativeStateCorrupt => '端末内の選択状態を読み書きできませんでした。',
     EnforcementFailureKind.timeout => 'Android機能から応答がありません。もう一度お試しください。',
     EnforcementFailureKind.unsupportedPlatform => 'この機能はAndroid端末でのみ利用できます。',

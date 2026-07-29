@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/presentation/app_theme.dart';
 import '../features/debt/application/contribution_controller.dart';
 import '../features/debt/application/debt_lock_release_controller.dart';
 import '../features/recovery/application/recovery_controller.dart';
@@ -67,10 +68,7 @@ final class _MichizureAppViewState extends ConsumerState<_MichizureAppView>
     ref.watch(recoveryControllerProvider);
     return MaterialApp.router(
       title: 'MICHIZURE',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+      theme: buildMichizureTheme(),
       routerConfig: ref.watch(appRouterProvider),
       builder: (context, child) =>
           RecoveryStatusOverlay(child: child ?? const SizedBox.shrink()),

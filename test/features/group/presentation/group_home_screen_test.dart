@@ -4,12 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
 import 'package:michizure/features/auth/domain/auth_user.dart';
 import 'package:michizure/features/debt/domain/debt.dart';
+import 'package:michizure/features/enforcement/domain/device_capabilities.dart';
 import 'package:michizure/features/group/domain/group.dart';
 import 'package:michizure/features/group/domain/group_failure.dart';
 import 'package:michizure/features/group/domain/group_member.dart';
 import 'package:michizure/features/group/presentation/group_home_screen.dart';
 import 'package:michizure/features/profile/domain/user_profile.dart';
 
+import '../../enforcement/support/fake_device_control_repository.dart';
 import '../support/fake_group_repository.dart';
 
 void main() {
@@ -34,10 +36,66 @@ void main() {
     );
 
     expect(find.text('朝活チーム'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('group-member-alice')),
+      300,
+    );
     expect(find.byKey(const Key('group-member-alice')), findsOneWidget);
     expect(find.byKey(const Key('group-member-bob')), findsOneWidget);
     expect(find.text('野々村 奏'), findsOneWidget);
     expect(find.text('Bob'), findsOneWidget);
+  });
+
+  testWidgets('shows device setup as the primary action when not ready', (
+    tester,
+  ) async {
+    final device = FakeDeviceControlRepository()
+      ..capabilities = const DeviceCapabilities(
+        isDeviceOwner: false,
+        hasUsageAccess: false,
+        hasNotificationPermission: false,
+        packageVisibility: PackageVisibility.scoped,
+        isUserUnlocked: true,
+        supportsHardEnforcement: true,
+        sdkInt: 36,
+      );
+    await _pumpHome(
+      tester,
+      profile: _profile(groupId: 'group-1'),
+      group: _group,
+      members: _members,
+      deviceRepository: device,
+    );
+
+    expect(find.text('次にすること'), findsOneWidget);
+    expect(find.text('端末セットアップを完了する'), findsNWidgets(2));
+  });
+
+  testWidgets(
+    'shows app selection before task start when nothing is selected',
+    (tester) async {
+      await _pumpHome(
+        tester,
+        profile: _profile(groupId: 'group-1'),
+        group: _group,
+        members: _members,
+        deviceRepository: FakeDeviceControlRepository(),
+      );
+
+      expect(find.text('封印するアプリを選ぶ'), findsNWidgets(2));
+    },
+  );
+
+  testWidgets('prioritizes an active debt after setup', (tester) async {
+    await _pumpHome(
+      tester,
+      profile: _profile(groupId: 'group-1'),
+      group: _group,
+      members: _members,
+      debts: [_debt],
+    );
+
+    expect(find.text('現在の負債を確認する'), findsNWidgets(2));
   });
 
   testWidgets('a non-owner can leave after confirmation', (tester) async {
@@ -90,15 +148,22 @@ Future<void> _pumpHome(
   required UserProfile profile,
   String authUserId = 'alice',
   FakeGroupRepository? repository,
+  FakeDeviceControlRepository? deviceRepository,
   Group? group,
   List<GroupMember> members = const [],
+  List<Debt> debts = const [],
 }) async {
+  final device =
+      deviceRepository ??
+      (FakeDeviceControlRepository()
+        ..selectedPackageNames = const {'social.app'});
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         groupRepositoryProvider.overrideWithValue(
           repository ?? FakeGroupRepository(),
         ),
+        deviceControlRepositoryProvider.overrideWithValue(device),
         authStateProvider.overrideWithValue(
           AsyncData(AuthUser(id: authUserId)),
         ),
@@ -106,9 +171,9 @@ Future<void> _pumpHome(
         currentGroupProvider.overrideWithValue(AsyncData(group)),
         currentGroupMembersProvider.overrideWithValue(AsyncData(members)),
         activeGroupDebtsProvider.overrideWithValue(
-          const AsyncData(
+          AsyncData(
             DebtSnapshot(
-              value: <Debt>[],
+              value: debts,
               isFromCache: false,
               hasPendingWrites: false,
             ),
@@ -162,3 +227,20 @@ final _members = [
     updatedAt: DateTime.utc(2026, 1, 2),
   ),
 ];
+
+final _debt = Debt(
+  id: 'debt-1',
+  groupId: 'group-1',
+  failedUserId: 'alice',
+  failedTaskSessionId: 'task-1',
+  memberCountAtFailure: 2,
+  repsPerMember: 10,
+  totalReps: 20,
+  completedReps: 0,
+  status: DebtStatus.active,
+  createdAt: DateTime.utc(2026),
+  lockExpiresAt: DateTime.utc(2026, 1, 1, 1),
+  closedAt: null,
+  lastContributionAt: null,
+  lastContributionEventId: null,
+);

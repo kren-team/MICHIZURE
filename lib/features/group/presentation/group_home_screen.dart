@@ -7,6 +7,8 @@ import '../../auth/application/auth_controller.dart';
 import '../../auth/presentation/auth_failure_message.dart';
 import '../../debt/application/debt_lock_release_controller.dart';
 import '../../debt/domain/debt.dart';
+import '../../enforcement/application/device_setup_controller.dart';
+import '../../home/domain/home_guidance.dart';
 import '../application/group_controller.dart';
 import '../domain/group.dart';
 import '../domain/group_member.dart';
@@ -112,6 +114,7 @@ final class _GroupDashboardViewState
     final command = ref.watch(groupControllerProvider);
     final authCommand = ref.watch(authControllerProvider);
     final debtsState = ref.watch(activeGroupDebtsProvider);
+    final deviceSetup = ref.watch(deviceSetupControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -143,6 +146,7 @@ final class _GroupDashboardViewState
               profile.displayName,
               command,
               debtsState,
+              deviceSetup,
             ),
           );
         },
@@ -158,26 +162,48 @@ final class _GroupDashboardViewState
     String displayName,
     AsyncValue<Object?> command,
     AsyncValue<DebtSnapshot<List<Debt>>> debtsState,
+    AsyncValue<DeviceSetupState> deviceSetup,
   ) {
     final isOwner = group.ownerUid == userId;
     final transferCandidates = members
         .where((member) => member.userId != userId)
         .toList(growable: false);
+    final setup = deviceSetup.value;
+    final guidance = HomeGuidance.derive(
+      deviceSetupLoaded: setup != null,
+      deviceSetupReady: setup?.capabilities.isManagedDemoReady ?? false,
+      selectedAppCount: setup?.savedPackageNames.length ?? 0,
+      activeDebtCount: debtsState.value?.value.length ?? 0,
+    );
 
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Text(group.name, style: Theme.of(context).textTheme.headlineSmall),
+        Text(
+          '${profileGreeting(displayName)}、おかえりなさい',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(group.name, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         Text('${group.memberCount} / ${Group.maximumMemberCount} 人'),
         const SizedBox(height: 16),
-        FilledButton.icon(
+        _NextActionCard(
+          guidance: guidance,
+          onPressed: command.isLoading
+              ? null
+              : () => _openNextAction(context, guidance.action),
+        ),
+        const SizedBox(height: 24),
+        Text('メニュー', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
           key: const Key('task-composer-route-button'),
           onPressed: command.isLoading ? null : () => context.go('/task/new'),
-          icon: const Icon(Icons.timer),
-          label: const Text('Taskを始める'),
+          icon: const Icon(Icons.timer_outlined),
+          label: const Text('約束を始める'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           key: const Key('debt-list-route-button'),
           onPressed: () => context.go('/debts'),
@@ -185,19 +211,19 @@ final class _GroupDashboardViewState
           label: Text(
             debtsState.when(
               loading: () => '現在の負債を確認',
-              error: (error, stackTrace) => '現在の負債（読込エラー）',
+              error: (error, stackTrace) => '現在の負債（読み込みエラー）',
               data: (snapshot) => '現在の負債（${snapshot.value.length}件）',
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           key: const Key('lock-status-route-button'),
           onPressed: () => context.go('/lock-status'),
           icon: const Icon(Icons.lock_outline),
           label: const Text('アプリ封印状態'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         FilledButton.icon(
           key: const Key('group-invite-route-button'),
           onPressed: command.isLoading
@@ -282,6 +308,23 @@ final class _GroupDashboardViewState
     );
   }
 
+  void _openNextAction(BuildContext context, HomeNextAction action) {
+    switch (action) {
+      case HomeNextAction.completeDeviceSetup:
+        context.go('/device-setup');
+        return;
+      case HomeNextAction.selectLockApps:
+        context.go('/device-setup/apps');
+        return;
+      case HomeNextAction.viewDebts:
+        context.go('/debts');
+        return;
+      case HomeNextAction.startTask:
+        context.go('/task/new');
+        return;
+    }
+  }
+
   Future<void> _confirmLeave(
     BuildContext context, {
     required String userId,
@@ -320,6 +363,47 @@ final class _GroupDashboardViewState
           .read(groupControllerProvider.notifier)
           .leaveGroup(userId: userId, groupId: groupId);
     }
+  }
+}
+
+String profileGreeting(String displayName) =>
+    displayName.trim().isEmpty ? 'こんにちは' : '$displayNameさん';
+
+final class _NextActionCard extends StatelessWidget {
+  const _NextActionCard({required this.guidance, required this.onPressed});
+
+  final HomeGuidance guidance;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('home-next-action-card'),
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('次にすること', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 6),
+            Text(
+              guidance.title,
+              key: const Key('home-next-action-title'),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 6),
+            Text(guidance.description),
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('home-next-action-button'),
+              onPressed: onPressed,
+              child: Text(guidance.title),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

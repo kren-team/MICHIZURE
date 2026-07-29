@@ -53,7 +53,7 @@ final class _DebtListScreenState extends ConsumerState<DebtListScreen> {
       body: profile?.groupId == null
           ? const _CenteredMessage(
               key: Key('debt-group-required'),
-              message: 'グループに参加するとDebtを確認できます。',
+              message: 'グループに参加すると負債を確認できます。',
             )
           : debts.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -121,7 +121,7 @@ final class _DebtList extends StatelessWidget {
         if (snapshot.value.isEmpty)
           const _CenteredMessage(
             key: Key('debt-empty-state'),
-            message: '現在返済が必要なDebtはありません。',
+            message: '現在返済が必要な負債はありません。\n新しい約束を始められます。',
           )
         else
           ...snapshot.value.map(

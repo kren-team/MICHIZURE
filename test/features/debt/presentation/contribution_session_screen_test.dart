@@ -27,7 +27,7 @@ void main() {
       ),
     );
 
-    expect(find.text('選択中: debt-1'), findsOneWidget);
+    expect(find.text('返済中の負債: debt-1'), findsOneWidget);
     expect(find.text('残り 10 回'), findsOneWidget);
     expect(find.textContaining('カメラ映像は端末内だけ'), findsOneWidget);
     expect(find.byKey(const Key('request-camera-permission')), findsOneWidget);
@@ -104,7 +104,7 @@ void main() {
 
     expect(find.text('確定 1 回'), findsOneWidget);
     expect(find.text('拒否 1 回'), findsOneWidget);
-    expect(find.text('このDebtはすでに終了しています。'), findsOneWidget);
+    expect(find.text('この負債はすでに終了しています。'), findsOneWidget);
     expect(find.textContaining('FirebaseException'), findsNothing);
   });
 
@@ -142,7 +142,7 @@ void main() {
       ),
     );
 
-    expect(find.text('判定: 立った姿勢を調整中'), findsOneWidget);
+    expect(find.text('次の動作: 立った姿勢を調整中'), findsOneWidget);
     expect(find.text('全身が映る位置に移動してください。'), findsOneWidget);
     expect(find.text('端末で検出 1 回'), findsOneWidget);
     expect(find.text('送信待ち 1 回'), findsOneWidget);
@@ -172,6 +172,37 @@ void main() {
     );
 
     expect(find.byKey(const Key('open-camera-settings')), findsOneWidget);
+  });
+
+  testWidgets('keeps the repayment controls usable at large text scale', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: ContributionSessionView(
+            debt: _debt(),
+            state: const ContributionControllerState.idle(),
+            isFromCache: false,
+            hasPendingWrites: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('request-camera-permission')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 

@@ -44,6 +44,22 @@ void main() {
     expect(tasks.startCalls, 0);
   });
 
+  testWidgets('disables start and explains missing app selection', (
+    tester,
+  ) async {
+    final tasks = FakeTaskRepository();
+    final device = FakeDeviceControlRepository();
+    await _pumpComposer(tester, tasks: tasks, device: device);
+
+    final start = tester.widget<FilledButton>(
+      find.byKey(const Key('task-start-button')),
+    );
+    expect(start.onPressed, isNull);
+    expect(find.text('セットアップが必要です'), findsOneWidget);
+    expect(find.text('封印対象アプリ: 0件'), findsOneWidget);
+    expect(find.byKey(const Key('task-device-setup-button')), findsOneWidget);
+  });
+
   testWidgets('renders a safe typed failure without an SDK message', (
     tester,
   ) async {
@@ -68,9 +84,11 @@ void main() {
 Future<GoRouter> _pumpComposer(
   WidgetTester tester, {
   required FakeTaskRepository tasks,
+  FakeDeviceControlRepository? device,
 }) async {
-  final device = FakeDeviceControlRepository()
-    ..selectedPackageNames = {'social.app'};
+  final deviceRepository =
+      device ??
+      (FakeDeviceControlRepository()..selectedPackageNames = {'social.app'});
   final guard = FakeNativeTaskGuard();
   final router = GoRouter(
     initialLocation: '/task/new',
@@ -95,7 +113,7 @@ Future<GoRouter> _pumpComposer(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(tasks),
-        deviceControlRepositoryProvider.overrideWithValue(device),
+        deviceControlRepositoryProvider.overrideWithValue(deviceRepository),
         nativeTaskGuardProvider.overrideWithValue(guard),
         authStateProvider.overrideWithValue(
           const AsyncData(AuthUser(id: 'alice')),
