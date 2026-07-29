@@ -9,6 +9,8 @@ import 'firestore_debt_repository.dart';
 final class FirestoreContributionRepository implements ContributionRepository {
   FirestoreContributionRepository(this._firestore, this._clock);
 
+  static const int _maximumContentionAttempts = 8;
+
   final FirebaseFirestore _firestore;
   final Clock _clock;
 
@@ -30,113 +32,160 @@ final class FirestoreContributionRepository implements ContributionRepository {
         .collection('contributions')
         .doc(request.userId);
 
-    try {
-      return await _firestore.runTransaction((transaction) async {
-        // Firestore transactions require every read before the first write.
-        final debtSnapshot = await transaction.get(debtReference);
-        final eventSnapshot = await transaction.get(eventReference);
-        final summarySnapshot = await transaction.get(summaryReference);
+    for (var attempt = 1; attempt <= _maximumContentionAttempts; attempt += 1) {
+      try {
+        return await _firestore.runTransaction((transaction) async {
+          // Firestore transactions require every read before the first write.
+          final debtSnapshot = await transaction.get(debtReference);
+          final eventSnapshot = await transaction.get(eventReference);
+          final summarySnapshot = await transaction.get(summaryReference);
 
-        if (!debtSnapshot.exists) {
-          throw const ContributionFailure(
-            ContributionRejectionReason.debtNotFound,
-          );
-        }
-        final debt = debtFromFirestore(debtSnapshot.id, debtSnapshot.data()!);
-
-        if (eventSnapshot.exists) {
-          final event = contributionEventFromFirestore(
-            eventSnapshot.id,
-            eventSnapshot.data()!,
-          );
-          if (!_matchesRequest(event, request)) {
+          if (!debtSnapshot.exists) {
             throw const ContributionFailure(
-              ContributionRejectionReason.conflict,
+              ContributionRejectionReason.debtNotFound,
             );
           }
-          if (!summarySnapshot.exists) {
-            throw const ContributionFailure(
-              ContributionRejectionReason.malformedData,
+          final debt = debtFromFirestore(debtSnapshot.id, debtSnapshot.data()!);
+
+          if (eventSnapshot.exists) {
+            final event = contributionEventFromFirestore(
+              eventSnapshot.id,
+              eventSnapshot.data()!,
+            );
+            if (!_matchesRequest(event, request)) {
+              throw const ContributionFailure(
+                ContributionRejectionReason.conflict,
+              );
+            }
+            if (!summarySnapshot.exists) {
+              throw const ContributionFailure(
+                ContributionRejectionReason.malformedData,
+              );
+            }
+            debtContributionSummaryFromFirestore(
+              summarySnapshot.id,
+              summarySnapshot.data()!,
+            );
+            return ContributionCommitResult(
+              eventId: request.eventId,
+              disposition: ContributionCommitDisposition.duplicate,
+              acceptedReps: 0,
+              debtCompletedReps: debt.completedReps,
+              debtTotalReps: debt.totalReps,
+              debtCompleted: debt.status == DebtStatus.completed,
             );
           }
-          debtContributionSummaryFromFirestore(
-            summarySnapshot.id,
-            summarySnapshot.data()!,
-          );
+
+          if (debt.status != DebtStatus.active) {
+            throw const ContributionFailure(
+              ContributionRejectionReason.debtTerminal,
+            );
+          }
+          if (!_clock.now().toUtc().isBefore(debt.lockExpiresAt)) {
+            throw const ContributionFailure(
+              ContributionRejectionReason.deadlineReached,
+            );
+          }
+          if (debt.completedReps >= debt.totalReps) {
+            throw const ContributionFailure(
+              ContributionRejectionReason.debtFull,
+            );
+          }
+
+          final previousSummary = summarySnapshot.exists
+              ? debtContributionSummaryFromFirestore(
+                  summarySnapshot.id,
+                  summarySnapshot.data()!,
+                )
+              : null;
+          final nextCompleted = debt.completedReps + 1;
+          final completesDebt = nextCompleted == debt.totalReps;
+
+          transaction.set(eventReference, {
+            'userId': request.userId,
+            'squatSessionId': request.squatSessionId,
+            'sequence': request.sequence,
+            'acceptedReps': request.acceptedReps,
+            'detectorType': request.detectorType.wireValue,
+            'detectorVersion': request.detectorVersion,
+            'clientObservedAt': Timestamp.fromDate(
+              request.clientObservedAt.toUtc(),
+            ),
+            'createdAt': FieldValue.serverTimestamp(),
+            'schemaVersion': ContributionEvent.schemaVersion,
+          });
+          transaction.set(summaryReference, {
+            'userId': request.userId,
+            'totalReps': (previousSummary?.totalReps ?? 0) + 1,
+            'lastEventId': request.eventId,
+            'lastContributedAt': FieldValue.serverTimestamp(),
+            'schemaVersion': DebtContributionSummary.schemaVersion,
+          });
+          transaction.update(debtReference, {
+            'completedReps': nextCompleted,
+            'status': completesDebt
+                ? DebtStatus.completed.wireValue
+                : DebtStatus.active.wireValue,
+            'closedAt': completesDebt ? FieldValue.serverTimestamp() : null,
+            'lastContributionAt': FieldValue.serverTimestamp(),
+            'lastContributionEventId': request.eventId,
+          });
+
           return ContributionCommitResult(
             eventId: request.eventId,
-            disposition: ContributionCommitDisposition.duplicate,
-            acceptedReps: 0,
-            debtCompletedReps: debt.completedReps,
+            disposition: ContributionCommitDisposition.accepted,
+            acceptedReps: 1,
+            debtCompletedReps: nextCompleted,
             debtTotalReps: debt.totalReps,
-            debtCompleted: debt.status == DebtStatus.completed,
+            debtCompleted: completesDebt,
           );
-        }
-
-        if (debt.status != DebtStatus.active) {
-          throw const ContributionFailure(
-            ContributionRejectionReason.debtTerminal,
-          );
-        }
-        if (!_clock.now().toUtc().isBefore(debt.lockExpiresAt)) {
-          throw const ContributionFailure(
-            ContributionRejectionReason.deadlineReached,
-          );
-        }
-        if (debt.completedReps >= debt.totalReps) {
-          throw const ContributionFailure(ContributionRejectionReason.debtFull);
-        }
-
-        final previousSummary = summarySnapshot.exists
-            ? debtContributionSummaryFromFirestore(
-                summarySnapshot.id,
-                summarySnapshot.data()!,
-              )
-            : null;
-        final nextCompleted = debt.completedReps + 1;
-        final completesDebt = nextCompleted == debt.totalReps;
-
-        transaction.set(eventReference, {
-          'userId': request.userId,
-          'squatSessionId': request.squatSessionId,
-          'sequence': request.sequence,
-          'acceptedReps': request.acceptedReps,
-          'detectorType': request.detectorType.wireValue,
-          'detectorVersion': request.detectorVersion,
-          'clientObservedAt': Timestamp.fromDate(
-            request.clientObservedAt.toUtc(),
-          ),
-          'createdAt': FieldValue.serverTimestamp(),
-          'schemaVersion': ContributionEvent.schemaVersion,
         });
-        transaction.set(summaryReference, {
-          'userId': request.userId,
-          'totalReps': (previousSummary?.totalReps ?? 0) + 1,
-          'lastEventId': request.eventId,
-          'lastContributedAt': FieldValue.serverTimestamp(),
-          'schemaVersion': DebtContributionSummary.schemaVersion,
-        });
-        transaction.update(debtReference, {
-          'completedReps': nextCompleted,
-          'status': completesDebt
-              ? DebtStatus.completed.wireValue
-              : DebtStatus.active.wireValue,
-          'closedAt': completesDebt ? FieldValue.serverTimestamp() : null,
-          'lastContributionAt': FieldValue.serverTimestamp(),
-          'lastContributionEventId': request.eventId,
-        });
+      } on FirebaseException catch (error) {
+        if (error.code == 'permission-denied' &&
+            attempt < _maximumContentionAttempts &&
+            await _isRetryableContention(debtReference)) {
+          await Future<void>.delayed(Duration(milliseconds: attempt * 10));
+          continue;
+        }
+        throw mapContributionFailure(error);
+      } on Object catch (error) {
+        throw mapContributionFailure(error);
+      }
+    }
+    throw const ContributionFailure(ContributionRejectionReason.conflict);
+  }
 
-        return ContributionCommitResult(
-          eventId: request.eventId,
-          disposition: ContributionCommitDisposition.accepted,
-          acceptedReps: 1,
-          debtCompletedReps: nextCompleted,
-          debtTotalReps: debt.totalReps,
-          debtCompleted: completesDebt,
+  Future<bool> _isRetryableContention(
+    DocumentReference<Map<String, dynamic>> debtReference,
+  ) async {
+    try {
+      final snapshot = await debtReference.get(
+        const GetOptions(source: Source.server),
+      );
+      if (!snapshot.exists) {
+        throw const ContributionFailure(
+          ContributionRejectionReason.debtNotFound,
         );
-      });
-    } on Object catch (error) {
-      throw mapContributionFailure(error);
+      }
+      final debt = debtFromFirestore(snapshot.id, snapshot.data()!);
+      if (debt.status != DebtStatus.active) {
+        throw const ContributionFailure(
+          ContributionRejectionReason.debtTerminal,
+        );
+      }
+      if (!_clock.now().toUtc().isBefore(debt.lockExpiresAt)) {
+        throw const ContributionFailure(
+          ContributionRejectionReason.deadlineReached,
+        );
+      }
+      if (debt.completedReps >= debt.totalReps) {
+        throw const ContributionFailure(ContributionRejectionReason.debtFull);
+      }
+      return true;
+    } on ContributionFailure {
+      rethrow;
+    } on Object {
+      return false;
     }
   }
 }
