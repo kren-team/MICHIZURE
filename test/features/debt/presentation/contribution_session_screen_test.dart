@@ -5,6 +5,8 @@ import 'package:michizure/features/debt/application/submit_contribution.dart';
 import 'package:michizure/features/debt/domain/contribution.dart';
 import 'package:michizure/features/debt/domain/debt.dart';
 import 'package:michizure/features/debt/presentation/contribution_session_screen.dart';
+import 'package:michizure/features/squat/application/squat_session_controller.dart';
+import 'package:michizure/features/squat/domain/squat_detector.dart';
 
 import '../support/fake_contribution_repository.dart';
 
@@ -27,10 +29,8 @@ void main() {
 
     expect(find.text('選択中: debt-1'), findsOneWidget);
     expect(find.text('残り 10 回'), findsOneWidget);
-    expect(
-      find.byKey(const Key('contribution-no-manual-input')),
-      findsOneWidget,
-    );
+    expect(find.textContaining('カメラ映像は端末内だけ'), findsOneWidget);
+    expect(find.byKey(const Key('request-camera-permission')), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(find.byType(TextFormField), findsNothing);
   });
@@ -106,6 +106,72 @@ void main() {
     expect(find.text('拒否 1 回'), findsOneWidget);
     expect(find.text('このDebtはすでに終了しています。'), findsOneWidget);
     expect(find.textContaining('FirebaseException'), findsNothing);
+  });
+
+  testWidgets('shows calibration quality and detected sync states', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ContributionSessionView(
+            debt: _debt(),
+            state: const ContributionControllerState(
+              isRestoring: false,
+              isSubmitting: true,
+              detectedCount: 1,
+              pendingCount: 1,
+              confirmedCount: 0,
+              rejectedCount: 0,
+            ),
+            squatState: const SquatSessionState(
+              status: SquatSessionStatus.running,
+              permission: CameraPermissionState.granted,
+              detectorState: SquatDetectorState.calibrating,
+              detectedReps: 1,
+              lastSequence: 1,
+              maximumLocalReps: 10,
+              squatSessionId: 'session-12345678',
+              debtId: 'debt-1',
+              qualityWarning: SquatQualityWarning.showFullBody,
+            ),
+            isFromCache: false,
+            hasPendingWrites: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('判定: 立った姿勢を調整中'), findsOneWidget);
+    expect(find.text('全身が映る位置に移動してください。'), findsOneWidget);
+    expect(find.text('端末で検出 1 回'), findsOneWidget);
+    expect(find.text('送信待ち 1 回'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+  });
+
+  testWidgets('shows camera settings after permanent denial', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ContributionSessionView(
+            debt: _debt(),
+            state: const ContributionControllerState.idle(),
+            squatState: const SquatSessionState(
+              status: SquatSessionStatus.idle,
+              permission: CameraPermissionState.permanentlyDenied,
+              detectorState: SquatDetectorState.calibrating,
+              detectedReps: 0,
+              lastSequence: 0,
+              maximumLocalReps: 0,
+            ),
+            isFromCache: false,
+            hasPendingWrites: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('open-camera-settings')), findsOneWidget);
   });
 }
 

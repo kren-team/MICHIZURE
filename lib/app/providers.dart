@@ -26,6 +26,9 @@ import '../features/group/infrastructure/secure_invite_token_generator.dart';
 import '../features/profile/domain/profile_repository.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/profile/infrastructure/firestore_profile_repository.dart';
+import '../features/squat/domain/squat_detector.dart';
+import '../features/squat/infrastructure/secure_squat_session_id_generator.dart';
+import '../features/squat/infrastructure/squat_detector_channel.dart';
 import '../features/task/application/start_task.dart';
 import '../features/task/application/task_event_id_generator.dart';
 import '../features/task/domain/native_task_guard.dart';
@@ -83,6 +86,16 @@ final submitContributionProvider = Provider<SubmitContribution>((ref) {
     ref.watch(contributionRepositoryProvider),
     ref.watch(contributionOutboxProvider),
   );
+});
+
+final squatDetectorProvider = Provider<SquatDetector>((ref) {
+  return MethodChannelSquatDetector();
+});
+
+final squatSessionIdGeneratorProvider = Provider<SquatSessionIdGenerator>((
+  ref,
+) {
+  return SecureSquatSessionIdGenerator();
 });
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
