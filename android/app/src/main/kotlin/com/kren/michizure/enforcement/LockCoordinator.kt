@@ -1,9 +1,12 @@
 package com.kren.michizure.enforcement
 
 import android.content.Context
+import android.os.Build
+import android.os.UserManager
 import com.kren.michizure.monitoring.AndroidTaskGuardClock
 import com.kren.michizure.monitoring.TaskGuardClock
 import com.kren.michizure.persistence.LockObligationStore
+import com.kren.michizure.persistence.DeviceProtectedLockStateStore
 import com.kren.michizure.persistence.LockStateStore
 import com.kren.michizure.persistence.NativeTaskStore
 import com.kren.michizure.persistence.NativeTaskRecord
@@ -19,7 +22,7 @@ class LockCoordinator(
     private val reconciler: LockReconciler = LockReconciler(),
 ) {
     constructor(context: Context) : this(
-        obligationStore = LockObligationStore(context),
+        obligationStore = recoveryLockStore(context),
         taskSnapshotSource = StoredLockTaskSnapshotSource(NativeTaskStore(context)),
         packageSuspender = AndroidPackageSuspender(context),
         clock = AndroidTaskGuardClock(context),
@@ -174,7 +177,10 @@ class LockCoordinator(
         val failedApply = applyResult.failedPackages + unavailable.intersect(plan.desiredPackages)
         val failedRelease = releaseResult.failedPackages
         val nextOwned =
-            (state.ownedSuspensions + applyResult.changedPackages)
+            (
+                state.ownedSuspensions.intersect(actualResult.changedPackages) +
+                    applyResult.changedPackages
+            )
                 .minus(releaseResult.changedPackages)
                 .minus(unavailable)
         val effectiveAfter =
@@ -261,6 +267,20 @@ class LockCoordinator(
 
     companion object {
         private val operationMutex = Mutex()
+    }
+}
+
+private fun recoveryLockStore(context: Context): LockStateStore {
+    val isUnlocked =
+        if (Build.VERSION.SDK_INT >= 24) {
+            context.getSystemService(UserManager::class.java)?.isUserUnlocked == true
+        } else {
+            true
+        }
+    return if (isUnlocked) {
+        LockObligationStore(context)
+    } else {
+        DeviceProtectedLockStateStore(context)
     }
 }
 
