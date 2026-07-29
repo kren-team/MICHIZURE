@@ -84,6 +84,16 @@
       "collectionGroup": "debts",
       "fieldPath": "lastContributionEventId",
       "indexes": []
+    },
+    {
+      "collectionGroup": "contributionEvents",
+      "fieldPath": "detectorVersion",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "contributionEvents",
+      "fieldPath": "clientObservedAt",
+      "indexes": []
     }
   ]
 }

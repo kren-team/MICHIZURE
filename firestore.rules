@@ -34,6 +34,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/debts/$(debtId);
     }
 
+    function contributionPath(debtId, uid) {
+      return /databases/$(database)/documents/debts/$(debtId)/contributions/$(uid);
+    }
+
+    function contributionEventPath(debtId, eventId) {
+      return /databases/$(database)/documents/debts/$(debtId)/contributionEvents/$(eventId);
+    }
+
     function isMember(groupId) {
       return signedIn() && exists(memberPath(groupId, request.auth.uid));
     }
@@ -812,6 +820,173 @@ service cloud.firestore {
         ]);
     }
 
+    function hasExactContributionSummaryKeys() {
+      return request.resource.data.keys().hasAll([
+          'userId',
+          'totalReps',
+          'lastEventId',
+          'lastContributedAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'totalReps',
+          'lastEventId',
+          'lastContributedAt',
+          'schemaVersion'
+        ]);
+    }
+
+    function hasExactContributionEventKeys() {
+      return request.resource.data.keys().hasAll([
+          'userId',
+          'squatSessionId',
+          'sequence',
+          'acceptedReps',
+          'detectorType',
+          'detectorVersion',
+          'clientObservedAt',
+          'createdAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'squatSessionId',
+          'sequence',
+          'acceptedReps',
+          'detectorType',
+          'detectorVersion',
+          'clientObservedAt',
+          'createdAt',
+          'schemaVersion'
+        ]);
+    }
+
+    function validDebtContribution(debtId) {
+      let eventId = request.resource.data.lastContributionEventId;
+      let event = getAfter(contributionEventPath(debtId, eventId)).data;
+      let summary = getAfter(
+        contributionPath(debtId, request.auth.uid)
+      ).data;
+      let nextCompleted = resource.data.completedReps + 1;
+      return validDebtBase(debtId)
+        && isMember(resource.data.groupId)
+        && resource.data.status == 'active'
+        && request.time < resource.data.lockExpiresAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'completedReps',
+          'status',
+          'closedAt',
+          'lastContributionAt',
+          'lastContributionEventId'
+        ])
+        && request.resource.data.completedReps == nextCompleted
+        && nextCompleted <= resource.data.totalReps
+        && eventId is string
+        && eventId.size() >= 1
+        && eventId.size() <= 240
+        && request.resource.data.lastContributionAt == request.time
+        && event.userId == request.auth.uid
+        && event.acceptedReps == 1
+        && event.createdAt == request.time
+        && summary.userId == request.auth.uid
+        && summary.lastEventId == eventId
+        && summary.lastContributedAt == request.time
+        && (
+          (
+            nextCompleted == resource.data.totalReps
+            && request.resource.data.status == 'completed'
+            && request.resource.data.closedAt == request.time
+          )
+          || (
+            nextCompleted < resource.data.totalReps
+            && request.resource.data.status == 'active'
+            && request.resource.data.closedAt == null
+          )
+        );
+    }
+
+    function validContributionSummaryWrite(debtId, uid) {
+      let eventId = request.resource.data.lastEventId;
+      let debtBefore = get(debtPath(debtId)).data;
+      let debtAfter = getAfter(debtPath(debtId)).data;
+      return hasExactContributionSummaryKeys()
+        && request.auth.uid == uid
+        && request.resource.data.userId == uid
+        && isMember(debtBefore.groupId)
+        && debtBefore.status == 'active'
+        && request.time < debtBefore.lockExpiresAt
+        && request.resource.data.totalReps is int
+        && (
+          (
+            !exists(contributionPath(debtId, uid))
+            && request.resource.data.totalReps == 1
+          )
+          || (
+            exists(contributionPath(debtId, uid))
+            && request.resource.data.totalReps == resource.data.totalReps + 1
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'totalReps',
+              'lastEventId',
+              'lastContributedAt'
+            ])
+          )
+        )
+        && eventId is string
+        && eventId.size() >= 1
+        && eventId.size() <= 240
+        && request.resource.data.lastContributedAt == request.time
+        && request.resource.data.schemaVersion == 1
+        && getAfter(
+          contributionEventPath(debtId, eventId)
+        ).data.userId == uid
+        && debtAfter.completedReps == debtBefore.completedReps + 1
+        && debtAfter.lastContributionEventId == eventId
+        && debtAfter.lastContributionAt == request.time;
+    }
+
+    function validContributionEventCreate(debtId, eventId) {
+      let debtBefore = get(debtPath(debtId)).data;
+      let debtAfter = getAfter(debtPath(debtId)).data;
+      let summaryAfter = getAfter(
+        contributionPath(debtId, request.auth.uid)
+      ).data;
+      return hasExactContributionEventKeys()
+        && request.auth.uid.matches('[A-Za-z0-9_-]{1,128}')
+        && eventId.matches(
+          request.auth.uid + '_[A-Za-z0-9-]{16,64}_[1-9][0-9]{0,8}'
+        )
+        && eventId.size() <= 240
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.squatSessionId.matches(
+          '[A-Za-z0-9-]{16,64}'
+        )
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence >= 1
+        && request.resource.data.sequence <= 999999999
+        && request.resource.data.acceptedReps == 1
+        && request.resource.data.detectorType == 'mlkit'
+        && request.resource.data.detectorVersion.matches(
+          '[A-Za-z0-9._-]{1,40}'
+        )
+        && request.resource.data.clientObservedAt is timestamp
+        && request.resource.data.clientObservedAt
+          >= request.time - duration.value(1, 'd')
+        && request.resource.data.clientObservedAt
+          <= request.time + duration.value(5, 'm')
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.schemaVersion == 1
+        && isMember(debtBefore.groupId)
+        && debtBefore.status == 'active'
+        && request.time < debtBefore.lockExpiresAt
+        && debtAfter.completedReps == debtBefore.completedReps + 1
+        && debtAfter.lastContributionEventId == eventId
+        && debtAfter.lastContributionAt == request.time
+        && summaryAfter.userId == request.auth.uid
+        && summaryAfter.lastEventId == eventId
+        && summaryAfter.lastContributedAt == request.time;
+    }
+
     match /debts/{debtId} {
       allow get: if signedIn()
         && (
@@ -829,18 +1004,34 @@ service cloud.firestore {
           || isMember(resource.data.groupId)
         );
       allow create: if signedIn() && validInitialDebt(debtId);
-      allow update: if signedIn() && validDebtExpiration(debtId);
+      allow update: if signedIn()
+        && (
+          validDebtExpiration(debtId)
+          || validDebtContribution(debtId)
+        );
       allow delete: if false;
 
       match /contributions/{uid} {
         allow get, list: if signedIn()
           && exists(debtPath(debtId))
           && isMember(get(debtPath(debtId)).data.groupId);
-        allow create, update, delete: if false;
+        allow create, update: if signedIn()
+          && validContributionSummaryWrite(debtId, uid);
+        allow delete: if false;
       }
 
       match /contributionEvents/{eventId} {
-        allow read, write: if false;
+        allow get: if signedIn()
+          && request.auth.uid.matches('[A-Za-z0-9_-]{1,128}')
+          && eventId.matches(
+            request.auth.uid + '_[A-Za-z0-9-]{16,64}_[1-9][0-9]{0,8}'
+          )
+          && exists(debtPath(debtId))
+          && isMember(get(debtPath(debtId)).data.groupId);
+        allow list: if false;
+        allow create: if signedIn()
+          && validContributionEventCreate(debtId, eventId);
+        allow update, delete: if false;
       }
     }
 

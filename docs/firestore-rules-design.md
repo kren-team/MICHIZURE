@@ -242,7 +242,7 @@ terminal Taskの再update/deleteは拒否する。同一failureのretryは既存
 - `lockExpiresAt == task.endedAt + task.lockDurationSec`
 - aggregate / close fields初期値
 
-Phase 7では同一group memberまたはfailed userのreadと、下記expiration updateだけを追加した。Contribution、Debt completionはPhase 8までdefault denyを維持する。
+Phase 7では同一group memberまたはfailed userのreadと、下記expiration updateを追加した。Phase 8ではContributionの3-document atomic writeだけを追加し、それ以外のDebt直接更新はdefault denyを維持する。
 
 ### Contribution update
 
@@ -295,17 +295,18 @@ summary単独writeは拒否する。
 
 ### Event
 
-- read: group member。通常UIはqueryしない
+- direct get: current group memberで、かつ自分のuid prefixを持つeventのみ。transactionのmissing/duplicate確認に使う
+- list/query: 全員拒否。通常UIはeventを購読せずDebt aggregateとsummaryだけを読む
 - createのみ、update/delete拒否
 - doc IDのuid prefix、`userId == auth.uid`
 - `acceptedReps == 1`
 - `sequence >= 1`
-- `detectorType` allowlist
+- `detectorType == mlkit`。Productionの自由入力・fake eventを拒否
 - `createdAt == request.time`
 - after Debt / summaryの `lastEventId` がこのevent ID
 - before event不存在
 
-Production projectでは `fake_debug` を拒否する。これでも改変clientは `mlkit` と名乗れるため真正性保証にはならない。
+これでも改変clientは `mlkit` と名乗れるため真正性保証にはならない。MVPはSpark Planとclient transactionを優先したtrust boundaryとして明記し、Productionではattestationとtrusted backendを検討する。
 
 ## 10. Field validation
 

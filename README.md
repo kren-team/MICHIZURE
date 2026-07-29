@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5では離脱検知、Phase 6ではDevice Ownerによるpackage suspensionとDebt別lock obligation、Phase 7ではGroup Debtのrealtime購読とterminal Debtによる封印解除を実装しました。次はPhase 8のDebt Contributionです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5では離脱検知、Phase 6ではDevice Ownerによるpackage suspensionとDebt別lock obligation、Phase 7ではGroup Debtのrealtime購読とterminal Debtによる封印解除、Phase 8では冪等なDebt Contribution transactionと端末Outboxを実装しました。次はPhase 9の端末内スクワット判定です。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -159,6 +159,17 @@ firebase emulators:exec \
   --project demo-michizure \
   --only auth,firestore \
   "flutter test integration_test/debt_realtime_test.dart \
+    -d emulator-5554 \
+    --no-uninstall"
+```
+
+Phase 8の3 client同時Contribution、duplicate event、最終1 rep競合、member summary realtime、端末Outbox復元は次で検証します。
+
+```bash
+firebase emulators:exec \
+  --project demo-michizure \
+  --only auth,firestore \
+  "flutter test integration_test/debt_contribution_test.dart \
     -d emulator-5554 \
     --no-uninstall"
 ```

@@ -361,6 +361,8 @@ Phase 4はDart unit/widgetでcontent・duration・Clock・single-flight・routin
 
 Phase 7はDebt converter、remaining/overdue導出、providerのgroup切替・logout・detach、一覧/detailのcache/empty/error/複数Debt、terminal snapshotからのnative releaseをDart testで検証する。`firebase/rules-tests/src/debt_lifecycle.test.js`はgroup/failed-user read境界、scoped query、期限前後のexpire、terminal immutable、Contribution write denyを独立して検証する。`integration_test/debt_realtime_test.dart`は2つのFirebaseApp/Auth clientで同一groupの初回追加と同一failed userの2 Debtを確認する。
 
+Phase 8はDomain/Application/Widget testでevent ID、strict converter、single-flight、offline pending、retry、Controller再生成後のOutbox復元、明示的Debt選択、safe typed failureを検証する。`firebase/rules-tests/src/contributions.test.js`はatomic 3-document write、duplicate immutable event、missing write、UID/group境界、delta/timestamp/extra field、49/50への20 client競合、5 user・50 rep集計を検証する。`integration_test/debt_contribution_test.dart`は3 FirebaseApp/Auth clientでduplicate no-op、最終1 rep競合、全clientのcompleted/summary realtime、Android DataStore-backed Outbox復元を検証する。
+
 ```bash
 firebase emulators:exec \
   --project demo-michizure \

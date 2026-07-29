@@ -353,11 +353,14 @@ firebase emulators:exec \
 ### Scene 3: Repayment
 
 1. BでDebtを選択。
-2. camera setupで「画像は保存・送信しない」を示す。
-3. 当日のcameraが安定ならreal CameraX + ML Kit。
-4. 不安定ならSyntheticLandmark sourceを選択し、DEBUG表示を見せる。
-5. repごとにBのconfirmed count、Aのremainingが更新される。
-6. 20 repsでDebt completed。
+2. Phase 8画面で選択中のDebt ID、残回数、pending / confirmedを示す。
+3. camera setupで「画像は保存・送信しない」を示す。
+4. 当日のcameraが安定ならreal CameraX + ML Kit。
+5. 不安定ならSyntheticLandmark sourceを選択し、DEBUG表示を見せる。
+6. repごとにBのconfirmed count、Aのremainingが更新される。
+7. 20 repsでDebt completed。
+
+Phase 9実装前のPhase 8 smokeではProduction UIからrepを生成しない。`integration_test/debt_contribution_test.dart`を使い、3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。
 
 ### Scene 4: Unlock
 

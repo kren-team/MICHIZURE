@@ -6,9 +6,13 @@ import '../core/time/clock.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/domain/auth_user.dart';
 import '../features/auth/infrastructure/firebase_auth_repository.dart';
+import '../features/debt/application/submit_contribution.dart';
+import '../features/debt/domain/contribution_repository.dart';
 import '../features/debt/domain/debt.dart';
 import '../features/debt/domain/debt_repository.dart';
+import '../features/debt/infrastructure/firestore_contribution_repository.dart';
 import '../features/debt/infrastructure/firestore_debt_repository.dart';
+import '../features/debt/infrastructure/shared_preferences_contribution_outbox.dart';
 import '../features/enforcement/domain/device_control_repository.dart';
 import '../features/enforcement/domain/app_lock_repository.dart';
 import '../features/enforcement/infrastructure/app_lock_channel.dart';
@@ -61,6 +65,24 @@ final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
 final debtRepositoryProvider = Provider<DebtRepository>((ref) {
   return FirestoreDebtRepository(ref.watch(firebaseFirestoreProvider));
+});
+
+final contributionRepositoryProvider = Provider<ContributionRepository>((ref) {
+  return FirestoreContributionRepository(
+    ref.watch(firebaseFirestoreProvider),
+    ref.watch(clockProvider),
+  );
+});
+
+final contributionOutboxProvider = Provider<ContributionOutbox>((ref) {
+  return SharedPreferencesContributionOutbox();
+});
+
+final submitContributionProvider = Provider<SubmitContribution>((ref) {
+  return SubmitContribution(
+    ref.watch(contributionRepositoryProvider),
+    ref.watch(contributionOutboxProvider),
+  );
 });
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {

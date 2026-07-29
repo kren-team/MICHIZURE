@@ -149,6 +149,8 @@ Phase 6の`AppLockController`はLock Status表示時にnative desired/actual sta
 
 Phase 7のgroup active Debtは`autoDispose` listenerで画面・group・logoutに追従する。`DebtLockReleaseController`はfailed userのactive queryとnativeに永続化されたunresolved obligation IDごとのdocument listenerを組み合わせ、process再起動後にすでにterminalとなったDebtも復元する。`completed / expired`だけを`releaseObligation`へ渡し、missing、logout、listener error、cache missでは解除しない。期限tickerはexpire transactionのtriggerだけであり、terminal authorityはRulesの`request.time`である。
 
+Phase 8の`ContributionController`は`detected / pending / confirmed / rejected`の件数と直近typed resultを持つ。accepted repをevent ID単位でsingle-flight化し、永続Outboxへ先に保存してからFirestore transactionへ渡す。offline / unknown failureは2秒後および明示retryで同じevent IDを再送し、server ackまたはterminal reject後だけOutboxから削除する。Debt残量とmember summaryの画面authorityは引き続きPhase 7のsnapshot listenerであり、Controllerのローカル件数から推測しない。
+
 ## 10. 過剰設計を避ける基準
 
 - CRUDを1回呼ぶだけならControllerからRepositoryを呼ぶ。

@@ -178,7 +178,7 @@ create時に`serverRecordedAt=server timestamp`を必須とし、`startedAt`を`
 | `squatSessionId` | string | yes | random UUID |
 | `sequence` | int | yes | session内1始まり |
 | `acceptedReps` | int | yes | MVPでは常に1 |
-| `detectorType` | string | yes | `mlkit` / `fake_debug` |
+| `detectorType` | string | yes | Production writeは`mlkit`のみ |
 | `detectorVersion` | string | yes | algorithm設定version |
 | `clientObservedAt` | timestamp | yes | 診断用、権威時刻ではない |
 | `createdAt` | timestamp | yes | server timestamp |
@@ -305,6 +305,10 @@ write:
 4. new totalがtotalRepsならDebt status completed、closedAt設定
 
 これにより並行transactionはFirestore SDKにより再実行され、total超過しない。
+
+Phase 8実装は1 eventを常に1 repとするため、overpayを部分acceptしない。残り1 repへ2 clientが同時送信した場合、一方だけが1 repを確定し、後発はterminal/fullとしてrejectされる。summaryへは実際にacceptされたeventだけを加算する。
+
+Firestore transactionはofflineで実行できないため、送信前に同じ`ContributionRequest`をAndroid DataStore-backed local outboxへ保存する。保存内容はDebt ID、uid、event ID、session/sequence、1 rep、detector metadata、観測時刻だけで、server ackまたはterminal reject後に削除する。画像、landmark、package情報は保存しない。
 
 ### 5.9 Debt期限切れ
 

@@ -1,10 +1,10 @@
-# NEXT TASK: Phase 8 `feature/debt-contributions`
+# NEXT TASK: Phase 9 `feature/squat-detection`
 
 ## 目的
 
-Phase 7でrealtime表示できるactive Debtへ、Group memberが1 repずつ冪等にContributionを確定できるFirestore transactionとlocal outboxを追加する。
+CameraX + ML Kit Pose DetectionをAndroid端末内で実行し、Kotlinの決定的な状態機械が受理したスクワット1回をPhase 8の`ContributionController.recordAcceptedRep()`へ渡す。
 
-このPhaseはContribution Event / member summary / Debt aggregateの整合性、並行返済、offline retryだけを扱う。Camera、ML Kit、スクワット姿勢判定はPhase 9であり実装しない。
+Camera画像・動画・raw landmarkは保存せず、外部送信しない。Phase 8のFirestore transaction、Outbox、Debt realtime、App Lock解除を作り直さない。
 
 ## Branch
 
@@ -12,7 +12,7 @@ Phase 7でrealtime表示できるactive Debtへ、Group memberが1 repずつ冪�
 git fetch origin
 git switch dev
 git pull --ff-only origin dev
-git switch -c feature/debt-contributions
+git switch -c feature/squat-detection
 ```
 
 ## 最初に読む
@@ -20,103 +20,102 @@ git switch -c feature/debt-contributions
 1. `AGENTS.md`
 2. `README.md`
 3. `docs/architecture.md`
-4. `docs/data-model.md`
-5. `docs/firestore-rules-design.md`
+4. `docs/squat-detection.md`
+5. `docs/data-model.md`
 6. `docs/state-management.md`
 7. `docs/security-privacy.md`
 8. `docs/testing.md`
 9. `docs/implementation-plan.md`
-10. `docs/adr/0002-firebase-backend.md`
+10. `docs/adr/0004-on-device-pose-detection.md`
 
 ## In scope
 
-### Domain / Application
+### Android / Kotlin
 
-- deterministic Contribution Event ID
-- 1 event = 1 confirmed rep
-- Debt、`contributions/{uid}`、`contributionEvents/{eventId}`のatomic transaction
-- duplicate eventのno-op
-- `completedReps <= totalReps`
-- 最終repでactive→completed、`closedAt`設定
-- terminal / expired Debtへのsubmit拒否
-- local outbox、offline retry、ack、process restart復元
-- detected / pending / confirmed / rejectedのtyped state
+- CameraX `Preview` + `ImageAnalysis`
+- `STRATEGY_KEEP_ONLY_LATEST`とsingle analyzer executor
+- ML Kit base Pose Detection bundled model / `STREAM_MODE`
+- frame rotation / front camera mirrorの正規化
+- landmark quality gate、side selection、angle / hip drop / velocity feature
+- median + EMA smoothing
+- `CALIBRATING → STANDING → DESCENDING → BOTTOM → ASCENDING → STANDING`
+- depth、ROM、minimum duration、hysteresis、refractoryによる1 cycle 1 rep
+- success / failure / cancellationを含む全pathで`ImageProxy.close()`
+- lifecycle-safe start / stop / duplicate command
 
-### Infrastructure
+### Flutter / Native contract
 
-- `FirestoreContributionRepository`
-- transactionは全read後にwrite
-- Debt aggregateをContribution全件から再集計しない
-- `lastContributionEventId`とsummary `lastEventId`のafter-state link
-- contribution event / summary converterのstrict validation
-- 必要なindex exemption
+- versioned typed Method/Event Channel
+- Dartへ送るのはquality、FSM state、accepted rep event、最小latency metadataのみ
+- rep eventごとにstable `squatSessionId` + monotonic `sequence`
+- Phase 8の`ContributionRequest`へ変換し`recordAcceptedRep()`を呼ぶ
+- frame、bitmap、landmark列をPlatform Channelへ送らない
 
-### Presentation
+### UI
 
-- Phase 7 Debt detailから「このDebtを返済する」導線
-- Cameraを使わないdebug/手動rep生成をProductionへ追加しない
-- pending / confirmed / offline / full Debtの表示
-- member別summaryの既存realtime表示を更新
+- Camera permissionとrationale
+- Squat setup、全身を映すガイド、calibration状態
+- preview、quality warning、detected / pending / confirmed
+- 選択したDebt IDと残回数
+- terminal Debt / route離脱でcameraとanalyzerを停止
 
-### Firestore Rules
+### Debug / test
 
-- current group member本人だけが自分のevent / summaryを正規transactionでwrite
-- event create-only、update/delete拒否
-- summary単独write拒否
-- Debt正確な+1、total cap、deadline、status transitionを`getAfter()`で検証
-- Contribution Event全件を通常UI queryしない
+- synthetic feature/landmark sourceはdebug/test source setだけ
+- Fake rep commandをrelease artifactへ含めない
+- debug source使用時は明確なbanner
+- 実ユーザー画像・動画をfixtureにしない
 
 ## Out of scope
 
-- Camera / CameraX
-- ML Kit Pose Detection
-- squat state machine
-- fake pose / fake rep production route
-- package suspension方式の変更
-- Cloud Functions
-- Phase 9以降の先取り
+- Cloud/OpenAI画像判定
+- Camera frame / landmarkの保存・送信
+- 複数人tracking
+- Contribution transaction / Rulesの再設計
+- App Lock obligation方式の変更
+- Phase 10 recovery全般
+- Phase 11 polish
 
 ## 必須不変条件
 
-- duplicate event IDはDebtもsummaryも二重加算しない。
-- 49/50へ複数clientが同時submitしても最終値は50を超えない。
-- Debt、summary、eventのいずれかが欠けるwriteはRulesで拒否する。
-- offline中のrepはconfirmedとして表示せずoutboxへ保持する。
-- terminal / deadline後のpending eventは再接続時に安全にreject/discardする。
-- package名、画像、landmark、Task内容をContributionへ追加しない。
+- 1 frameを1 repとして数えない。
+- STANDINGから始まりBOTTOMを経てSTANDINGへ戻った有効cycleだけ1 rep。
+- shallow motion、bottom bounce、tracking loss、極端なframe gapでcountしない。
+- frame / bitmap / raw landmarkはDart、Firestore、analytics、logへ出さない。
+- `ImageProxy`は全completion pathで必ずcloseする。
+- Phase 8の1 rep / immutable event / Outbox冪等性を維持する。
+- release buildにFake/Synthetic選択routeやdebug event commandを含めない。
 
 ## Acceptance Criteria
 
-- Group memberの正規eventでDebtと自分のsummaryが正確に1増える。
-- 同一event retryは成功済みno-opとなる。
-- concurrent submitでも`completedReps`が`totalReps`を超えない。
-- 最終repだけがDebtをcompletedへ遷移させる。
-- completed snapshotがPhase 7経由でfailed userのlock obligationを解除する。
-- offline outboxが再接続後に順序送信され、duplicateを作らない。
-- Contribution write以外のPhase 7 read境界とdefault denyを維持する。
+- 有効なスクワットcycleだけが1つのPhase 8 eventを生成する。
+- shallow、jitter、二重bottom、tracking loss、しゃがみ開始で誤countしない。
+- Camera/ML Kit結果からUI counter反映までp95 500ms目標を計測できる。
+- permission拒否、camera unavailable、ML failureをtyped failureとして表示する。
+- route離脱・terminal Debt・process lifecycleでcamera resourceを解放する。
+- accepted repがpending / confirmed / rejectedへPhase 8経路で遷移する。
+- Android debug Emulatorではsynthetic sourceで決定的デモができ、releaseには含まれない。
 
 ## Tests
 
-- event ID / converter / typed result unit
-- duplicate event
-- missing Debt / summary / event write deny
-- 49/50へ20 concurrent clients
-- 5人Debt 50 repsのaggregate / summary整合
-- deadline / completion race
-- terminal / outsider / other-group deny
-- offline outbox retry / process restoration
-- completed Debt→Phase 7 release integration
-- 既存Phase 1〜7回帰
+- Kotlin pure FSM table test: valid cycle、shallow、bounce、tracking loss、duration、ROM、refractory
+- feature / angle / smoothing / side-selection unit
+- analyzer: rotation、mirror、latest-frame、全path `ImageProxy.close`
+- Platform Channel contract/version/invalid payload
+- Flutter Widget: permission、calibration、quality、counter、pending/confirmed/rejected
+- Android instrumentation: CameraX lifecycle、ML Kit initialization、latency
+- release artifact / manifestにFake routeがないこと
+- Phase 1〜8回帰、Rules Test、Contribution統合テスト
 
 ## 推奨commit分割
 
-1. `feat: Contribution eventとsummary modelを追加`
-2. `feat: idempotent rep transactionを実装`
-3. `feat: Contribution outboxを追加`
-4. `feat: Debt返済状態をUIへ接続`
-5. `test: Contribution並行更新とRulesを検証`
-6. `docs: Phase 8結果と次Phaseを更新`
+1. `feat: Pose featureとquality gateを追加`
+2. `feat: スクワット状態機械を実装`
+3. `feat: CameraXとML Kitを統合`
+4. `feat: Squat native contractとUIを接続`
+5. `test: スクワット誤検出とlifecycleを検証`
+6. `docs: Phase 9結果と次Phaseを更新`
 
 ## 停止条件
 
-Phase 8完了後は停止する。Phase 9のCamera / Squat Detectionを開始しない。
+Phase 9完了後は停止する。Phase 10 recovery / reconciliationは開始しない。
