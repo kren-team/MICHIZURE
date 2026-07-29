@@ -58,6 +58,9 @@ class LockReconcileReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 LockCoordinator(context.applicationContext).reconcile()
+            } catch (_: Exception) {
+                // The persisted degraded state is surfaced on the next Flutter
+                // reconciliation. A boot/deadline broadcast must not crash the DPC.
             } finally {
                 pendingResult.finish()
             }

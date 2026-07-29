@@ -84,6 +84,48 @@ void main() {
       ),
     );
   });
+
+  test('rejects impossible counts and unknown native error codes', () async {
+    final invalidCounts = _payload();
+    final obligation =
+        (invalidCounts['obligations']! as List<Object?>).single!
+            as Map<String, Object?>;
+    obligation['enforcedCount'] = 3;
+    obligation['targetCount'] = 2;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => invalidCounts);
+    final repository = MethodChannelAppLockRepository(channel: channel);
+
+    await expectLater(
+      repository.getState(),
+      throwsA(
+        isA<EnforcementFailure>().having(
+          (value) => value.kind,
+          'kind',
+          EnforcementFailureKind.invalidData,
+        ),
+      ),
+    );
+
+    final unknownError = _payload();
+    final unknownErrorObligation =
+        (unknownError['obligations']! as List<Object?>).single!
+            as Map<String, Object?>;
+    unknownErrorObligation['errorCode'] = 'native_exception_message';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => unknownError);
+
+    await expectLater(
+      repository.getState(),
+      throwsA(
+        isA<EnforcementFailure>().having(
+          (value) => value.kind,
+          'kind',
+          EnforcementFailureKind.invalidData,
+        ),
+      ),
+    );
+  });
 }
 
 Map<String, Object?> _payload() {

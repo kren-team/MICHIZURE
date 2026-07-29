@@ -110,10 +110,16 @@ final class MethodChannelAppLockRepository implements AppLockRepository {
     final nextDeadlineEpochMs = value['nextDeadlineEpochMs'];
     if (rawObligations is! List ||
         effectiveTargetCount is! int ||
+        effectiveTargetCount < 0 ||
         ownedSuspensionCount is! int ||
+        ownedSuspensionCount < 0 ||
         appliedCount is! int ||
+        appliedCount < 0 ||
         releasedCount is! int ||
+        releasedCount < 0 ||
         failedCount is! int ||
+        failedCount < 0 ||
+        (nextDeadlineEpochMs is int && nextDeadlineEpochMs < 0) ||
         nextDeadlineEpochMs is! int?) {
       throw const EnforcementFailure(EnforcementFailureKind.invalidData);
     }
@@ -174,9 +180,15 @@ final class MethodChannelAppLockRepository implements AppLockRepository {
         remoteStatus == null ||
         localState == null ||
         targetCount is! int ||
+        targetCount <= 0 ||
         enforcedCount is! int ||
+        enforcedCount < 0 ||
+        enforcedCount > targetCount ||
         failedCount is! int ||
-        errorCode is! String?) {
+        failedCount < 0 ||
+        failedCount > targetCount ||
+        errorCode is! String? ||
+        (errorCode != null && !_lockErrorCodes.contains(errorCode))) {
       throw const EnforcementFailure(EnforcementFailureKind.invalidData);
     }
     return LockObligationSummary(
@@ -192,6 +204,15 @@ final class MethodChannelAppLockRepository implements AppLockRepository {
     );
   }
 }
+
+const _lockErrorCodes = {
+  'notDeviceOwner',
+  'packageNotInstalled',
+  'suspensionPartialFailure',
+  'unsuspensionPartialFailure',
+  'taskSnapshotMissing',
+  'nativeStateCorrupt',
+};
 
 T? _enumByWire<T>(List<T> values, Object? raw, String Function(T) wireValue) {
   if (raw is! String) {
