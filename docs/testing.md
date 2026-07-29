@@ -298,6 +298,18 @@ Device Ownerでない一般emulator:
 - usage app-op revoke
 - service restart
 
+Phase 5では純粋classifierをJVM unitへ分離し、250msの実時間pollingを待たずにelapsed timestampを注入する。`NativeTaskStoreInstrumentationTest`はduplicate terminalの同一event ID、ack後の全消去、同一Task startの冪等性、異なるTaskとの競合、lock target snapshotを検証する。`TaskGuardManifestTest`はserviceが非exportかつ`systemExempted`であることをmanaged Emulator上で確認する。
+
+標準command:
+
+```bash
+cd android
+./gradlew :app:testDebugUnitTest
+./gradlew :app:connectedDebugAndroidTest
+```
+
+実端末依存のHome / foreign app / screen offは下記の手動laneと分離し、classifier testをskipして代用しない。
+
 ### Camera lane
 
 - permission grant/deny

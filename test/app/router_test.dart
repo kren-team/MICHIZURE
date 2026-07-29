@@ -12,6 +12,7 @@ import 'package:michizure/features/profile/presentation/profile_setup_screen.dar
 import 'package:michizure/features/task/presentation/running_task_screen.dart';
 
 import '../features/task/support/fake_task_repository.dart';
+import '../features/task/support/fake_native_task_guard.dart';
 
 void main() {
   group('route state matrix', () {
@@ -127,7 +128,9 @@ Future<_RouterHarness> _pumpRouter(
   final gate = AuthRouteGate();
   gate.update(AsyncData(initialState));
   final router = createAppRouter(authRouteGate: gate);
+  final guard = FakeNativeTaskGuard();
   addTearDown(router.dispose);
+  addTearDown(guard.close);
 
   await tester.pumpWidget(
     ProviderScope(
@@ -139,6 +142,7 @@ Future<_RouterHarness> _pumpRouter(
         activeTaskSessionProvider.overrideWith(
           (ref) => Stream.value(runningTaskFixture()),
         ),
+        nativeTaskGuardProvider.overrideWithValue(guard),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),

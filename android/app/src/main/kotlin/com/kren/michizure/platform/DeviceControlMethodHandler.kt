@@ -5,10 +5,18 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
 import android.provider.Settings
 import com.kren.michizure.enforcement.AndroidPackageCatalog
 import com.kren.michizure.enforcement.PackageCatalog
+import com.kren.michizure.monitoring.AndroidTaskGuardClock
+import com.kren.michizure.monitoring.TaskGuardFailureReason
+import com.kren.michizure.monitoring.TaskGuardService
+import com.kren.michizure.monitoring.TaskGuardTerminal
+import com.kren.michizure.monitoring.TaskGuardTerminalKind
+import com.kren.michizure.persistence.NativeTaskRecord
 import com.kren.michizure.persistence.SelectedPackageStore
+import com.kren.michizure.persistence.NativeTaskStore
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +32,7 @@ class DeviceControlMethodHandler(
     private val packageCatalog: PackageCatalog = AndroidPackageCatalog(context),
     private val selectedPackageStore: SelectedPackageStore =
         SelectedPackageStore(context),
+    private val nativeTaskStore: NativeTaskStore = NativeTaskStore(context),
 ) : MethodChannel.MethodCallHandler {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -150,6 +159,82 @@ class DeviceControlMethodHandler(
                             )
                         }
                         .onFailure { postNativeStateError(result) }
+                    }
+            }
+            DeviceControlContract.METHOD_START_TASK_GUARD -> {
+                val command = parseStartTaskGuard(call.arguments)
+                if (command == null) {
+                    postContractError(result, "The Task Guard payload is invalid.")
+                    return
+                }
+                scope.launch {
+                    startTaskGuard(command, result)
+                }
+            }
+            DeviceControlContract.METHOD_STOP_TASK_GUARD -> {
+                val taskSessionId = parseRequiredString(call.arguments, "taskSessionId")
+                if (taskSessionId == null) {
+                    postContractError(result, "The Task Guard stop payload is invalid.")
+                    return
+                }
+                scope.launch {
+                    runCatching {
+                        nativeTaskStore.stop(taskSessionId)
+                    }.onSuccess { stopped ->
+                        TaskGuardService.stop(context)
+                        postSuccess(
+                            result,
+                            DeviceControlContract.versionedPayload(
+                                mapOf(
+                                    "taskSessionId" to taskSessionId,
+                                    "isRunning" to false,
+                                    "changed" to stopped,
+                                ),
+                            ),
+                        )
+                    }.onFailure {
+                        postNativeStateError(result)
+                    }
+                }
+            }
+            DeviceControlContract.METHOD_GET_TASK_GUARD_STATE -> {
+                scope.launch {
+                    runCatching {
+                        nativeTaskStore.readTask() to nativeTaskStore.readPendingEvent()
+                    }.onSuccess { (task, pendingEvent) ->
+                        postSuccess(
+                            result,
+                            DeviceControlContract.versionedPayload(
+                                mapOf(
+                                    "taskSessionId" to task?.taskSessionId,
+                                    "isRunning" to (task != null && pendingEvent == null),
+                                    "hasPendingEvent" to (pendingEvent != null),
+                                ),
+                            ),
+                        )
+                        pendingEvent?.let(TaskEventBus::emit)
+                    }.onFailure {
+                        postNativeStateError(result)
+                    }
+                }
+            }
+            DeviceControlContract.METHOD_ACK_TASK_EVENT -> {
+                val eventId = parseRequiredString(call.arguments, "eventId")
+                if (eventId == null) {
+                    postContractError(result, "The Task event acknowledgement is invalid.")
+                    return
+                }
+                scope.launch {
+                    runCatching { nativeTaskStore.acknowledge(eventId) }
+                        .onSuccess { acknowledged ->
+                            postSuccess(
+                                result,
+                                DeviceControlContract.versionedPayload(
+                                    mapOf("acknowledged" to acknowledged),
+                                ),
+                            )
+                        }
+                        .onFailure { postNativeStateError(result) }
                 }
             }
             else -> result.notImplemented()
@@ -183,6 +268,160 @@ class DeviceControlMethodHandler(
         return values.filterIsInstance<String>().toSet()
     }
 
+    private suspend fun startTaskGuard(
+        command: StartTaskGuardCommand,
+        result: MethodChannel.Result,
+    ) {
+        val selectedPackages =
+            runCatching { selectedPackageStore.read() }.getOrElse {
+                postNativeStateError(result)
+                return
+            }
+        if (selectedPackages.isEmpty()) {
+            postTypedError(
+                result,
+                DeviceControlContract.ERROR_NATIVE_STATE_CORRUPT,
+                "No lock target snapshot is available.",
+            )
+            return
+        }
+
+        val taskClock = AndroidTaskGuardClock(context)
+        val nowWallMs = taskClock.wallTimeMs()
+        val nowElapsedMs = taskClock.elapsedRealtimeMs()
+        val record =
+            NativeTaskRecord(
+                taskSessionId = command.taskSessionId,
+                startedWallMs = command.startedAtEpochMs,
+                expectedEndWallMs = command.expectedEndAtEpochMs,
+                startedElapsedMs =
+                    nowElapsedMs - (nowWallMs - command.startedAtEpochMs),
+                expectedEndElapsedMs =
+                    nowElapsedMs + (command.expectedEndAtEpochMs - nowWallMs),
+                bootCount = taskClock.bootCount(),
+                guardConfigVersion = command.guardConfigVersion,
+                lockTargetsAtStart = selectedPackages,
+            )
+        val persisted =
+            runCatching { nativeTaskStore.start(record) }.getOrElse {
+                postNativeStateError(result)
+                return
+            }
+        val pendingEvent =
+            runCatching { nativeTaskStore.readPendingEvent() }.getOrElse {
+                postNativeStateError(result)
+                return
+            }
+        if (pendingEvent != null) {
+            TaskEventBus.emit(pendingEvent)
+            postSuccess(
+                result,
+                DeviceControlContract.versionedPayload(
+                    mapOf(
+                        "taskSessionId" to persisted.taskSessionId,
+                        "isRunning" to false,
+                        "hasPendingEvent" to true,
+                    ),
+                ),
+            )
+            return
+        }
+        val capabilities =
+            runCatching { capabilitiesProvider.getCapabilities() }.getOrElse {
+                persistCapabilityFailure(persisted, taskClock)
+                postNativeUnavailable(result)
+                return
+            }
+        val capabilityError =
+            when {
+                capabilities["isDeviceOwner"] != true ->
+                    DeviceControlContract.ERROR_NOT_DEVICE_OWNER
+                capabilities["hasUsageAccess"] != true ->
+                    DeviceControlContract.ERROR_USAGE_ACCESS_MISSING
+                capabilities["hasNotificationPermission"] != true ->
+                    DeviceControlContract.ERROR_NOTIFICATION_PERMISSION_MISSING
+                capabilities["hasBroadPackageVisibility"] != true ||
+                    capabilities["isUserUnlocked"] != true ||
+                    Build.VERSION.SDK_INT < 29 ->
+                    DeviceControlContract.ERROR_NATIVE_UNAVAILABLE
+                else -> null
+            }
+        if (capabilityError != null) {
+            persistCapabilityFailure(persisted, taskClock)
+            postTypedError(
+                result,
+                capabilityError,
+                "Task monitoring is not available on this device.",
+            )
+            return
+        }
+        runCatching { TaskGuardService.start(context) }
+            .onSuccess {
+                postSuccess(
+                    result,
+                    DeviceControlContract.versionedPayload(
+                        mapOf(
+                            "taskSessionId" to persisted.taskSessionId,
+                            "isRunning" to true,
+                            "hasPendingEvent" to false,
+                        ),
+                    ),
+                )
+            }
+            .onFailure {
+                persistCapabilityFailure(persisted, taskClock)
+                postTypedError(
+                    result,
+                    DeviceControlContract.ERROR_FOREGROUND_SERVICE_START_DENIED,
+                    "The Task monitoring service could not be started.",
+                )
+            }
+    }
+
+    private suspend fun persistCapabilityFailure(
+        task: NativeTaskRecord,
+        taskClock: AndroidTaskGuardClock,
+    ) {
+        val terminal =
+            TaskGuardTerminal(
+                kind = TaskGuardTerminalKind.TASK_FAILED,
+                failureReason = TaskGuardFailureReason.MONITOR_CAPABILITY_LOST,
+                originElapsedMs = taskClock.elapsedRealtimeMs(),
+            )
+        runCatching {
+            nativeTaskStore.commitTerminal(task.taskSessionId, terminal)
+        }.getOrNull()?.let(TaskEventBus::emit)
+    }
+
+    private fun parseStartTaskGuard(arguments: Any?): StartTaskGuardCommand? {
+        val payload = arguments as? Map<*, *> ?: return null
+        val taskSessionId = payload["taskSessionId"] as? String ?: return null
+        val startedAtEpochMs = (payload["startedAtEpochMs"] as? Number)?.toLong()
+            ?: return null
+        val expectedEndAtEpochMs =
+            (payload["expectedEndAtEpochMs"] as? Number)?.toLong() ?: return null
+        val guardConfigVersion =
+            (payload["guardConfigVersion"] as? Number)?.toInt() ?: return null
+        if (taskSessionId.isBlank() ||
+            startedAtEpochMs < 0 ||
+            expectedEndAtEpochMs < startedAtEpochMs ||
+            guardConfigVersion != 1
+        ) {
+            return null
+        }
+        return StartTaskGuardCommand(
+            taskSessionId = taskSessionId,
+            startedAtEpochMs = startedAtEpochMs,
+            expectedEndAtEpochMs = expectedEndAtEpochMs,
+            guardConfigVersion = guardConfigVersion,
+        )
+    }
+
+    private fun parseRequiredString(arguments: Any?, key: String): String? {
+        val value = (arguments as? Map<*, *>)?.get(key) as? String
+        return value?.takeIf(String::isNotBlank)
+    }
+
     private fun postSuccess(
         result: MethodChannel.Result,
         payload: Map<String, Any?>,
@@ -200,6 +439,31 @@ class DeviceControlMethodHandler(
         }
     }
 
+    private fun postContractError(
+        result: MethodChannel.Result,
+        message: String,
+    ) {
+        postTypedError(
+            result,
+            DeviceControlContract.ERROR_CHANNEL_CONTRACT_MISMATCH,
+            message,
+        )
+    }
+
+    private fun postTypedError(
+        result: MethodChannel.Result,
+        code: String,
+        message: String,
+    ) {
+        mainHandler.post {
+            result.error(
+                code,
+                message,
+                DeviceControlContract.versionedPayload(),
+            )
+        }
+    }
+
     private fun postNativeUnavailable(result: MethodChannel.Result) {
         result.error(
             DeviceControlContract.ERROR_NATIVE_UNAVAILABLE,
@@ -208,3 +472,10 @@ class DeviceControlMethodHandler(
         )
     }
 }
+
+private data class StartTaskGuardCommand(
+    val taskSessionId: String,
+    val startedAtEpochMs: Long,
+    val expectedEndAtEpochMs: Long,
+    val guardConfigVersion: Int,
+)

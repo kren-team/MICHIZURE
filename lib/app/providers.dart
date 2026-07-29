@@ -19,9 +19,11 @@ import '../features/profile/domain/user_profile.dart';
 import '../features/profile/infrastructure/firestore_profile_repository.dart';
 import '../features/task/application/start_task.dart';
 import '../features/task/application/task_event_id_generator.dart';
+import '../features/task/domain/native_task_guard.dart';
 import '../features/task/domain/task_repository.dart';
 import '../features/task/domain/task_session.dart';
 import '../features/task/infrastructure/firestore_task_repository.dart';
+import '../features/task/infrastructure/native_task_guard_channel.dart';
 import '../features/task/infrastructure/secure_task_event_id_generator.dart';
 
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -98,10 +100,15 @@ final taskEventIdGeneratorProvider = Provider<TaskEventIdGenerator>((ref) {
   return SecureTaskEventIdGenerator();
 });
 
+final nativeTaskGuardProvider = Provider<NativeTaskGuard>((ref) {
+  return MethodChannelNativeTaskGuard();
+});
+
 final startTaskProvider = Provider<StartTask>((ref) {
   return StartTask(
     ref.watch(taskRepositoryProvider),
     ref.watch(deviceControlRepositoryProvider),
+    ref.watch(nativeTaskGuardProvider),
   );
 });
 

@@ -135,7 +135,7 @@ clientは128 bit以上の暗号学的乱数tokenを生成し、共有するの�
 
 foreground package名は保存しない。
 
-Phase 4実装ではcreate時に`serverRecordedAt=server timestamp`を必須とし、`startedAt`を`request.time ± 60秒`、`expectedEndAt`を`startedAt + durationSec`としてRulesでも検証する。現在clientが書き込めるfailure transitionは手動中断の`user_aborted`だけであり、他のreasonはPhase 5のnative event contractとRules testを追加するまで開放しない。
+create時に`serverRecordedAt=server timestamp`を必須とし、`startedAt`を`request.time ± 60秒`、`expectedEndAt`を`startedAt + durationSec`としてRulesでも検証する。Phase 5では`user_aborted`に加え、厳密なnative event contractから変換した`foreign_app_foreground`、`monitor_capability_lost`、`recovery_detected_violation`を許可する。`debug_demo`は予約値のままRulesで拒否する。
 
 ### 4.6 `debts/{debtId}`
 

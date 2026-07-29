@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/task/application/handle_native_task_event.dart';
 import 'bootstrap.dart';
 import 'router.dart';
 
@@ -28,6 +29,7 @@ final class _MichizureAppView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(taskGuardControllerProvider);
     return MaterialApp.router(
       title: 'MICHIZURE',
       theme: ThemeData(

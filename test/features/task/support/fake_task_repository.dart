@@ -11,6 +11,8 @@ final class FakeTaskRepository implements TaskRepository {
   Object? succeedError;
   Object? failError;
   Completer<void>? startCompleter;
+  Completer<void>? succeedCompleter;
+  Completer<void>? failCompleter;
   Stream<TaskSession?> taskStream = Stream.value(runningTaskFixture());
   int startCalls = 0;
   int succeedCalls = 0;
@@ -41,6 +43,7 @@ final class FakeTaskRepository implements TaskRepository {
     if (succeedError case final error?) {
       throw error;
     }
+    await succeedCompleter?.future;
     return succeededTaskFixture();
   }
 
@@ -56,6 +59,7 @@ final class FakeTaskRepository implements TaskRepository {
     if (failError case final error?) {
       throw error;
     }
+    await failCompleter?.future;
     return FailedTaskResult(task: failedTaskFixture(), debt: debt);
   }
 }

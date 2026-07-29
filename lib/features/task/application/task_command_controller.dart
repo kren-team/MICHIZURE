@@ -54,6 +54,7 @@ final class TaskCommandController
       final task = await ref
           .read(taskRepositoryProvider)
           .succeedTask(ownerUid: ownerUid, taskId: taskId);
+      await _stopGuardBestEffort(taskId);
       return TaskCommandResult(task: task);
     });
   }
@@ -70,8 +71,18 @@ final class TaskCommandController
                 .read(taskEventIdGeneratorProvider)
                 .generateManualAbortId(taskId),
           );
+      await _stopGuardBestEffort(taskId);
       return TaskCommandResult(task: result.task, debt: result.debt);
     });
+  }
+
+  Future<void> _stopGuardBestEffort(String taskId) async {
+    try {
+      await ref.read(nativeTaskGuardProvider).stop(taskId);
+    } on Object {
+      // Firestore terminal state remains authoritative. Native recovery will
+      // reconcile stale local state without reopening this terminal Task.
+    }
   }
 
   Future<bool> _run(Future<TaskCommandResult> Function() command) async {

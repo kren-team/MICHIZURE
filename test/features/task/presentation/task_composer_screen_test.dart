@@ -10,6 +10,7 @@ import 'package:michizure/features/task/presentation/task_composer_screen.dart';
 
 import '../../enforcement/support/fake_device_control_repository.dart';
 import '../support/fake_task_repository.dart';
+import '../support/fake_native_task_guard.dart';
 
 void main() {
   testWidgets('starts a valid Unicode Task after a ready preflight', (
@@ -70,6 +71,7 @@ Future<GoRouter> _pumpComposer(
 }) async {
   final device = FakeDeviceControlRepository()
     ..selectedPackageNames = {'social.app'};
+  final guard = FakeNativeTaskGuard();
   final router = GoRouter(
     initialLocation: '/task/new',
     routes: [
@@ -88,11 +90,13 @@ Future<GoRouter> _pumpComposer(
     ],
   );
   addTearDown(router.dispose);
+  addTearDown(guard.close);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(tasks),
         deviceControlRepositoryProvider.overrideWithValue(device),
+        nativeTaskGuardProvider.overrideWithValue(guard),
         authStateProvider.overrideWithValue(
           const AsyncData(AuthUser(id: 'alice')),
         ),

@@ -446,6 +446,17 @@ android/app/src/androidTest/
 4. `feat: native Task eventをFlutterへ接続`
 5. `test: 離脱検知と誤判定防止を検証`
 
+### 実装結果
+
+- `systemExempted` Foreground Serviceが250ms間隔で`ACTIVITY_RESUMED`を読み、600ms dwell後にterminalを一度だけ確定
+- own app、screen off、Keyguard、短命system flow lease、synthetic verified callを純粋classifierで除外
+- wall / elapsed deadline、boot count、clock discontinuityをnative Task recordへ保持し、deadline直前candidateをfailure優先で解決
+- Preferences DataStore outboxがstable UUIDのterminal eventをFirestore ackまで再配送
+- version 1 MethodChannel / EventChannelをApplication controllerへ接続し、同一event IDをPhase 4 transactionへ渡す
+- `foreign_app_foreground`、`monitor_capability_lost`、`recovery_detected_violation`だけをRulesで追加許可
+- package名、UsageEvents履歴、installed inventoryをPlatform payload / Firestoreへ送らない
+- Phase 6の`setPackagesSuspended()`は未実装
+
 ---
 
 ## Phase 6 — `feature/android-app-lock`

@@ -1,15 +1,15 @@
-# NEXT TASK: Phase 5 `feature/android-task-monitor`
+# NEXT TASK: Phase 6 `feature/android-app-lock`
 
 ## この1 Phaseだけを実装する
 
-Android Foreground Serviceと`UsageStatsManager`を使い、実行中Taskからユーザー操作で離脱したことを誤判定防止filter付きで検知する。typedなnative eventをFlutter Application層へ渡し、Phase 4の冪等failure transactionへ接続する。
+Phase 5のTask failure terminalを受け、Phase 3でTask開始時にsnapshotしたpackageをDevice Owner APIで封印する。Debtごとのlocal lock obligation、複数Debtのeffective union、完済または期限到達時の差分解除を実装する。
 
-`DevicePolicyManager.setPackagesSuspended()`、lock obligation、Debt返済UI、CameraX、ML Kit、スクワット判定は実装しない。Phase 5で外部アプリを検知しても実際のpackage suspensionはPhase 6の責務とする。
+Debt返済UI / realtime Contribution、CameraX、ML Kit、スクワット判定、総合recovery polishは実装しない。
 
 ## Branch
 
 ```text
-feature/android-task-monitor
+feature/android-app-lock
 ```
 
 最新のcleanな`dev`から作成し、統合先は`dev`とする。`main` / `dev`へ直接機能commitしない。
@@ -29,111 +29,119 @@ feature/android-task-monitor
 11. `docs/demo-plan.md`
 12. `docs/implementation-plan.md`
 13. `docs/adr/0003-android-app-enforcement.md`
-14. Phase 3/4のnative bridge、Task repository、controller、Rules、test
+14. Phase 3のpackage catalog / selectionとPhase 5のTask Guard / native outbox
 
-## Phase 4から引き継ぐ契約
+## Phase 5から引き継ぐ契約
 
-- Firestore Taskは`running / succeeded / failed`、1ユーザー1 active pointer。
-- `expectedEndAt`とFirestore `request.time`がterminal競合の権威。
-- `failTaskAndCreateDebt`は`failureEventId`で冪等化し、same-ID Debtをatomic作成する。
-- Phase 4 Rulesがclient writeを許可するfailure reasonは`user_aborted`だけ。Phase 5 reasonを開放する際は、native eventのshapeとTask/Debt after-stateを独立したRules testで追加する。
-- Phase 3の`device_control/v1`契約とDataStore選択packageを壊さない。
-- package名をFirestore、analytics、Production logへ送らない。
+- terminal eventはnative DataStoreへ先に保存され、同一`eventId`でFirestore ackまで再配送される。
+- failure event payloadにpackage名は含めない。
+- `NativeTaskRecord.lockTargetsAtStart`がそのTaskの封印対象snapshotである。
+- `failTaskAndCreateDebt`はsame-ID Debtをatomic作成し、duplicate eventをno-opへ収束させる。
+- `setPackagesSuspended()`はまだ一度も呼ばれていない。
+- Task Guard serviceはterminal確定後に停止するため、lock deadline監視は独立して復元可能にする。
 
 ## 実装範囲
 
 ### Kotlin
 
 ```text
-android/app/src/main/kotlin/com/kren/michizure/monitoring/
-android/app/src/main/kotlin/com/kren/michizure/persistence/NativeTaskStore.kt
-android/app/src/main/kotlin/com/kren/michizure/platform/TaskEventStreamHandler.kt
+android/app/src/main/kotlin/com/kren/michizure/enforcement/
+android/app/src/main/kotlin/com/kren/michizure/persistence/LockObligationStore.kt
+android/app/src/main/kotlin/com/kren/michizure/platform/
 android/app/src/test/
 android/app/src/androidTest/
 ```
 
-- `TaskGuardService` foreground service
-- `UsageEvents.Event.ACTIVITY_RESUMED`を使うforeground transition source
-- own app / foreign app / launcher / Settings / permission controller / default dialer等を分類する純粋classifier
-- screen non-interactive、Keyguard、許可済みsystem flow、通話中を考慮するinterruption gate
-- foreign candidateのdwellとown app復帰時cancel
-- native monotonic clockを使うdeadline競合
-- process recreationに耐える最小Task recordとterminal compare-and-set
-- version 1 EventChannel、再購読、同一terminal event ID再送
-- capability喪失をtyped event / errorとして通知
+- `PackageSuspender`: `DevicePolicyManager.setPackagesSuspended()`の薄いadapter
+- DPMが返すfailed package配列を最終authorityとして扱う
+- failure event確定時にTask snapshotからDebt別obligationをlocalへ冪等作成
+- unresolved obligationのpackage unionからapply / release差分を導出
+- MICHIZUREが実際にsuspendできたowned packageだけを追跡
+- 完済または期限到達時にunionを再計算し、他Debtが必要とするpackageを解除しない
+- elapsed deadlineとwall/boot identityを保存し、process recreation後に再schedule
+- partial failure、Device Owner喪失、package uninstallをtyped stateへ変換
+- duplicate apply / releaseを安全なno-opにする
 
 ### Flutter
 
 ```text
-lib/features/task/infrastructure/native_task_guard.dart
-lib/features/task/application/handle_native_task_event.dart
-lib/features/task/presentation/
+lib/features/enforcement/application/
+lib/features/enforcement/domain/
+lib/features/enforcement/infrastructure/
+lib/features/enforcement/presentation/
 ```
 
-- WidgetからEventChannelを直接購読しない。
-- Infrastructure adapterでpayloadを厳密に検証しDomain eventへ変換する。
-- Application handlerがdeadlineと現在Task stateを再確認してsuccess / failureを選ぶ。
-- duplicate eventはPhase 4 repositoryの同一event no-opへ収束させる。
-- Running画面にguard health、capability lost、再試行可能なtyped failureを表示する。
+- Phase 5 terminal処理とlock obligation開始をApplication境界で接続
+- Lock StatusにDebt別期限、effective target件数、enforced / degraded状態を表示
+- manual reconcileをsingle-flightで提供
+- WidgetからMethodChannel / DPMを直接呼ばない
+- package名は端末内UI以外へ送らない
 
 ### Firestore
 
-- collection / field schemaは原則変更しない。
-- Phase 5で必要な`foreign_app_foreground`、`monitor_capability_lost`、`recovery_detected_violation`だけを最小限開放する。
-- Task、user pointer、same-ID Debtのatomic invariantを維持する。
-- package名、installed app inventory、raw UsageEventを保存しない。
+- Phase 6では原則schemaを増やさず、既存Debt `status` / `lockExpiresAt`を購読する。
+- failed userが自分のactive Debtを取得するqueryとindexが設計どおりか確認する。
+- package名、owned suspension、partial failure detailをFirestoreへ保存しない。
+- Rules変更が必要ならdefault denyと既存Task / Debt invariantを維持し、allow / deny testを同じcommit系列へ追加する。
 
-## 必須動作
+## 必須不変条件
 
-- own appのActivity transitionでは失敗しない。
-- interactive中にHome、Recents、foreign appへ移動し、dwellを超えた場合は1回だけfailure eventを生成する。
-- foreign appからdwell内に戻ればcandidateをcancelする。
-- screen off、Keyguard表示ではfailureにしない。
-- permission/settings flowは明示的・短時間のleaseがある場合だけ除外し、無制限allowlistにしない。
-- default dialerは実際の通話状態が確認できる場合だけpauseする。
-- Usage Access喪失、service停止・復元をtypedに扱う。
-- deadlineとforeign eventが競合した場合は、設計済み時刻policyに従い二重terminalを作らない。
-- process / Activity再生成後もhandlerやlistenerを二重登録しない。
+- OS封印より前にobligationをlocalへ永続化し、途中失敗でも再適用可能にする。
+- `effectivePackages = unresolvedかつ期限内obligationのpackage union`。
+- Debt A / Bが同packageを参照する場合、Aだけ完済してもBがactiveなら解除しない。
+- MICHIZUREが所有していないsuspensionを解除しない。
+- DPM partial failureを成功扱いしない。成功分と失敗分を別々に記録する。
+- logout、Activity終了、Firebase error、EventChannel切断だけを理由に解除しない。
+- offlineでもlocal deadline到達時は解除し、再接続後にremote状態へ収束させる。
+- protected packageを新しい固定blacklistだけで判断せず、Phase 3 catalog再検査とDPM戻り値を使う。
 
-## Android permission / manifest
+## Android / permission
 
-Foreground Service type、notification、Usage Statsに必要なpermissionだけを追加する。追加ごとに用途、runtime flow、API level差、Device Owner条件、Google Play policy、testを文書化する。AccessibilityService、Camera permission、`QUERY_ALL_PACKAGES`のrelease拡張は追加しない。
+- Device Ownerでのみ`setPackagesSuspended()`を呼ぶ。
+- AccessibilityService、Lock Task Mode、Camera permission、VPN方式を追加しない。
+- exact alarm permissionをMVP必須にしない。
+- broadcast receiver / worker / foreground serviceを追加する場合はexport、boot/user-unlocked、Android 16制約、Play policyを文書化してtestする。
+
+## Privacy
+
+- obligation内package snapshotはnative localだけに保存する。
+- package名、installed inventory、DPM failed配列をFirestore、analytics、Production logへ送らない。
+- local storeはbackup対象外を維持する。
 
 ## Acceptance Criteria
 
-- managed Android EmulatorでTask start後にguard notificationが表示される。
-- Demo foreign app / Home遷移を1秒以内目標で1回のfailureへ変換できる。
-- screen off / Keyguard / own Activity再開はfailureにならない。
-- Usage Accessをrevokeしてもcrashせずcapability failureになる。
-- duplicate native eventでTask / Debtが重複しない。
-- deadline競合でTask terminal stateが1つに収束する。
-- process再起動後にnative Task recordとFirestore Taskを照合できる。
-- package名やraw UsageEventがPlatform payload、Firestore、Production logへ出ない。
-- Phase 3のDevice Setup / App SelectionとPhase 4のTask flowが回帰しない。
-- Flutter、Rules、Kotlin JVM、managed Emulator instrumentation、debug APK buildが成功する。
+- managed EmulatorでTask failure後、選択したDemo appが起動不能になる。
+- network offlineでもfailure直後にlocal封印が適用される。
+- DPM partial failureがdegradedとして残り、成功packageだけをowned setへ入れる。
+- Debt A / Bが同packageを参照しても一方の完済で早期解除しない。
+- 全obligation完済または期限終了後にowned packageだけを解除する。
+- process recreation後にobligationとOS stateをreconcileできる。
+- duplicate failure / apply / releaseでobligationやDPM操作結果が壊れない。
+- Device Owner喪失、protected/uninstalled packageでcrashしない。
+- package名がFirestore / Platform event / Production logへ出ない。
+- Phase 3〜5の機能とtestが回帰しない。
 
 ## 必須テスト
 
-- classifier table: own / Home / Recents / foreign / Settings / permission controller / dialer
-- interactive、screen off、Keyguard、system lease、call state
-- dwell cancel、duplicate UsageEvent、out-of-order event
-- event before Task start、deadline直前、deadline以後
-- Usage Access revoke、service restart、Activity recreation
-- EventChannel contract version、malformed payload、再購読、duplicate terminal event
-- native event handlerのsingle-flight / idempotency
-- Phase 5 failure reasonのRules allow / deny
-- same-ID Debtとactive pointerのtransaction integration
-- manifest permissionとrelease/debug差分
-
-実時間sleepに依存するclassifier testは作らず、virtual monotonic clockを注入する。Device Owner / Usage Accessが必要な動作だけをmanaged Emulator instrumentation laneへ分離する。
+- `LockReconciler` pure unit: empty、single、overlap、complete、expire、partial、owned差分
+- obligation store: create idempotency、process recreation、boot / wall / elapsed policy、corrupt state
+- PackageSuspender adapter: success、failed package戻り値、exception、Device Owner喪失
+- managed Emulator instrumentation: suspendでlaunch不可、unsuspendでlaunch可、protected package拒否
+- 2 Debt同一packageの一方だけresolveしてもsuspend継続
+- deadline offline解除
+- uninstall / reinstall
+- MethodChannel version / malformed payload / typed partial failure
+- Flutter lock controller single-flight / retry / terminal listener
+- Firestore query / Rulesを変更した場合の独立allow / deny
+- release manifestとprivacy boundary
 
 ## 推奨commit分割
 
-1. `feat: Task Guard foreground serviceと永続recordを追加`
-2. `feat: UsageEvents監視とforeground classifierを実装`
-3. `feat: system interruption filterとdeadline競合を実装`
-4. `feat: native Task eventをFlutter failure処理へ接続`
-5. `test: Task monitorの誤判定と復元を検証`
-6. `docs: Task monitor契約とデモ手順を更新`
+1. `feat: package suspension adapterを追加`
+2. `feat: Debt別lock obligationを永続化`
+3. `feat: lock unionと差分reconcileを実装`
+4. `feat: deadline解除とLock Statusを追加`
+5. `test: 複数DebtとDPM復元を検証`
+6. `docs: App Lock運用とPhase 7引き継ぎを更新`
 
-Phase 5完了後は停止する。Phase 6のpackage suspension、lock obligation、unlockを先取りしない。
+Phase 6完了後は停止する。Phase 7のDebt realtime / repaymentを先取りしない。

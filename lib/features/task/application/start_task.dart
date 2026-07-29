@@ -1,13 +1,19 @@
 import '../../enforcement/domain/device_control_repository.dart';
+import '../domain/native_task_guard.dart';
 import '../domain/task_failure.dart';
 import '../domain/task_repository.dart';
 import '../domain/task_session.dart';
 
 final class StartTask {
-  const StartTask(this._taskRepository, this._deviceControlRepository);
+  const StartTask(
+    this._taskRepository,
+    this._deviceControlRepository,
+    this._nativeTaskGuard,
+  );
 
   final TaskRepository _taskRepository;
   final DeviceControlRepository _deviceControlRepository;
+  final NativeTaskGuard _nativeTaskGuard;
 
   Future<TaskSession> call({
     required String ownerUid,
@@ -42,7 +48,7 @@ final class StartTask {
       throw const TaskFailure(TaskFailureKind.deviceNotReady);
     }
 
-    return _taskRepository.startTask(
+    final task = await _taskRepository.startTask(
       StartTaskRequest(
         ownerUid: ownerUid,
         groupId: groupId,
@@ -50,5 +56,13 @@ final class StartTask {
         durationSeconds: durationSeconds,
       ),
     );
+    try {
+      await _nativeTaskGuard.start(task);
+    } on Object {
+      // The Firestore Task is already committed. Routing restores it and the
+      // Running controller retries the idempotent native start.
+      throw const TaskFailure(TaskFailureKind.deviceNotReady);
+    }
+    return task;
   }
 }

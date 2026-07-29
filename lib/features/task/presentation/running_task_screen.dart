@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../application/handle_native_task_event.dart';
 import '../application/task_command_controller.dart';
+import '../domain/task_failure.dart';
 import '../domain/task_session.dart';
 import 'task_failure_message.dart';
 
@@ -18,7 +20,7 @@ final class RunningTaskScreen extends ConsumerStatefulWidget {
 
 final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
   Timer? _ticker;
-  String? _completionAttemptedTaskId;
+  String? _guardStartedTaskId;
 
   @override
   void initState() {
@@ -40,14 +42,17 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
   Widget build(BuildContext context) {
     final activeTask = ref.watch(activeTaskSessionProvider);
     final command = ref.watch(taskCommandControllerProvider);
+    final guard = ref.watch(taskGuardControllerProvider);
     final terminalTask = command.value?.task.isTerminal ?? false
         ? command.value?.task
+        : guard.task?.isTerminal ?? false
+        ? guard.task
         : null;
 
     if (terminalTask != null) {
       return _TaskResultView(
         task: terminalTask,
-        debtReps: command.value?.debt?.totalReps,
+        debtReps: command.value?.debt?.totalReps ?? guard.debt?.totalReps,
       );
     }
 
@@ -66,13 +71,13 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
         }
         final now = ref.read(clockProvider).now().toUtc();
         final remaining = task.remainingAt(now);
-        if (remaining == Duration.zero &&
-            _completionAttemptedTaskId != task.id &&
-            !command.isLoading) {
-          _completionAttemptedTaskId = task.id;
+        if (_guardStartedTaskId != task.id) {
+          _guardStartedTaskId = task.id;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _complete(task);
+              ref
+                  .read(taskGuardControllerProvider.notifier)
+                  .ensureStarted(task);
             }
           });
         }
@@ -80,22 +85,13 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
           task: task,
           remaining: remaining,
           command: command,
+          guard: guard,
           onAbort: () => _confirmAbort(task),
-          onRetryCompletion: remaining == Duration.zero
-              ? () {
-                  _completionAttemptedTaskId = null;
-                  _complete(task);
-                }
-              : null,
+          onRetryGuard: () =>
+              ref.read(taskGuardControllerProvider.notifier).retry(),
         );
       },
     );
-  }
-
-  Future<void> _complete(TaskSession task) async {
-    await ref
-        .read(taskCommandControllerProvider.notifier)
-        .succeed(ownerUid: task.ownerUid, taskId: task.id);
   }
 
   Future<void> _confirmAbort(TaskSession task) async {
@@ -130,15 +126,17 @@ final class _RunningTaskView extends StatelessWidget {
     required this.task,
     required this.remaining,
     required this.command,
+    required this.guard,
     required this.onAbort,
-    required this.onRetryCompletion,
+    required this.onRetryGuard,
   });
 
   final TaskSession task;
   final Duration remaining;
   final AsyncValue<TaskCommandResult?> command;
+  final TaskGuardControllerState guard;
   final VoidCallback onAbort;
-  final VoidCallback? onRetryCompletion;
+  final VoidCallback onRetryGuard;
 
   @override
   Widget build(BuildContext context) {
@@ -170,12 +168,44 @@ final class _RunningTaskView extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text('終了時刻から残り時間を再計算しています', textAlign: TextAlign.center),
                 const SizedBox(height: 16),
-                const Card(
+                Card(
                   child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Text('外部アプリの自動検知はまだ有効ではありません。Task中はこの画面を維持してください。'),
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          guard.phase == TaskGuardPhase.monitoring
+                              ? Icons.shield
+                              : guard.phase == TaskGuardPhase.retryNeeded
+                              ? Icons.warning_amber
+                              : Icons.sync,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _guardStatusMessage(guard.phase, remaining),
+                            key: const Key('task-guard-status'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+                if (guard.phase == TaskGuardPhase.retryNeeded) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _guardFailureMessage(guard.failure),
+                    key: const Key('task-guard-error'),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  FilledButton(
+                    key: const Key('task-guard-retry-button'),
+                    onPressed: onRetryGuard,
+                    child: const Text('監視・同期を再試行'),
+                  ),
+                ],
                 if (error != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -185,12 +215,6 @@ final class _RunningTaskView extends StatelessWidget {
                       color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                  if (onRetryCompletion != null)
-                    FilledButton(
-                      key: const Key('task-success-retry-button'),
-                      onPressed: command.isLoading ? null : onRetryCompletion,
-                      child: const Text('完了処理を再試行'),
-                    ),
                 ],
                 const SizedBox(height: 24),
                 OutlinedButton(
@@ -205,6 +229,28 @@ final class _RunningTaskView extends StatelessWidget {
       ),
     );
   }
+}
+
+String _guardStatusMessage(TaskGuardPhase phase, Duration remaining) {
+  return switch (phase) {
+    TaskGuardPhase.idle || TaskGuardPhase.starting => 'Task監視を開始しています',
+    TaskGuardPhase.monitoring when remaining == Duration.zero =>
+      '端末内のdeadline判定を確定しています',
+    TaskGuardPhase.monitoring => '端末内で外部アプリへの移動を監視中です',
+    TaskGuardPhase.synchronizing => 'Task結果を安全に同期しています',
+    TaskGuardPhase.retryNeeded => '監視または結果同期に再試行が必要です',
+    TaskGuardPhase.terminal => 'Task結果を確定しました',
+  };
+}
+
+String _guardFailureMessage(Object? error) {
+  if (error is TaskFailure) {
+    return taskFailureMessage(error);
+  }
+  if (error == null) {
+    return '端末のTask監視状態を確認できません。再試行してください。';
+  }
+  return '端末のTask監視を継続できません。権限と通信状態を確認して再試行してください。';
 }
 
 final class _TaskResultView extends StatelessWidget {

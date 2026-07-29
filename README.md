@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1ではemail/password認証とプロフィール、Phase 2ではGroup機能、Phase 3ではDevice Owner等の端末診断、lock候補catalog、端末内app選択保存を追加しました。Phase 4ではTaskの開始・期限基準countdown・再起動復元・成功・手動失敗とminimal Debt生成を実装しました。以降は `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5ではForeground Serviceによる離脱検知とnative outboxを実装しました。次はPhase 6のpackage suspensionです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
@@ -115,7 +115,7 @@ Flutterのformat / analyze / test、Firestore Rules Test、追跡対象のsecret
 ./tool/check_all.sh
 ```
 
-Firestore Rulesはdefault denyです。本人の `users/{uid}`、所属メンバーに限定したgroup/member操作、hash化招待を許可します。group操作に加え、Task開始・成功・手動失敗ではTask、user pointer、same-ID Debtのafter-stateを検証します。Rules testだけを実行する場合は次を使います。
+Firestore Rulesはdefault denyです。本人の `users/{uid}`、所属メンバーに限定したgroup/member操作、hash化招待を許可します。Task開始・成功・手動/native failureではTask、user pointer、same-ID Debtのafter-stateを検証し、foreground package名は保存しません。Rules testだけを実行する場合は次を使います。
 
 ```bash
 npm --prefix firebase/rules-tests test
