@@ -92,7 +92,8 @@ Production:
 | group membership | social graph | Firestore | group/account lifetime |
 | Task content | potentially sensitive | Firestore、本人readのみ | MVP indefinite |
 | failed user / Debt | group-visible behavior | Firestore | MVP indefinite |
-| Contribution | group-visible fitness count | Firestore | MVP indefinite |
+| Contribution summary / immutable event | group-visible fitness count / operational metadata | Firestore | MVP indefinite |
+| pending Contribution event | operational metadata（uid、Debt ID、event ID、1 rep、時刻） | Android local DataStore | server ack / terminal rejectまで |
 | installed package names | sensitive app inventory | native local only | selection / obligation lifetime |
 | foreground UsageEvents | sensitive usage history | Kotlin process memory only | polling windowの判定完了まで |
 | pending Task terminal event | operational metadata | native local DataStore | Firestore ackまで |
@@ -102,6 +103,8 @@ Production:
 | crash logs | operational | local / approved crash service | package/frameをredact |
 
 Task内容をgroup memberへ公開しない。groupにはfailure userとDebtだけを表示する。
+
+Contribution Eventへ保存するのはuid、Debt配下のevent identity、1 rep、detector version、最小時刻だけである。画像、動画、landmark、package名、Usage history、Task内容は保存しない。Rulesはcurrent group member本人の正規transactionだけを許可するが、改変clientが`detectorType=mlkit`を名乗ることまではMVPで防止できない。ProductionではApp Checkに加えてtrusted attestation / server-side verificationを検討する。
 
 ## 7. Camera privacy controls
 

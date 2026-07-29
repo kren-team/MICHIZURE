@@ -615,16 +615,26 @@ integration_test/debt_realtime_test.dart
 
 冪等Contribution Event、member summary、Debt aggregateを1 repずつtransaction更新し、並行返済とtotal超過を防ぐ。
 
+### 実装結果（Phase 8）
+
+- `ContributionRequest`はML Kit由来の1 repだけを受け付け、`${uid}_${squatSessionId}_${sequence}`をstable event IDとする。
+- Firestore transactionはDebt、本人summary、immutable eventを全read後にatomic更新し、duplicate eventを成功済みno-opとして返す。
+- 最後の1 repだけが`active → completed`と`closedAt`を確定し、後続eventはterminal拒否となる。
+- 端末Outboxは未確定eventを`SharedPreferencesAsync`のAndroid DataStoreへ保存し、ack後だけ削除する。再起動時と2秒retryで順序再送する。
+- Debt detailから対象Debtを明示選択できる。Production UIには回数自由入力、fake rep、Camera処理を追加していない。
+- Rules Testは49/50への20 client競合、1/10への2 client競合、5 user・50 eventのaggregate整合を検証する。
+- Android統合テストは3 Firebase clientのrealtime summary、duplicate、最終rep競合、Outbox adapter再生成を検証する。
+
 ### 実装対象ファイル
 
 ```text
 lib/features/debt/domain/contribution*
-lib/features/debt/application/submit_rep.dart
+lib/features/debt/application/submit_contribution.dart
 lib/features/debt/infrastructure/firestore_contribution_repository.dart
-lib/features/debt/infrastructure/contribution_outbox.dart
+lib/features/debt/infrastructure/shared_preferences_contribution_outbox.dart
 firestore.rules
 firebase/rules-tests/contributions.test.*
-integration_test/contribution_concurrency_test.dart
+integration_test/debt_contribution_test.dart
 ```
 
 ### Firestore変更

@@ -112,6 +112,8 @@ free 50,000 reads/dayの約22%。Rulesの`get()` / `getAfter()`は課金readに�
 
 index fanoutで増えるため、queryしないevent fieldはindex exemptionする。
 
+Phase 8実装の1 rep transactionは通常、Debt・event・本人summaryの3 document readと、同じ3 document writeである。初回summaryもsetするためwrite数は変わらない。Rulesの`getAfter()`評価やtransaction contention retryは課金・latencyを増やし得るが、aggregate整合性を優先する。duplicate retryは3 read、0 writeで収束する。`detectorVersion`と`clientObservedAt`はqueryしないためautomatic indexを免除する。
+
 ## 8. Emulator Suite
 
 主デモ:
