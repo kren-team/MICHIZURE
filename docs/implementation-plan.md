@@ -688,6 +688,16 @@ integration_test/debt_contribution_test.dart
 
 CameraX + ML Kit + Kotlin状態機械でスクワットを検出し、Phase 8のrep eventへ接続する。
 
+### 実装結果（Phase 9）
+
+- CameraX 1.6.1 `Preview` / `ImageAnalysis`とML Kit base 18.0.0-beta5 `STREAM_MODE`をKotlinへ隔離した。
+- confidence、全身scale、左右side、knee / hip angle、normalized hip drop、velocity、median + EMAを`SquatDetectorConfig squat-v1`で評価する。
+- calibrationを通った`STANDING → DESCENDING → BOTTOM → ASCENDING → STANDING`だけを1 repとし、depth、ROM、phase時間、valid frame率、refractoryで二重countを防ぐ。
+- versioned MethodChannel / EventChannel / PlatformViewを追加し、frameとlandmarkをDartへ渡さないstrict payloadにした。
+- Flutter `SquatSessionController`が明示Debtをsession中固定し、native sequenceをPhase 8のContribution / Outboxへ1 repずつ渡す。
+- Camera permission、preview、quality / state feedback、detected / pending / confirmed表示とterminal / route離脱停止を実装した。
+- Firestore schema、Rules、Indexは変更していない。
+
 ### 実装対象ファイル
 
 ```text

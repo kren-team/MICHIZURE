@@ -362,6 +362,27 @@ firebase emulators:exec \
 
 Phase 9実装前のPhase 8 smokeではProduction UIからrepを生成しない。`integration_test/debt_contribution_test.dart`を使い、3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。
 
+### Phase 9 Camera / Squat smoke
+
+1. Bでactive Debt詳細から「このDebtを返済する」を開く。
+2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
+3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
+4. host webcamを使う場合は全身がframeへ入る距離で1秒以上直立する。
+5. 深くしゃがんで完全に立ち、端末検出、Outbox投入、Firestore確定、Debt残数の順に更新されることを確認する。
+6. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
+7. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
+
+Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/ML Kit精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。
+
+camera permissionを再試験する場合はDevice Ownerやapp dataを消去せず、permission flagsだけを操作する。
+
+```bash
+adb -s emulator-5554 shell pm revoke \
+  com.kren.michizure android.permission.CAMERA
+adb -s emulator-5554 shell pm clear-permission-flags \
+  com.kren.michizure android.permission.CAMERA user-set user-fixed
+```
+
 ### Scene 4: Unlock
 
 1. Aのlock statusでDebt completed / effective lock empty。

@@ -160,6 +160,7 @@ channel名はapplicationId配下でversionを含める。
 | 種別 | channel | 主な操作 |
 |---|---|---|
 | MethodChannel | `com.kren.michizure/device_control/v1` | Phase 3/5操作に加え、`applyLockObligation`, `getLockState`, `reconcileLocks`, `releaseLockObligation` |
+| MethodChannel | `com.kren.michizure/squat_control/v1` | camera permission、`startSession`, `stopSession`, session state |
 | EventChannel | `com.kren.michizure/task_events/v1` | terminal eventだけを送る: `taskFailed`, `deadlineReached` |
 | EventChannel | `com.kren.michizure/squat_events/v1` | `calibrating`, `stateChanged`, `repCompleted`, `qualityWarning`, `detectorError` |
 | PlatformView | `com.kren.michizure/pose_preview/v1` | native camera preview overlay |
