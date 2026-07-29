@@ -130,6 +130,7 @@ enum ContributionRejectionReason {
   debtFull,
   deadlineReached,
   unauthorized,
+  offline,
   conflict,
   outboxFull,
   malformedData,
