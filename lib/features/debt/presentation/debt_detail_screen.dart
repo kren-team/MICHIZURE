@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../group/domain/group_member.dart';
@@ -101,7 +102,13 @@ final class _DebtDetail extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 16),
-        const Text('返済操作は次のPhaseで追加します。'),
+        if (debt.status == DebtStatus.active)
+          FilledButton.icon(
+            key: const Key('debt-repay-action'),
+            onPressed: () => context.go('/debts/${debt.id}/repay'),
+            icon: const Icon(Icons.directions_run),
+            label: const Text('このDebtを返済する'),
+          ),
       ],
     );
   }

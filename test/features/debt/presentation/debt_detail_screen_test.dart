@@ -7,7 +7,7 @@ import 'package:michizure/features/debt/presentation/debt_detail_screen.dart';
 import 'package:michizure/features/group/domain/group_member.dart';
 
 void main() {
-  testWidgets('renders Debt aggregate and read-only member summaries', (
+  testWidgets('renders Debt aggregate, summaries and explicit repay action', (
     tester,
   ) async {
     final debt = _debt();
@@ -52,7 +52,8 @@ void main() {
     expect(find.byKey(const Key('debt-detail-remaining')), findsOneWidget);
     expect(find.text('カナデ'), findsOneWidget);
     expect(find.text('12 回'), findsOneWidget);
-    expect(find.textContaining('次のPhase'), findsOneWidget);
+    expect(find.byKey(const Key('debt-repay-action')), findsOneWidget);
+    expect(find.text('このDebtを返済する'), findsOneWidget);
   });
 
   testWidgets('renders terminal status without contribution write controls', (
@@ -92,7 +93,7 @@ void main() {
 
     expect(find.text('状態: 期限終了'), findsOneWidget);
     expect(find.byKey(const Key('debt-detail-cache-banner')), findsOneWidget);
-    expect(find.byType(FilledButton), findsNothing);
+    expect(find.byKey(const Key('debt-repay-action')), findsNothing);
   });
 }
 

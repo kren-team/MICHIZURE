@@ -6,6 +6,7 @@ import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/debt/presentation/debt_detail_screen.dart';
 import '../features/debt/presentation/debt_list_screen.dart';
+import '../features/debt/presentation/contribution_session_screen.dart';
 import '../features/enforcement/presentation/app_selection/app_selection_screen.dart';
 import '../features/enforcement/presentation/device_setup/device_setup_screen.dart';
 import '../features/enforcement/presentation/lock_status/lock_status_screen.dart';
@@ -200,6 +201,14 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
             path: ':debtId',
             builder: (context, state) =>
                 DebtDetailScreen(debtId: state.pathParameters['debtId']!),
+            routes: [
+              GoRoute(
+                path: 'repay',
+                builder: (context, state) => ContributionSessionScreen(
+                  debtId: state.pathParameters['debtId']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),
