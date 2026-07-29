@@ -31,6 +31,16 @@ void main() {
         contains('android:foregroundServiceType="systemExempted"'),
       );
       expect(mainManifest, contains('android:exported="false"'));
+      expect(
+        mainManifest,
+        contains('android.permission.RECEIVE_BOOT_COMPLETED'),
+      );
+      expect(
+        mainManifest,
+        contains('android:name=".enforcement.LockReconcileReceiver"'),
+      );
+      expect(mainManifest, isNot(contains('SCHEDULE_EXACT_ALARM')));
+      expect(mainManifest, isNot(contains('AccessibilityService')));
     },
   );
 }

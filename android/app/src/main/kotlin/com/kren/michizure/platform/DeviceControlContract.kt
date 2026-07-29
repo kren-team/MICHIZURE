@@ -14,6 +14,10 @@ object DeviceControlContract {
     const val METHOD_STOP_TASK_GUARD = "stopTaskGuard"
     const val METHOD_GET_TASK_GUARD_STATE = "getTaskGuardState"
     const val METHOD_ACK_TASK_EVENT = "ackTaskEvent"
+    const val METHOD_APPLY_LOCK_OBLIGATION = "applyLockObligation"
+    const val METHOD_GET_LOCK_STATE = "getLockState"
+    const val METHOD_RECONCILE_LOCKS = "reconcileLocks"
+    const val METHOD_RELEASE_LOCK_OBLIGATION = "releaseLockObligation"
 
     const val ERROR_CHANNEL_CONTRACT_MISMATCH = "channelContractMismatch"
     const val ERROR_PACKAGE_PROTECTED = "packageProtected"
@@ -26,6 +30,9 @@ object DeviceControlContract {
         "notificationPermissionMissing"
     const val ERROR_FOREGROUND_SERVICE_START_DENIED =
         "foregroundServiceStartDenied"
+    const val ERROR_SUSPENSION_PARTIAL_FAILURE = "suspensionPartialFailure"
+    const val ERROR_UNSUSPENSION_PARTIAL_FAILURE = "unsuspensionPartialFailure"
+    const val ERROR_TASK_SNAPSHOT_MISSING = "taskSnapshotMissing"
 
     fun hasSupportedVersion(arguments: Any?): Boolean {
         val payload = arguments as? Map<*, *> ?: return false

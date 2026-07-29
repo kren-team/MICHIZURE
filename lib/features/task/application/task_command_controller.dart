@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../debt/domain/debt.dart';
+import '../../enforcement/domain/app_lock.dart';
 import '../domain/task_failure.dart';
 import '../domain/task_session.dart';
 
@@ -11,10 +12,11 @@ final taskCommandControllerProvider =
     );
 
 final class TaskCommandResult {
-  const TaskCommandResult({required this.task, this.debt});
+  const TaskCommandResult({required this.task, this.debt, this.lockState});
 
   final TaskSession task;
   final Debt? debt;
+  final AppLockState? lockState;
 }
 
 final class TaskCommandController
@@ -71,8 +73,22 @@ final class TaskCommandController
                 .read(taskEventIdGeneratorProvider)
                 .generateManualAbortId(taskId),
           );
+      final lockState = await ref
+          .read(appLockRepositoryProvider)
+          .applyObligation(
+            LockObligationRequest(
+              debtId: result.debt.id,
+              taskSessionId: result.task.id,
+              createdAt: result.debt.createdAt,
+              expiresAt: result.debt.lockExpiresAt,
+            ),
+          );
       await _stopGuardBestEffort(taskId);
-      return TaskCommandResult(task: result.task, debt: result.debt);
+      return TaskCommandResult(
+        task: result.task,
+        debt: result.debt,
+        lockState: lockState,
+      );
     });
   }
 

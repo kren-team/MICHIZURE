@@ -461,9 +461,11 @@ android/app/src/androidTest/
 
 ## Phase 6 — `feature/android-app-lock`
 
+Status: implemented on `feature/android-app-lock`; merge先は`dev`。
+
 ### 目的
 
-failure直後のpackage suspension、Debt別obligation、複数理由union、deadline / completion解除を実装する。
+Firestoreで確定したfailure後のpackage suspension、Debt別obligation、複数理由union、deadline / completion解除境界を実装する。
 
 ### 実装対象ファイル
 
@@ -491,14 +493,14 @@ lib/features/enforcement/presentation/lock_status/
 ### Native Kotlin
 
 - `setPackagesSuspended`
-- failure前のlocal obligation atomic保存
+- Firestore failure確定後・native event ack前のlocal obligation atomic保存
 - apply / release partial result
 - effective set / owned suspension
-- elapsed deadline Handler + WorkManager safety net
+- elapsed deadline + inexact AlarmManager + boot/app-start reconcile
 
 ### 完了条件
 
-- failure時network前にDemo SNS suspend
+- Firestore failure確定後にDemo SNS suspend
 - Debt A/Bが同packageでもAだけ完済時は維持
 - 全obligation解決でrelease
 - deadline offline release
@@ -520,6 +522,16 @@ lib/features/enforcement/presentation/lock_status/
 3. `feat: lock unionと差分reconcileを実装`
 4. `feat: deadline解除とlock statusを追加`
 5. `test: 複数DebtとDPM復元を検証`
+
+### 実装結果
+
+- Task開始時native snapshotをauthorityに、same-ID Debt別obligationをPreferences DataStoreへDPM呼出前に保存
+- DPMのfailed package戻り値を成功分と分離し、owned suspensionとdegraded状態を永続化
+- unresolved obligationのpackage unionからapply/release差分を導出し、他obligationまたは非owned suspensionを早期解除しない
+- same bootのelapsed deadlineとboot変更後のwall deadline、inexact alarm、boot/app update/app起動reconcileを実装
+- `applyLockObligation`, `getLockState`, `reconcileLocks`, `releaseLockObligation`をversion 1 typed MethodChannelへ追加
+- Lock Statusでobligation、期限、件数、partial failureをpackage名なしで表示
+- Firestore schema / Rules / Index変更なし。Debt完済listenerからのrelease接続はPhase 7
 
 ---
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../debt/domain/debt.dart';
+import '../../enforcement/domain/app_lock.dart';
 import '../domain/native_task_guard.dart';
 import '../domain/task_failure.dart';
 import '../domain/task_session.dart';
@@ -23,18 +24,21 @@ final class TaskGuardControllerState {
     this.task,
     this.debt,
     this.failure,
+    this.lockState,
   });
 
   const TaskGuardControllerState.idle()
     : phase = TaskGuardPhase.idle,
       task = null,
       debt = null,
-      failure = null;
+      failure = null,
+      lockState = null;
 
   final TaskGuardPhase phase;
   final TaskSession? task;
   final Debt? debt;
   final Object? failure;
+  final AppLockState? lockState;
 }
 
 final taskGuardControllerProvider =
@@ -193,7 +197,10 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
     try {
       TaskSession terminalTask;
       Debt? debt;
-      if (task.isTerminal) {
+      AppLockState? lockState;
+      if (task.isTerminal &&
+          !(task.status == TaskSessionStatus.failed &&
+              task.failureEventId == event.eventId)) {
         terminalTask = task;
       } else if (event.type == NativeTaskEventType.deadlineReached) {
         terminalTask = await ref
@@ -216,6 +223,16 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
             );
         terminalTask = result.task;
         debt = result.debt;
+        lockState = await ref
+            .read(appLockRepositoryProvider)
+            .applyObligation(
+              LockObligationRequest(
+                debtId: result.debt.id,
+                taskSessionId: result.task.id,
+                createdAt: result.debt.createdAt,
+                expiresAt: result.debt.lockExpiresAt,
+              ),
+            );
       }
 
       final acknowledged = await ref
@@ -234,6 +251,7 @@ final class TaskGuardController extends Notifier<TaskGuardControllerState> {
           phase: TaskGuardPhase.terminal,
           task: terminalTask,
           debt: debt,
+          lockState: lockState,
         );
       }
     } on Object catch (error) {

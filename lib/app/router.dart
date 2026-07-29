@@ -6,6 +6,7 @@ import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/enforcement/presentation/app_selection/app_selection_screen.dart';
 import '../features/enforcement/presentation/device_setup/device_setup_screen.dart';
+import '../features/enforcement/presentation/lock_status/lock_status_screen.dart';
 import '../features/group/presentation/group_create_screen.dart';
 import '../features/group/presentation/group_home_screen.dart';
 import '../features/group/presentation/group_invite_screen.dart';
@@ -27,6 +28,7 @@ const String groupJoinRoutePath = '/group/join';
 const String groupInviteRoutePath = '/group/invite';
 const String deviceSetupRoutePath = '/device-setup';
 const String appSelectionRoutePath = '/device-setup/apps';
+const String lockStatusRoutePath = '/lock-status';
 const String taskComposerRoutePath = '/task/new';
 const String runningTaskRoutePath = '/task/running';
 const String recoverableErrorRoutePath = '/error';
@@ -182,6 +184,10 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       GoRoute(
         path: appSelectionRoutePath,
         builder: (context, state) => const AppSelectionScreen(),
+      ),
+      GoRoute(
+        path: lockStatusRoutePath,
+        builder: (context, state) => const LockStatusScreen(),
       ),
       GoRoute(
         path: taskComposerRoutePath,

@@ -291,6 +291,27 @@ Phase 5でforeign app自動検知とForeground Serviceを実装した。package 
 
 Phase 5のincoming call gateは追加permissionを持たないsynthetic classifier testだけである。実着信の除外はProduction permission / Play policy判断後の課題とする。
 
+### Phase 6 App Lock smoke
+
+1. `adb shell dpm list-owners`でMICHIZUREがDevice Ownerであることを確認する。
+2. Device SetupでChrome等の選択可能なlauncher appを1件選択する。
+3. Taskを開始し、foreign appへ移動する。
+4. Firestore Emulator UIでTask `failed` とsame-ID Debt `active`を確認する。
+5. Lock Statusでobligation、30分期限、封印成功件数を確認する。
+6. launcherから選択対象を起動し、Androidのsuspended app案内になることを確認する。
+7. app processを通常killして再起動し、Lock Statusとsuspend状態が維持されることを確認する。
+8. `adb shell dumpsys package <target-package>`と`adb shell dumpsys device_policy`を診断に使用する。package名を共有ログやanalyticsへ転送しない。
+9. Phase 7未実装のためDebt完済解除は行わない。期限解除はinexact alarmまたはapp再起動時reconcileで確認する。
+
+instrumentation:
+
+```bash
+cd android
+./gradlew :app:connectedDebugAndroidTest
+```
+
+`AndroidPackageSuspenderTest`は選択可能なlauncher appを一時suspendし、`finally`でunsuspendする。テスト中にEmulatorを終了しない。
+
 ### Scene 1: Group
 
 1. Aでregister/loginしgroup作成。

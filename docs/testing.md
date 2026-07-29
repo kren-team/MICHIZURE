@@ -300,6 +300,8 @@ Device Ownerでない一般emulator:
 
 Phase 5では純粋classifierをJVM unitへ分離し、250msの実時間pollingを待たずにelapsed timestampを注入する。`NativeTaskStoreInstrumentationTest`はduplicate terminalの同一event ID、ack後の全消去、同一Task startの冪等性、異なるTaskとの競合、lock target snapshotを検証する。`TaskGuardManifestTest`はserviceが非exportかつ`systemExempted`であることをmanaged Emulator上で確認する。
 
+Phase 6は`LockCoordinatorTest`でobligationのDPM適用前永続化、duplicate apply、partial failure、2 Debtのunion、期限解除、Device Owner喪失、process recreation / reinstall reconcileをpure fakeで検証する。`LockObligationStoreTest`はDataStore再生成後の復元、`AndroidPackageSuspenderTest`はmanaged Emulatorで選択可能packageのsuspend/unsuspendとself packageのfailed戻り値を検証し、`finally`で対象を必ず解除する。
+
 標準command:
 
 ```bash

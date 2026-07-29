@@ -10,23 +10,27 @@ import 'package:michizure/features/task/domain/task_failure.dart';
 import '../../enforcement/support/fake_device_control_repository.dart';
 import '../support/fake_task_repository.dart';
 import '../support/fake_native_task_guard.dart';
+import '../../enforcement/support/fake_app_lock_repository.dart';
 
 void main() {
   late FakeTaskRepository tasks;
   late FakeDeviceControlRepository device;
   late ProviderContainer container;
   late FakeNativeTaskGuard guard;
+  late FakeAppLockRepository appLock;
 
   setUp(() {
     tasks = FakeTaskRepository();
     device = FakeDeviceControlRepository()
       ..selectedPackageNames = {'social.app'};
     guard = FakeNativeTaskGuard();
+    appLock = FakeAppLockRepository();
     container = ProviderContainer(
       overrides: [
         taskRepositoryProvider.overrideWithValue(tasks),
         deviceControlRepositoryProvider.overrideWithValue(device),
         nativeTaskGuardProvider.overrideWithValue(guard),
+        appLockRepositoryProvider.overrideWithValue(appLock),
         taskEventIdGeneratorProvider.overrideWithValue(
           const _FixedEventIdGenerator(),
         ),
@@ -96,6 +100,7 @@ void main() {
 
     expect(await controller.abort(ownerUid: 'alice', taskId: 'task-1'), isTrue);
     expect(tasks.failCalls, 1);
+    expect(appLock.applyCalls, 1);
     expect(guard.stopCalls, 2);
     expect(tasks.lastFailureEventId, 'manual_task-1_fixed');
     expect(

@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5ではForeground Serviceによる離脱検知とnative outboxを実装しました。次はPhase 6のpackage suspensionです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+設計フェーズを完了し、Phase 0でAndroid専用FlutterアプリとFirebase Local Emulator Suiteの開発基盤を構築しました。Phase 1では認証とプロフィール、Phase 2ではGroup、Phase 3では端末診断と封印対象選択、Phase 4ではTask Session、Phase 5では離脱検知、Phase 6ではDevice Ownerによるpackage suspensionとDebt別lock obligationを実装しました。次はPhase 7のDebt realtimeです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
 
 ## 設計上の重要な結論
 
