@@ -59,7 +59,7 @@ API 21以降、第三者appには他appのrunning task情報が制限され、co
 - Emulatorで強制力のあるデモが可能。
 - AccessibilityServiceを使わない。
 - OS policyとDebtをreason別に安全に対応付けられる。
-- failure直後にnetworkを待たずlockできる。
+- native側にobligationを永続化してからDPMを呼ぶため、process kill後も再試行できる。
 
 ### Negative
 
@@ -78,6 +78,10 @@ API 21以降、第三者appには他appのrunning task情報が制限され、co
 2. enterprise版: 正式なAndroid Enterprise DPC / EMMとして提供
 
 通常権限で同じhard lockを提供できるという仮定は禁止する。
+
+## Phase 6 implementation note
+
+Phase 6の明示要件により、封印開始順序は「native violation検知直後」ではなく、Task failureとsame-ID DebtがFirestore transactionでterminal確定した後とする。offline時はPhase 5 native outboxにstable event IDを保持し、再接続後に同じtransactionを冪等実行してからlock obligationを保存・適用する。このためnetwork断中の即時封印は保証しないが、未確定のfailureだけで端末を封印しないことを優先する。
 
 ## References
 

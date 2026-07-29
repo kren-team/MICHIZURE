@@ -145,6 +145,8 @@ Phase 4のcommand stateは`TaskCommandController`がstart / success / manual abo
 
 Phase 5の`TaskGuardController`は`idle / starting / monitoring / synchronizing / retryNeeded / terminal`を持つ。native eventの同一IDをsingle-flight化し、offline / channel failureでは2秒後に同じeventをretryする。WidgetはEventChannelを直接購読せず、Running画面はcontroller stateからguard healthと安全なtyped errorだけを表示する。
 
+Phase 6の`AppLockController`はLock Status表示時にnative desired/actual stateをreconcileし、manual retryをsingle-flight化する。Task failure経路はFirestore transaction成功後に`AppLockRepository.applyObligation`を呼び、その成功またはpartial result保存後だけnative Task eventをackする。Debt完済/期限切れをFirestore listenerから`releaseObligation`へ接続するのはPhase 7とする。
+
 ## 10. 過剰設計を避ける基準
 
 - CRUDを1回呼ぶだけならControllerからRepositoryを呼ぶ。

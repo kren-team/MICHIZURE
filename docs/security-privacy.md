@@ -40,6 +40,8 @@ Phase 4のTask開始はTask documentと`users.activeTaskSessionId`、手動失�
 
 Phase 5のTask GuardはUsageEvents履歴をKotlin process内だけで短時間評価する。native outboxは`eventId`、Task ID、terminal種別、発生時刻、reasonだけを保存し、foreground package名、class名、履歴、インストール済み一覧をDart・Firestore・analytics・Production logへ渡さない。Rulesはnative eventの真正性を検証できないため、patched clientがfailure reasonを偽装できる点はMVP trust boundaryである。
 
+Phase 6はFirestoreでTask failureとsame-ID Debtが確定した後、Task開始時のnative package snapshotからDebt ID別obligationを作る。package一覧、DPMの失敗package名、owned suspensionはlocal DataStoreだけに保存し、Platform Channelは件数とtyped codeだけを返す。offline中はPhase 5 outboxを保持するが、cloud確定前にはlockしないため、network断中の即時強制は今回の要件選択では保証しない。
+
 ## 3. Threat model
 
 | Threat | MVP対策 | 残余リスク / Production |

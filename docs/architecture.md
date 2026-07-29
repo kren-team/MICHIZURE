@@ -64,7 +64,7 @@ flowchart LR
 | Flutter ↔ Kotlin | MethodChannel + EventChannel + PlatformView | command、イベントstream、camera previewを役割分離 |
 | Camera | CameraX Preview + ImageAnalysis | lifecycle統合、backpressure |
 | Pose | ML Kit Pose Detection base SDK / STREAM_MODE | 端末内・低遅延。画像送信不要 |
-| ローカル復元 | Kotlin DataStore + device-protected最小snapshot | Flutter UI不在でもlockを復元 |
+| ローカル復元 | Kotlin DataStore（Phase 6はcredential-protected、Phase 10でdevice-protected最小snapshotを追加） | Flutter UI不在でもlockを復元 |
 | テストbackend | Firebase Local Emulator Suite | Auth / Firestore / Rulesを無料・決定的に検証 |
 
 依存バージョンはPhase 0開始時に公式compatibilityを確認してlockfileへ固定する。設計書に将来の「latest」を固定値として書かない。
@@ -145,7 +145,7 @@ feature間で共用するのは安定したDomain value objectまたは`core`の
 | native guard deadline | Firestore deadlineを起点にした`SystemClock.elapsedRealtime` | native DataStore | 同一bootのwall clock変更耐性 |
 | Debt / Contribution | Firestore | SDK offline cache | transactionとrealtime |
 | 選択パッケージ | native DataStore | Flutter view state | installed-app inventoryをcloudへ出さない |
-| lock obligation | native DataStore + Firestore Debt | OS suspended state | failure直後の即時強制と共有解除 |
+| lock obligation | native DataStore + Firestore Debt | OS suspended state | Firestore terminal確定後の強制と共有解除 |
 | effective lock | lock reconcilerの導出値 | DevicePolicyManager | 複数Debtをreason別に管理 |
 | pose frame | memory only | なし | 保存・送信禁止 |
 | squat sequence | Kotlin state machine | UI current count | 低遅延・frameをDartへ転送しない |
@@ -159,7 +159,7 @@ channel名はapplicationId配下でversionを含める。
 
 | 種別 | channel | 主な操作 |
 |---|---|---|
-| MethodChannel | `com.kren.michizure/device_control/v1` | Phase 3操作に加え、`startTaskGuard`, `stopTaskGuard`, `getTaskGuardState`, `ackTaskEvent`; Phase 6以降でlock操作を追加 |
+| MethodChannel | `com.kren.michizure/device_control/v1` | Phase 3/5操作に加え、`applyLockObligation`, `getLockState`, `reconcileLocks`, `releaseLockObligation` |
 | EventChannel | `com.kren.michizure/task_events/v1` | terminal eventだけを送る: `taskFailed`, `deadlineReached` |
 | EventChannel | `com.kren.michizure/squat_events/v1` | `calibrating`, `stateChanged`, `repCompleted`, `qualityWarning`, `detectorError` |
 | PlatformView | `com.kren.michizure/pose_preview/v1` | native camera preview overlay |
@@ -198,10 +198,13 @@ sequenceDiagram
     Native-->>Flutter: taskFailed(eventId)
     Flutter->>Firestore: transaction: task failed + debt + user pointer clear
     Firestore-->>Flutter: committed
+    Flutter->>Native: applyLockObligation(Debt, Task ID)
+    Native->>Native: Task開始時snapshotからobligation永続化
+    Native->>Android: setPackagesSuspended
     Flutter->>Native: ackTaskEvent(eventId)
 ```
 
-Firestore開始が失敗した場合はGuardを開始しない。failure後のFirestore transactionが失敗した場合は、native outboxから同一IDで再送する。Phase 5はpackageをsuspendしない。Phase 6がterminal eventを起点にlocal obligationを作成し、cloud同期より先に封印する境界を追加する。
+Firestore開始が失敗した場合はGuardを開始しない。failure後のFirestore transactionが失敗した場合は、native outboxから同一IDで再送する。Phase 5はpackageをsuspendしない。Phase 6は今回の明示要件に従い、Task failureとsame-ID DebtがFirestore transactionで確定した後、native eventをackする前にlocal obligationを保存して封印する。従ってoffline中はterminal eventを失わないが、Firestore commitまでは封印を開始しない。
 
 ### 8.2 スクワット返済
 

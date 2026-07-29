@@ -277,7 +277,7 @@ sequenceDiagram
     Dart->>Guard: ackTaskEvent(eventId)
 ```
 
-Phase 5はDPMを呼ばず、Firestoreがofflineでもterminal eventをstable UUID付きoutboxに保持して再配送する。Phase 6では同じterminal境界でlock obligationを先にlocal保存・適用し、cloud書き込み前にOS封印する。
+Phase 5はDPMを呼ばず、Firestoreがofflineでもterminal eventをstable UUID付きoutboxに保持して再配送する。Phase 6では今回の明示要件を優先し、Firestoreのfailure transactionとsame-ID Debt取得が成功した後、native eventのack前にlock obligationをlocal保存・適用する。offline中はoutbox再送を続け、cloud terminal未確定の段階ではDPMを呼ばない。
 
 ### 9.1 Phase 5 channel contract
 
@@ -304,7 +304,20 @@ reason: foreign_app_foreground | monitor_capability_lost |
 
 unknown fieldを含むpayload、unknown reason、package名を含むpayloadはDart adapterが拒否する。EventChannel再購読と`getTaskGuardState`で未ack eventを同じIDのまま再送し、Firestore transaction成功後のackだけがnative Task recordを削除する。
 
-### 9.2 Foreground Service permission
+### 9.2 Phase 6 lock contract
+
+同じMethodChannelへ次を追加する。
+
+```text
+applyLockObligation(debtId, taskSessionId, createdAtEpochMs, expiresAtEpochMs)
+getLockState()
+reconcileLocks()
+releaseLockObligation(debtId, resolution: completed | expired)
+```
+
+package snapshotはDart引数で渡さず、ack前の`NativeTaskStore`から取得する。responseはobligation ID、期限、state、target/enforced/failed件数だけを返し、package名を含めない。partial failureは成功response内のdegraded state、Device Owner喪失やsnapshot欠落はtyped `PlatformException`とする。
+
+### 9.3 Foreground Service permission
 
 Phase 5で追加するpermissionは次の2つだけである。
 
@@ -369,12 +382,13 @@ Debt Aの完済時はAをresolvedにし、再計算後の差分だけunsuspend�
 
 exact alarm permissionをMVP必須にしない。
 
-- Foreground Service稼働中は`elapsedRealtime` based Handlerで最短deadlineをschedule
-- process restart時はpersistent obligationから再schedule
-- `BOOT_COMPLETED`, app start, network reconnectでreconcile
-- WorkManager one-time workをbest-effort safety netにするが、正確な時刻保証には使わない
+- `AlarmManager.setAndAllowWhileIdle(ELAPSED_REALTIME_WAKEUP)`で最短deadlineをinexact scheduleする。
+- process restart時はpersistent obligationから再scheduleする。
+- `BOOT_COMPLETED`, `MY_PACKAGE_REPLACED`, app start、手動reconcileでdesired stateを再評価する。
+- 同一bootではelapsed deadline、boot変更後はabsolute wall deadlineを使用する。
+- `SCHEDULE_EXACT_ALARM`、WorkManager dependency、常駐lock用FGSはPhase 6で追加しない。
 
-WorkManagerのdelayはsystem optimizationで遅延し得る。Device Owner FGSがforce-stopされない通常デモ経路ではdeadlineを正確に処理できる。Production fleetではDPCの常駐性とbackend policy reconcileを設計し直す。
+Android 12以降のinexact alarmはdeadlineより前には発火しない一方、OS最適化で最大約1時間遅延し得る。アプリを開けば即時reconcileする。厳密な秒単位解除が必要なProduction fleetでは、DPC常駐性または適格なexact alarm用途を別途設計する。
 
 ## 13. Package catalog
 
@@ -411,11 +425,11 @@ catalogの`isSelectable`は静的な事前診断である。Phase 6で実際に`
 
 ## 14. Reboot / app update / process death
 
-- device-protected storageにlock obligationの最小snapshotを持つ。
-- boot receiverは期限内effective setを再適用し、期限後をreleaseする。
+- Phase 6はbackup無効のcredential-protected Preferences DataStoreにlock obligationを持つ。
+- `BOOT_COMPLETED` receiverはuser unlock後に期限内effective setを再適用し、期限後をreleaseする。unlock前のdevice-protected snapshotはPhase 10で追加する。
 - Firebase状態はuser unlock / Flutter bootstrap後にreconcileする。
 - app update後もDevice OwnerとDPM suspensionは残る前提で差分確認する。
-- package install/replace/remove broadcastでselected / suspended stateを再検査する。
+- package uninstall/reinstallはapp startまたは手動reconcileで再検査する。package変更broadcastによる即時reconcileはPhase 10で追加する。
 - app data clear、Device Owner解除、emulator wipeはMVP trust boundary外。
 - logoutやFirebase token expirationでlockを解除しない。
 
