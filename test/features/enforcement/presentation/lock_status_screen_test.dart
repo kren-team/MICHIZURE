@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
+import 'package:michizure/features/debt/application/debt_lock_release_controller.dart';
+import 'package:michizure/features/debt/domain/debt_failure.dart';
 import 'package:michizure/features/enforcement/domain/app_lock.dart';
 import 'package:michizure/features/enforcement/presentation/lock_status/lock_status_screen.dart';
 
@@ -26,7 +28,12 @@ void main() {
       );
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appLockRepositoryProvider.overrideWithValue(repository)],
+        overrides: [
+          appLockRepositoryProvider.overrideWithValue(repository),
+          debtLockReleaseStateProvider.overrideWithValue(
+            const DebtLockReleaseState.idle(),
+          ),
+        ],
         child: const MaterialApp(home: LockStatusScreen()),
       ),
     );
@@ -40,6 +47,29 @@ void main() {
     expect(find.byKey(const Key('lock-obligation-debt-a')), findsOneWidget);
     expect(find.byKey(const Key('lock-obligation-debt-b')), findsOneWidget);
     expect(find.textContaining('すべて解決するまで'), findsOneWidget);
+  });
+
+  testWidgets('shows a safe remote Debt release failure', (tester) async {
+    final repository = FakeAppLockRepository()..state = emptyAppLockState;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLockRepositoryProvider.overrideWithValue(repository),
+          debtLockReleaseStateProvider.overrideWithValue(
+            const DebtLockReleaseState(
+              isMonitoring: true,
+              trackedDebtCount: 1,
+              failure: DebtFailure(DebtFailureKind.nativeReleaseFailed),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: LockStatusScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('lock-remote-release-error')), findsOneWidget);
+    expect(find.textContaining('PlatformException'), findsNothing);
   });
 }
 

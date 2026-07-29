@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/providers.dart';
+import '../../../debt/application/debt_lock_release_controller.dart';
+import '../../../debt/presentation/debt_failure_message.dart';
 import '../../application/app_lock_controller.dart';
 import '../../domain/app_lock.dart';
 import '../enforcement_failure_message.dart';
@@ -37,6 +39,7 @@ final class _LockStatusScreenState extends ConsumerState<LockStatusScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appLockControllerProvider);
+    final remoteRelease = ref.watch(debtLockReleaseStateProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('アプリ封印状態')),
       body: state.when(
@@ -49,6 +52,9 @@ final class _LockStatusScreenState extends ConsumerState<LockStatusScreen> {
         data: (value) => _LockStateView(
           state: value,
           now: ref.read(clockProvider).now().toUtc(),
+          remoteReleaseFailure: remoteRelease.failure,
+          onRetryRemoteRelease: () =>
+              ref.read(debtLockReleaseControllerProvider.notifier).retry(),
           onReconcile: () =>
               ref.read(appLockControllerProvider.notifier).reconcile(),
         ),
@@ -61,11 +67,15 @@ final class _LockStateView extends StatelessWidget {
   const _LockStateView({
     required this.state,
     required this.now,
+    required this.remoteReleaseFailure,
+    required this.onRetryRemoteRelease,
     required this.onReconcile,
   });
 
   final AppLockState state;
   final DateTime now;
+  final Object? remoteReleaseFailure;
+  final VoidCallback onRetryRemoteRelease;
   final VoidCallback onReconcile;
 
   @override
@@ -101,6 +111,21 @@ final class _LockStateView extends StatelessWidget {
             '一部の対象を封印できませんでした。Device Owner状態を確認して再試行してください。',
             key: const Key('lock-partial-failure-message'),
             style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        if (remoteReleaseFailure != null) ...[
+          const SizedBox(height: 12),
+          Card(
+            key: const Key('lock-remote-release-error'),
+            child: ListTile(
+              leading: const Icon(Icons.sync_problem),
+              title: Text(debtFailureMessage(remoteReleaseFailure!)),
+              subtitle: const Text('Debt状態を再確認して封印解除を再試行できます。'),
+              trailing: TextButton(
+                onPressed: onRetryRemoteRelease,
+                child: const Text('再試行'),
+              ),
+            ),
           ),
         ],
         const SizedBox(height: 16),

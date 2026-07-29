@@ -13,6 +13,10 @@ final debtLockReleaseControllerProvider =
       DebtLockReleaseController.new,
     );
 
+final debtLockReleaseStateProvider = Provider<DebtLockReleaseState>((ref) {
+  return ref.watch(debtLockReleaseControllerProvider);
+});
+
 final class DebtLockReleaseState {
   const DebtLockReleaseState({
     required this.isMonitoring,
