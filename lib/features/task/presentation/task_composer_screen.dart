@@ -42,9 +42,13 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
     final authUser = ref.watch(authStateProvider).value;
     final command = ref.watch(taskCommandControllerProvider);
     final deviceSetup = ref.watch(deviceSetupControllerProvider);
+    final setup = deviceSetup.value;
+    final isReadyToStart =
+        setup?.capabilities.isManagedDemoReady == true &&
+        setup!.savedPackageNames.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Taskを始める')),
+      appBar: AppBar(title: const Text('約束を始める')),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -58,7 +62,7 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
                   controller: _contentController,
                   maxLength: TaskContentValidator.maximumLength,
                   decoration: const InputDecoration(
-                    labelText: 'Task内容',
+                    labelText: '約束の内容',
                     hintText: '例：勉強する',
                   ),
                   validator: (value) =>
@@ -91,6 +95,14 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.info_outline),
+              title: Text('約束中はMICHIZUREに留まってください'),
+              subtitle: Text('別のアプリへ移動すると失敗となり、グループの負債と選択アプリの封印が発生します。'),
+            ),
+          ),
+          const SizedBox(height: 16),
           _PreflightCard(deviceSetup: deviceSetup),
           if (command.whenOrNull(error: (error, stackTrace) => error)
               case final error?) ...[
@@ -107,7 +119,8 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
             onPressed:
                 command.isLoading ||
                     authUser == null ||
-                    profile?.groupId == null
+                    profile?.groupId == null ||
+                    !isReadyToStart
                 ? null
                 : () =>
                       _start(ownerUid: authUser.id, groupId: profile!.groupId!),
@@ -117,7 +130,7 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.play_arrow),
-            label: const Text('Taskを開始'),
+            label: const Text('約束を開始'),
           ),
         ],
       ),
@@ -173,7 +186,7 @@ final class _PreflightCard extends StatelessWidget {
               const Text('端末状態を確認できませんでした。'),
               TextButton(
                 onPressed: () => context.go('/device-setup'),
-                child: const Text('Device Setupを開く'),
+                child: const Text('端末セットアップを開く'),
               ),
             ],
           ),
@@ -197,12 +210,12 @@ final class _PreflightCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('封印対象: ${state.savedPackageNames.length}件'),
+                Text('封印対象アプリ: ${state.savedPackageNames.length}件'),
                 if (!ready)
                   TextButton(
                     key: const Key('task-device-setup-button'),
                     onPressed: () => context.go('/device-setup'),
-                    child: const Text('Device Setupを確認'),
+                    child: const Text('端末セットアップを確認'),
                   ),
               ],
             );

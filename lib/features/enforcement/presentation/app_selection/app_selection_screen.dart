@@ -27,6 +27,19 @@ final class AppSelectionScreen extends ConsumerWidget {
           }
           return Column(
             children: [
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                child: ListTile(
+                  key: const Key('app-selection-summary'),
+                  leading: const Icon(Icons.lock_outline),
+                  title: Text('${state.selectedPackageNames.length}件を選択中'),
+                  subtitle: Text(
+                    state.hasUnsavedChanges
+                        ? '変更はまだ端末に保存されていません'
+                        : '選択内容はこの端末だけに保存されています',
+                  ),
+                ),
+              ),
               Expanded(
                 child: ListView.builder(
                   itemCount: state.apps.length,
@@ -50,7 +63,7 @@ final class AppSelectionScreen extends ConsumerWidget {
                       title: Text(app.label),
                       subtitle: Text(
                         app.isSelectable
-                            ? app.packageName
+                            ? '失敗時にこのアプリを封印できます'
                             : _protectedReasonMessage(app.protectionReason),
                       ),
                     );
@@ -82,7 +95,7 @@ final class AppSelectionScreen extends ConsumerWidget {
                                 .save();
                             if (saved && context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('選択を端末に保存しました')),
+                                const SnackBar(content: Text('封印対象を保存しました')),
                               );
                             }
                           },

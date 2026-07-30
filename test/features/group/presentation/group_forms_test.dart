@@ -61,6 +61,9 @@ void main() {
 
     await tester.tap(find.byKey(const Key('group-revoke-invite-button')));
     await tester.pumpAndSettle();
+    expect(find.text('招待を取り消しますか？'), findsOneWidget);
+    await tester.tap(find.text('取り消す'));
+    await tester.pumpAndSettle();
 
     expect(repository.revokeInviteCalls, 1);
     expect(find.byKey(const Key('group-issued-token')), findsNothing);

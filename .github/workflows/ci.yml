@@ -51,4 +51,9 @@ jobs:
         run: ./tool/check_all.sh
 
       - name: Build debug APK
+        timeout-minutes: 15
         run: flutter build apk --debug
+
+      - name: Build isolated demo target APK
+        timeout-minutes: 5
+        run: ./android/gradlew -p tools/demo-target assembleDebug --no-daemon

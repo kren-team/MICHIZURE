@@ -58,7 +58,7 @@ final class _ContributionSessionScreenState
         data: (snapshot) {
           final value = snapshot.value;
           if (value == null) {
-            return const Center(child: Text('Debtが見つかりません。'));
+            return const Center(child: Text('負債が見つかりません。'));
           }
           return ContributionSessionView(
             debt: value,
@@ -123,7 +123,10 @@ final class ContributionSessionView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Text('選択中: ${debt.id}', key: const Key('selected-debt-id')),
+        Text(
+          '返済中の負債: ${_shortId(debt.id)}',
+          key: const Key('selected-debt-id'),
+        ),
         const SizedBox(height: 12),
         Text(
           '残り ${debt.remainingReps} 回',
@@ -157,12 +160,12 @@ final class ContributionSessionView extends StatelessWidget {
           onStop: onStop,
         ),
         const Divider(height: 32),
-        Text('返済の同期状態', style: Theme.of(context).textTheme.titleMedium),
+        Text('返済の反映状況', style: Theme.of(context).textTheme.titleMedium),
         Text(
           '端末で検出 ${squatState.detectedReps} 回',
           key: const Key('squat-detected-count'),
         ),
-        Text('Outbox投入 ${state.detectedCount} 回'),
+        Text('検出を保存 ${state.detectedCount} 回'),
         Text(
           '送信待ち ${state.pendingCount} 回',
           key: const Key('contribution-pending-count'),
@@ -229,7 +232,7 @@ final class _SquatControls extends StatelessWidget {
     if (debt.isTerminal) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
-        child: Text('このDebtは終了したため、追加のスクワットは送信しません。'),
+        child: Text('この負債は終了したため、追加のスクワットは送信しません。'),
       );
     }
     if (state.permission == CameraPermissionState.permanentlyDenied) {
@@ -271,23 +274,59 @@ final class _SquatControls extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (showNativePreview)
-          const SizedBox(
+          SizedBox(
             key: Key('pose-preview'),
             height: 420,
-            child: ClipRect(
-              child: AndroidView(
-                viewType: MethodChannelSquatDetector.previewViewType,
-              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const ClipRect(
+                  child: AndroidView(
+                    viewType: MethodChannelSquatDetector.previewViewType,
+                  ),
+                ),
+                IgnorePointer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: DecoratedBox(
+                      key: const Key('camera-body-guide'),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(120),
+                      ),
+                      child: const Center(
+                        child: VerticalDivider(
+                          color: Colors.white54,
+                          thickness: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        const Text('1人で全身と顔が映る位置に立ってください。'),
-        Text(
-          '判定: ${_stateLabel(state.detectorState)}',
-          key: const Key('squat-detector-state'),
+        const SizedBox(height: 8),
+        const Text('枠の中に頭から足先まで入る位置で、正面を向いてください。', textAlign: TextAlign.center),
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            '次の動作: ${_stateLabel(state.detectorState)}',
+            key: const Key('squat-detector-state'),
+            style: Theme.of(context).textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
         ),
-        Text(
-          _qualityMessage(state.qualityWarning),
-          key: const Key('squat-quality-message'),
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            _qualityMessage(state.qualityWarning),
+            key: const Key('squat-quality-message'),
+            textAlign: TextAlign.center,
+          ),
         ),
         if (state.lastAnalysisLatencyMs case final latency?)
           Text('端末内判定 ${latency}ms', key: const Key('squat-latency')),
@@ -356,17 +395,21 @@ String _deliveryMessage(
     ContributionSyncStatus.confirmed => '1回の返済がサーバーで確定しました。',
     ContributionSyncStatus.rejected => switch (reason) {
       ContributionRejectionReason.debtTerminal ||
-      ContributionRejectionReason.debtFull => 'このDebtはすでに終了しています。',
-      ContributionRejectionReason.deadlineReached => 'Debtの期限が終了しました。',
-      ContributionRejectionReason.unauthorized => 'このDebtを返済する権限がありません。',
+      ContributionRejectionReason.debtFull => 'この負債はすでに終了しています。',
+      ContributionRejectionReason.deadlineReached => '負債の期限が終了しました。',
+      ContributionRejectionReason.unauthorized => 'この負債を返済する権限がありません。',
       ContributionRejectionReason.invalidRequest ||
       ContributionRejectionReason.conflict ||
       ContributionRejectionReason.malformedData => '返済データを確認できませんでした。',
-      ContributionRejectionReason.debtNotFound => 'Debtが見つかりません。',
+      ContributionRejectionReason.debtNotFound => '負債が見つかりません。',
       ContributionRejectionReason.outboxFull => '送信待ちが上限です。接続後に再試行してください。',
       ContributionRejectionReason.offline ||
       ContributionRejectionReason.unknown ||
       null => '返済を確定できませんでした。再試行してください。',
     },
   };
+}
+
+String _shortId(String value) {
+  return value.length <= 8 ? value : value.substring(0, 8);
 }

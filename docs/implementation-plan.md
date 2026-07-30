@@ -824,67 +824,66 @@ integration_test/recovery/
 
 ## Phase 11 — `feature/demo-polish`
 
+**実装済み（最終Phase）**
+
 ### 目的
 
-2 Emulatorデモの再現性、診断、seed、performance可視化、UI polishを仕上げる。新しい業務機能は追加しない。
+2 Emulatorデモの再現性、読み取り専用preflight、独立demo target、UI polishを仕上げる。新しい業務機能は追加しない。
 
 ### 実装対象ファイル
 
 ```text
 tools/demo-target/
-tools/demo/
-lib/features/diagnostics/
-lib/core/observability/
-integration_test/end_to_end_demo_test.dart
+tool/demo_preflight.sh
+lib/core/presentation/
+lib/features/home/
 docs/demo-plan.md
+docs/final-checklist.md
 README.md
 ```
 
 ### Firestore変更
 
 - schema変更なし
-- Emulator seed/exportのみ
-- live Rules / Index deployment versionを確認
+- schema / Rules / Index変更なし
+- seedで正規経路を迂回せず、UI登録とsafe reset runbookを採用
 
 ### UI
 
 - demo target
-- diagnostics screen
+- Homeの状態別Primary ActionとDevice Setup診断
 - empty/error/loading/accessibility polish
 - debug source / project IDの明確表示
 - 主要画面golden
 
 ### Native Kotlin
 
-- demo source selectionはdebug限定
-- capability diagnostics
-- performance timestamps
+- Kotlin / permission / channel変更なし
+- production CameraX + ML Kitと既存latency timestampsを維持
 
 ### 完了条件
 
-- clean environmentからrunbookだけで2 AVD setup
-- 14-step demoを3回連続成功
-- real/synthetic/fake fallbackすべて確認
-- screen off false-positiveなし
-- no-network recovery
-- release buildにdebug path / secretなし
+- runbookとpreflightで2 AVD setupを再現可能
+- automated regression、Rules、JVM / instrumentation、debug / release buildを完走
+- production UIへfake route / commandを追加しない
+- process kill / reboot / real camera / 2 AVD rehearsalは最終manual gateに明記
+- release buildにdebug cleartext / broad visibility / fake source / secretなし
 
 ### テスト
 
-- full end-to-end
+- full automated regression
 - privacy regression
 - release manifest / artifact inspection
-- p95 metrics
+- real camera p95はmanual rehearsal（合成値で代用しない）
 - live Spark backup smoke
 - rehearsal checklist
 
 ### 推奨commit分割
 
-1. `chore: deterministic demo targetとseedを追加`
-2. `feat: debug diagnosticsを追加`
-3. `test: 2 Emulator end-to-endを追加`
-4. `style: デモ画面とaccessibilityを調整`
-5. `docs: 当日runbookと測定結果を更新`
+1. `feat: デモ向けに主要画面と次操作を整理`
+2. `chore: 封印確認用の独立デモアプリを追加`
+3. `ci: デモpreflightとartifact検証を追加`
+4. `docs: デモ手順と最終チェックリストを更新`
 
 ## 3. Firestore migration discipline
 

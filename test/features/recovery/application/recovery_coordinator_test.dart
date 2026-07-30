@@ -51,6 +51,8 @@ void main() {
           contains(RecoveryAction.signedOutInvalidCredential),
         );
         expect(fixture.remote.userPointerCalls, 0);
+        expect(fixture.lock.releaseCalls, 0);
+        expect(fixture.native.stopCalls, 0);
       },
     );
 

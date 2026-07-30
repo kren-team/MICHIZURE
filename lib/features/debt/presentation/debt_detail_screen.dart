@@ -18,7 +18,7 @@ final class DebtDetailScreen extends ConsumerWidget {
     final contributions = ref.watch(debtContributionsProvider(debtId));
     final members = ref.watch(currentGroupMembersProvider).value;
     return Scaffold(
-      appBar: AppBar(title: const Text('Debt詳細')),
+      appBar: AppBar(title: const Text('負債の詳細')),
       body: debt.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => _DetailError(
@@ -31,7 +31,7 @@ final class DebtDetailScreen extends ConsumerWidget {
         data: (snapshot) {
           final value = snapshot.value;
           if (value == null) {
-            return const Center(child: Text('Debtが見つかりません。'));
+            return const Center(child: Text('負債が見つかりません。'));
           }
           return contributions.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -87,6 +87,10 @@ final class _DebtDetail extends StatelessWidget {
         ),
         Text('合計 ${debt.totalReps} 回 / 完了 ${debt.completedReps} 回'),
         Text('状態: ${_statusLabel(debt.status)}'),
+        Text('発生: ${_formatDateTime(debt.createdAt)}'),
+        Text('封印期限: ${_formatDateTime(debt.lockExpiresAt)}'),
+        const SizedBox(height: 8),
+        const Text('完済または期限到達で、この負債によるアプリ封印が解除されます。'),
         const Divider(height: 32),
         Text('メンバー別の確定回数', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -107,11 +111,18 @@ final class _DebtDetail extends StatelessWidget {
             key: const Key('debt-repay-action'),
             onPressed: () => context.go('/debts/${debt.id}/repay'),
             icon: const Icon(Icons.directions_run),
-            label: const Text('このDebtを返済する'),
+            label: const Text('この負債を返済する'),
           ),
       ],
     );
   }
+}
+
+String _formatDateTime(DateTime value) {
+  final local = value.toLocal();
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${local.month}/${local.day} '
+      '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
 }
 
 final class _DetailError extends StatelessWidget {

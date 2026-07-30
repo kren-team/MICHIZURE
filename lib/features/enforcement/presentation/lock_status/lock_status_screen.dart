@@ -101,7 +101,7 @@ final class _LockStateView extends StatelessWidget {
             subtitle: Text(
               state.hasActiveLock
                   ? '有効な対象 ${state.effectiveTargetCount}件'
-                  : 'Debt完済または期限到達で解除されます',
+                  : '負債の完済または期限到達で解除されます',
             ),
           ),
         ),
@@ -120,7 +120,7 @@ final class _LockStateView extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.sync_problem),
               title: Text(debtFailureMessage(remoteReleaseFailure!)),
-              subtitle: const Text('Debt状態を再確認して封印解除を再試行できます。'),
+              subtitle: const Text('負債の状態を再確認して、封印解除を再試行できます。'),
               trailing: TextButton(
                 onPressed: onRetryRemoteRelease,
                 child: const Text('再試行'),
@@ -132,13 +132,13 @@ final class _LockStateView extends StatelessWidget {
         if (active.isEmpty)
           const Text('未解決のlock obligationはありません。')
         else ...[
-          const Text('解除条件: 各Debtの完済、または表示期限への到達'),
+          const Text('解除条件: 各負債の完済、または表示期限への到達'),
           const SizedBox(height: 8),
           ...active.map(
             (obligation) => Card(
               key: Key('lock-obligation-${obligation.debtId}'),
               child: ListTile(
-                title: Text('Debt ${_shortId(obligation.debtId)}'),
+                title: Text('負債 ${_shortId(obligation.debtId)}'),
                 subtitle: Text(
                   '封印 ${obligation.enforcedCount}/${obligation.targetCount}件'
                   '\n残り ${_remaining(obligation.expiresAt, now)}',
@@ -152,7 +152,7 @@ final class _LockStateView extends StatelessWidget {
           if (active.length > 1)
             const Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('複数Debtが同じアプリを対象にする場合、すべて解決するまで封印を維持します。'),
+              child: Text('複数の負債が同じアプリを対象にする場合、すべて解決するまで封印を維持します。'),
             ),
         ],
         const SizedBox(height: 16),

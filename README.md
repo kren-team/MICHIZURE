@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-設計フェーズを完了し、Phase 0〜9でFirebase、Group、Task、Android離脱検知・封印、Debt realtime、冪等Contribution / Outbox、CameraX + ML Kit Pose Detectionを構築しました。Phase 10ではAuth、Task Guard、App Lock、Debt、Contribution Outboxをprocess death、boot、network再接続、package変更後に収束させるRecovery基盤を実装しました。次はPhase 11のデモ仕上げです。以降も `dev` から機能ブランチを作成し、[implementation-plan.md](docs/implementation-plan.md) の順序で進めます。
+計画したPhase 0〜11を実装済みです。Firebase、Group、Task、Android離脱検知・封印、Debt realtime、冪等Contribution / Outbox、CameraX + ML Kit Pose Detection、Recovery基盤を、managed Android Emulatorで説明可能なデモ導線へ統合しています。デモ前の確認は [final-checklist.md](docs/final-checklist.md) に従ってください。
 
 ## 設計上の重要な結論
 
@@ -33,6 +33,7 @@
 13. [Emulatorデモ計画](docs/demo-plan.md)
 14. [コスト見積もり](docs/cost-estimation.md)
 15. [次の1ブランチの作業](NEXT_TASK.md)
+16. [デモ前最終チェック](docs/final-checklist.md)
 
 技術判断の理由は [ADR一覧](docs/adr/) にあります。後続Agentは作業前に [AGENTS.md](AGENTS.md) も必ず読んでください。
 
@@ -52,7 +53,7 @@ main
 
 `main` と `dev` へ直接機能コミットを行いません。force pushと既存コミットの書き換えは禁止です。
 
-## 実装開始時の予定構成
+## 実装構成
 
 ```text
 lib/
@@ -70,9 +71,9 @@ test/
 integration_test/
 ```
 
-実際の生成対象と依存関係は [NEXT_TASK.md](NEXT_TASK.md) に限定してあります。
+`tools/demo-target/` は封印・解除を確実に見せる独立APKであり、MICHIZURE本体のrelease artifactには含まれません。
 
-## Phase 0 ローカル起動
+## ローカル起動
 
 ### 必要なツール
 
@@ -185,10 +186,32 @@ cd android
 
 Device Ownerを含む初回セットアップは [demo-plan.md](docs/demo-plan.md#6-apk-installとdevice-owner-provisioning) を参照してください。Device Owner appは通常のアンインストール対象にできないため、端末テストでは`--no-uninstall`を使用します。
 
+デモ対象APKをbuildしてインストールします。
+
+```bash
+./android/gradlew -p tools/demo-target assembleDebug
+adb -s emulator-5554 install -r \
+  tools/demo-target/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Firebase Emulatorと端末の読み取り専用preflightを実行します。選択アプリ、Auth、Group、active Task / Debtは最後にアプリ画面で確認します。
+
+```bash
+MICHIZURE_DEVICE_SERIAL=emulator-5554 ./tool/demo_preflight.sh
+MICHIZURE_DEVICE_SERIAL=emulator-5556 \
+  MICHIZURE_REQUIRE_CAMERA=1 ./tool/demo_preflight.sh
+```
+
 CIは同じcheckに加えてAndroid debug APKをbuildします。ローカルでAPKを検証するにはAndroid SDKを設定してから実行します。
 
 ```bash
 flutter build apk --debug
+```
+
+release artifactはlive Firebase設定をrepositoryへ追加せずbuild検証できますが、実行時は下記4項目がなければ意図どおりfail-fastします。
+
+```bash
+flutter build apk --release
 ```
 
 ### live構成の境界
@@ -203,3 +226,11 @@ non-debug buildはdemo projectへfallbackしません。次の4つの `--dart-de
 live設定、`.env`実値、signing keyをrepositoryへcommitしないでください。Phase 0はrelease signingとlive Firebase接続を構成しません。
 
 Rules test用のFirebase CLIはローカル・CI限定のdevDependencyです。現行CLIの推移依存に `npm audit` 警告がある場合、`npm audit fix --force` で無検証downgradeせず、Firebase CLI更新時にRules testとともに見直します。
+
+## デモと既知の制約
+
+- デモ全手順、Device Owner provisioning、process kill / reboot、safe resetは [demo-plan.md](docs/demo-plan.md) を参照する。
+- 任意アプリの強制封印は通常の個人Android端末では利用できず、managed Emulator / Android Enterprise管理端末が必要。
+- 実カメラによるML Kit精度とp95は物理端末またはhost webcamで当日確認する。synthetic unit testを実カメラ性能として扱わない。
+- `am force-stop`後はAndroidのstopped stateとなるため、明示的な再起動後にreconcileする。
+- MICHIZUREをDevice Ownerにした端末では通常の自動uninstallが拒否されるため、integration testは`--no-uninstall`を使う。

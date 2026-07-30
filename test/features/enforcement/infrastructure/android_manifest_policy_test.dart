@@ -43,4 +43,42 @@ void main() {
       expect(mainManifest, isNot(contains('AccessibilityService')));
     },
   );
+
+  test('production source contains no synthetic pose implementation', () {
+    final productionRoot = Directory('android/app/src/main');
+    final productionText = productionRoot
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) {
+          final path = file.path;
+          return path.endsWith('.kt') ||
+              path.endsWith('.java') ||
+              path.endsWith('.xml');
+        })
+        .map((file) => file.readAsStringSync())
+        .join('\n');
+
+    expect(productionText, isNot(contains('FakeSquatDetector')));
+    expect(productionText, isNot(contains('fake_debug')));
+    expect(productionText, isNot(contains('syntheticPose')));
+  });
+
+  test('demo target is isolated and requests no permission', () {
+    final targetManifest = File(
+      'tools/demo-target/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
+    final targetBuild = File(
+      'tools/demo-target/app/build.gradle.kts',
+    ).readAsStringSync();
+    final appBuild = File('android/app/build.gradle.kts').readAsStringSync();
+
+    expect(targetManifest, contains('android:name=".MainActivity"'));
+    expect(
+      targetBuild,
+      contains('applicationId = "com.kren.michizure.demotarget"'),
+    );
+    expect(targetManifest, isNot(contains('uses-permission')));
+    expect(appBuild, isNot(contains('demo-target')));
+    expect(appBuild, isNot(contains('demotarget')));
+  });
 }

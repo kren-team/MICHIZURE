@@ -53,7 +53,7 @@ void main() {
     expect(find.text('カナデ'), findsOneWidget);
     expect(find.text('12 回'), findsOneWidget);
     expect(find.byKey(const Key('debt-repay-action')), findsOneWidget);
-    expect(find.text('このDebtを返済する'), findsOneWidget);
+    expect(find.text('この負債を返済する'), findsOneWidget);
   });
 
   testWidgets('renders terminal status without contribution write controls', (

@@ -4,6 +4,7 @@ import '../../task/domain/task_session.dart';
 enum RecoveryTrigger {
   coldStart,
   authRestored,
+  authenticationRejected,
   listenerReconnected,
   foreground,
   manualRetry,
@@ -132,6 +133,10 @@ final class RecoveryFailure implements Exception {
 
 abstract interface class RecoveryAuthGateway {
   Future<RecoveryAuthResult> recoverSession();
+}
+
+final class AuthSessionValidationFailure implements Exception {
+  const AuthSessionValidationFailure();
 }
 
 abstract interface class RecoveryRemoteStore {

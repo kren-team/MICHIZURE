@@ -38,8 +38,16 @@ final class GroupInviteScreen extends ConsumerWidget {
                   Text('有効期限: ${invite.invite.expiresAt.toLocal()}'),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                    onPressed: () =>
-                        Clipboard.setData(ClipboardData(text: invite.rawToken)),
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: invite.rawToken),
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('招待コードをコピーしました')),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.copy),
                     label: const Text('コピー'),
                   ),
@@ -47,12 +55,35 @@ final class GroupInviteScreen extends ConsumerWidget {
                     key: const Key('group-revoke-invite-button'),
                     onPressed: command.isLoading || profile == null
                         ? null
-                        : () => ref
-                              .read(groupControllerProvider.notifier)
-                              .revokeInvite(
-                                userId: profile.id,
-                                tokenHash: invite.invite.tokenHash,
+                        : () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('招待を取り消しますか？'),
+                                content: const Text('このコードでは新しく参加できなくなります。'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('キャンセル'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text('取り消す'),
+                                  ),
+                                ],
                               ),
+                            );
+                            if ((confirmed ?? false) && context.mounted) {
+                              await ref
+                                  .read(groupControllerProvider.notifier)
+                                  .revokeInvite(
+                                    userId: profile.id,
+                                    tokenHash: invite.invite.tokenHash,
+                                  );
+                            }
+                          },
                     child: const Text('この招待を取り消す'),
                   ),
                 ] else
