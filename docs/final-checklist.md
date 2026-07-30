@@ -67,13 +67,14 @@
 
 - [ ] Bで対象負債を明示選択
 - [ ] `webcam0`をfrontへ割り当ててCamera previewを確認
-- [ ] 腰〜足首guide、lower-body quality warning
-- [ ] debug diagnosticsでpose / side / confidence / feature / reject reasonを確認
+- [ ] Preview / guide / 黒背景 / 角丸が同じ3:4 bounds内
+- [ ] みぞおち〜膝下guide、no pose / hip / knee / confidence warning
+- [ ] debug diagnosticsでpose / side / confidence / gap ratio / hip drop / reject reasonを確認
 - [ ] delegateがGPUまたはCPU fallbackとして1回だけ確定
 - [ ] diagnosticsが5 FPS以下、analysisがGPU 15 FPS / CPU 10 FPS近傍
 - [ ] 直立calibration
-- [ ] 正常1 squatを1回だけcount
-- [ ] 浅い屈伸をreject
+- [ ] 正常3 squatをexactly 3回count
+- [ ] 浅い屈伸3回を0回としてreject
 - [ ] 複数squatで二重countなし
 - [ ] pending / confirmedを区別
 - [ ] 最終repでDebt completed

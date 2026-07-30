@@ -221,7 +221,7 @@ sequenceDiagram
 
     Member->>Flutter: Debtを選択して開始
     CameraX->>MediaPipe: throttled latest RGBA frame
-    MediaPipe->>FSM: LowerBodyPose + One-Euro filtered features
+    MediaPipe->>FSM: same-side hip/knee + One-Euro + gap/drop
     FSM->>FSM: STANDING→...→STANDING
     FSM-->>Flutter: repCompleted(sessionId, sequence)
     Flutter->>Firestore: idempotent transaction

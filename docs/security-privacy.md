@@ -42,7 +42,7 @@ Phase 5のTask GuardはUsageEvents履歴をKotlin process内だけで短時間�
 
 Phase 6はFirestoreでTask failureとsame-ID Debtが確定した後、Task開始時のnative package snapshotからDebt ID別obligationを作る。package一覧、DPMの失敗package名、owned suspensionはlocal DataStoreだけに保存し、Platform Channelは件数とtyped codeだけを返す。offline中はPhase 5 outboxを保持するが、cloud確定前にはlockしないため、network断中の即時強制は今回の要件選択では保証しない。
 
-CameraXの`ImageProxy`はRGBA Bitmapへのcopy完了直後にcloseし、MediaPipe用`MPImage` / Bitmapはresult・error・stopの各pathでreleaseする。landmark、One-Euro Filter state、角度、FSM stateはsession memoryだけに保持する。Native→Dart契約はquality、FSM state、stable rep identity、集約latencyだけをfield allowlistで受け付け、frame、bitmap、landmark、skeleton座標の追加fieldを拒否する。Firestoreへ渡るのはPhase 8で定義済みの1 rep Contributionだけである。
+CameraXの`ImageProxy`はRGBA Bitmapへのcopy完了直後にcloseし、MediaPipe用`MPImage` / Bitmapはresult・error・stopの各pathでreleaseする。landmark、One-Euro Filter state、hip/knee gap、hip drop、FSM stateはsession memoryだけに保持する。Native→Dart契約はquality、FSM state、stable rep identity、集約latencyだけをfield allowlistで受け付け、frame、bitmap、landmark、skeleton座標の追加fieldを拒否する。Firestoreへ渡るのはPhase 8で定義済みの1 rep Contributionだけである。
 
 Phase 10のdevice-protected boot snapshotにはactive lock obligationのstable ID、Task ID、選択済みpackage snapshot、絶対/elapsed期限、boot count、MICHIZURE-owned suspensionだけを保存する。全installed-app inventory、UsageEvents、Task本文、Auth情報、Camera / pose dataは複製しない。Recoveryは既存Rules対象のowner pointer、Task、Debtだけをserver sourceで読み、Rulesやwrite権限を広げない。Authの一時network failureではlogoutせず、恒久invalid credentialだけをtyped codeでsign outする。logoutはlock stateの削除理由にしない。
 
@@ -103,7 +103,7 @@ Production:
 | pending Task terminal event | operational metadata | native local DataStore | Firestore ackまで |
 | camera frame | highly sensitive | process memory only | frame処理完了まで |
 | pose landmarks | biometric-adjacent derived data | process memory only | state updateまで |
-| aggregate angle/state | ephemeral fitness telemetry | memory、debug test only | session |
+| aggregate gap/drop/state | ephemeral fitness telemetry | memory、debug test only | session |
 | crash logs | operational | local / approved crash service | package/frameをredact |
 
 Task内容をgroup memberへ公開しない。groupにはfailure userとDebtだけを表示する。

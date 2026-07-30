@@ -2,7 +2,6 @@ package com.kren.michizure.pose
 
 import android.content.pm.ApplicationInfo
 import android.os.SystemClock
-import androidx.camera.view.PreviewView
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
 
@@ -14,16 +13,16 @@ data class NativeSquatSession(
 class SquatSessionManager(
     private val lifecycleOwner: LifecycleOwner,
     private val sourceFactory: (
-        PreviewView,
+        SquatCameraContainer,
         LifecycleOwner,
         (PoseDelegate) -> Unit,
         (PoseFrameDelivery) -> PoseFrameCompletion,
         (String) -> Unit,
-    ) -> PoseSource = { view, owner, onReady, onFrame, onFailure ->
+    ) -> PoseSource = { container, owner, onReady, onFrame, onFailure ->
         CameraMediaPipePoseSource(
-            context = view.context.applicationContext,
+            context = container.context.applicationContext,
             lifecycleOwner = owner,
-            previewView = view,
+            cameraContainer = container,
             onReady = onReady,
             onFrame = onFrame,
             onFailure = onFailure,
@@ -32,7 +31,7 @@ class SquatSessionManager(
 ) : AutoCloseable {
     private val detectorConfig = SquatDetectorConfig()
     private var session: NativeSquatSession? = null
-    private var previewView: PreviewView? = null
+    private var cameraContainer: SquatCameraContainer? = null
     private var source: PoseSource? = null
     private var machine = SquatStateMachine(detectorConfig)
     private var lastState: SquatState? = null
@@ -44,17 +43,18 @@ class SquatSessionManager(
     private var delegate: PoseDelegate? = null
 
     @Synchronized
-    fun attachPreview(view: PreviewView) {
-        previewView = view
+    fun attachPreview(container: SquatCameraContainer) {
+        cameraContainer = container
         startSourceIfReady()
     }
 
     @Synchronized
-    fun detachPreview(view: PreviewView) {
-        if (previewView !== view) return
-        previewView = null
+    fun detachPreview(container: SquatCameraContainer) {
+        if (cameraContainer !== container) return
+        cameraContainer = null
         source?.close()
         source = null
+        container.clearGuide()
     }
 
     @Synchronized
@@ -125,11 +125,11 @@ class SquatSessionManager(
     @Synchronized
     private fun startSourceIfReady() {
         session ?: return
-        val view = previewView ?: return
+        val container = cameraContainer ?: return
         if (source != null) return
         source =
             sourceFactory(
-                view,
+                container,
                 lifecycleOwner,
                 ::onDetectorReady,
                 ::onFrame,
@@ -220,6 +220,9 @@ class SquatSessionManager(
         return PoseFrameCompletion(
             stateMachineCompletedNs = stateMachineCompletedNs,
             nativeEventDispatchedNs = lastDispatchNs,
+            state = update.state,
+            selectedSide = update.diagnostics.selectedSide,
+            trackingStatus = update.diagnostics.trackingStatus,
         )
     }
 
@@ -230,7 +233,7 @@ class SquatSessionManager(
         metrics: PosePipelineMetrics,
     ) {
         val debugBuild =
-            previewView?.context?.applicationInfo?.flags
+            cameraContainer?.context?.applicationInfo?.flags
                 ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
         if (!debugBuild) return
         val now = elapsedMs()
@@ -246,6 +249,7 @@ class SquatSessionManager(
                 "squatSessionId" to current.squatSessionId,
                 "delegate" to delegate?.wireValue,
                 "poseDetected" to diagnostics.poseDetected,
+                "trackingStatus" to diagnostics.trackingStatus.wireValue,
                 "selectedSide" to diagnostics.selectedSide?.wireValue,
                 "leftHipConfidence" to diagnostics.leftHipConfidence,
                 "leftKneeConfidence" to diagnostics.leftKneeConfidence,
@@ -253,10 +257,8 @@ class SquatSessionManager(
                 "rightHipConfidence" to diagnostics.rightHipConfidence,
                 "rightKneeConfidence" to diagnostics.rightKneeConfidence,
                 "rightAnkleConfidence" to diagnostics.rightAnkleConfidence,
-                "kneeAngle" to diagnostics.kneeAngleDeg,
+                "normalizedVerticalGap" to diagnostics.normalizedVerticalGap,
                 "normalizedHipDrop" to diagnostics.normalizedHipDrop,
-                "kneeAngularVelocity" to diagnostics.kneeAngularVelocity,
-                "hipVerticalVelocity" to diagnostics.hipVerticalVelocity,
                 "state" to update.state.wireValue,
                 "latestRejectReason" to diagnostics.latestRejectReason,
                 "analysisLatencyMs" to latencyMs,
@@ -342,7 +344,7 @@ class SquatSessionManager(
 
     override fun close() {
         stop(null)
-        previewView = null
+        cameraContainer = null
     }
 
     companion object {

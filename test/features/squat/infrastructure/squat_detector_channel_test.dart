@@ -172,6 +172,7 @@ void main() {
       'occurredAtEpochMs': 1_000,
       'squatSessionId': 'session-12345678',
       'poseDetected': true,
+      'trackingStatus': 'valid',
       'selectedSide': 'left',
       'leftHipConfidence': 0.90,
       'leftKneeConfidence': 0.91,
@@ -179,10 +180,8 @@ void main() {
       'rightHipConfidence': null,
       'rightKneeConfidence': null,
       'rightAnkleConfidence': null,
-      'kneeAngle': 120.0,
+      'normalizedVerticalGap': 0.62,
       'normalizedHipDrop': 0.13,
-      'kneeAngularVelocity': -21.0,
-      'hipVerticalVelocity': 0.12,
       'state': 'descending',
       'latestRejectReason': null,
       'analysisLatencyMs': 80,
@@ -206,7 +205,8 @@ void main() {
     final diagnostics = event as SquatDetectorDiagnostics;
     expect(diagnostics.selectedSide, SquatPoseSide.left);
     expect(diagnostics.leftKneeConfidence, 0.91);
-    expect(diagnostics.kneeAngle, 120);
+    expect(diagnostics.trackingStatus, SquatTrackingStatus.valid);
+    expect(diagnostics.normalizedVerticalGap, 0.62);
 
     expect(
       () => detector.parseEvent({
@@ -216,6 +216,7 @@ void main() {
         'occurredAtEpochMs': 1_000,
         'squatSessionId': 'session-12345678',
         'poseDetected': true,
+        'trackingStatus': 'valid',
         'selectedSide': 'left',
         'leftHipConfidence': 0.90,
         'leftKneeConfidence': 0.91,
@@ -223,10 +224,8 @@ void main() {
         'rightHipConfidence': null,
         'rightKneeConfidence': null,
         'rightAnkleConfidence': null,
-        'kneeAngle': 120.0,
+        'normalizedVerticalGap': 0.62,
         'normalizedHipDrop': 0.13,
-        'kneeAngularVelocity': -21.0,
-        'hipVerticalVelocity': 0.12,
         'state': 'descending',
         'latestRejectReason': null,
         'analysisLatencyMs': 80,
