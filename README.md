@@ -14,7 +14,7 @@
 - バックエンドは Firebase Authentication と Cloud Firestore のクライアントSDKのみを必須とし、MVPは Spark Plan で動かす。
 - スクワット映像は保存・外部送信せず、CameraX + MediaPipe Pose Landmarker Lite + One-Euro Filter + 状態機械で端末内判定する。
 - 封印候補は`LauncherApps`からLauncher起動可能appだけを取得し、debug / releaseとも`QUERY_ALL_PACKAGES`を使用しない。
-- スクワットは左右いずれかのhip / knee / ankleを入力とし、顔・肩を判定必須にしない。実Camera成立率とlatencyはデモ前manual gateで確認する。
+- スクワットは左右いずれか同じ側のhip / kneeを入力とし、顔・肩・足首を判定必須にしない。Previewとguideはnativeの同一3:4 containerへ配置する。実Camera成立率とlatencyはデモ前manual gateで確認する。
 
 ## ドキュメント
 

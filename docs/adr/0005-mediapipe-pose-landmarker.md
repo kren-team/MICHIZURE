@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-30
 - Supersedes: [ADR 0004](0004-on-device-pose-detection.md) のProduction pose SDK部分
+- Amended by: [ADR 0006](0006-native-camera-guide-and-hip-knee-squat.md) のoverlay、quality gate、feature部分
 
 ## Context
 
@@ -18,9 +19,9 @@ Camera frameやlandmarkを外部へ出さず、Previewを解析backlogから分�
 - Google AI Edge公式Pose Landmarker Lite bundleを`pose_landmarker_lite.task`としてassetへ同梱する。runtime downloadは行わない。
 - `RunningMode.LIVE_STREAM`、`numPoses=1`、segmentation maskなし、GPU優先・CPU fallbackを使用する。
 - GPUでは15 FPS、CPU fallbackでは10 FPSへ、重いBitmap copy前にthrottleする。推論中frameはqueueせず捨てる。
-- MediaPipeの33 landmarksはadapter内で`LowerBodyPose`へ縮約し、Flutterへ送らない。qualityはhip/knee/ankle各landmarkの`min(visibility, presence)`で評価する。
-- 解剖学的なleft/rightを内部定義とし、front camera previewのmirrorを推論入力へ適用しない。landmark overlayを表示しないため、viewer座標への再変換は行わない。
-- 左右別のOne-Euro Filterをlandmark座標へ適用してから、膝角度、正規化hip drop、速度を求める。FSMの二重平滑化は行わない。
+- MediaPipeの33 landmarksはadapter内で`LowerBodyPose`へ縮約し、Flutterへ送らない。ADR 0006以降のqualityは同じ側のhip / kneeを必須、ankleを任意とする。
+- 解剖学的なleft/rightを内部定義とし、front camera previewのmirrorを推論入力へ適用しない。ADR 0006のnative hip / knee bandだけをCameraX transformでviewer座標へ変換する。
+- 左右別のOne-Euro Filterをlandmark座標へ適用する。ADR 0006以降のProduction featureはstanding hip/knee gapで正規化したgap ratioとhip dropであり、FSMの二重平滑化は行わない。
 - rep、guidance変化、debug diagnosticsを別eventとして扱う。diagnosticsはdebug buildだけ、最大5 FPSで、小さい専用Widgetだけを更新する。
 - GPUとCPUの両方が初期化不能ならtyped native errorにする。
 
@@ -36,7 +37,7 @@ Camera frameやlandmarkを外部へ出さず、Previewを解析backlogから分�
 | License | Apache License 2.0（公式BlazePose GHUM 3D model card） |
 | Runtime download | なし |
 
-公式model cardはhead非表示をout-of-scopeとし、full-body cropを推奨している。したがって腰〜足首だけの実Camera成立率は自動testから推測せず、host webcam / 物理端末のmanual gateで計測する。adapterとquality gateは顔・肩を必須にしないが、modelがpose自体を返さない場合まで成功扱いにはしない。
+公式model cardはhead非表示をout-of-scopeとし、full-body cropを推奨している。したがって、みぞおち〜膝下の部分画角での実Camera成立率は自動testから推測せず、host webcam / 物理端末のmanual gateで計測する。adapterとquality gateは顔・肩・足首を必須にしないが、modelがpose自体を返さない場合まで成功扱いにはしない。
 
 ## Image ownership
 
@@ -51,7 +52,7 @@ GPU taskは生成した専用single threadから`detectAsync`し、instanceをfr
 
 ## Firestore compatibility
 
-Contribution schema / Security Rulesは今回変更しない。既存field `detectorType`はRulesで`mlkit`に固定されているため、Firestore writeでは後方互換値を維持し、実際のengineとversionは`detectorVersion=mediapipe-lite-lower-body-v3`で識別する。Native→Flutter contractでは`detectorType=mediapipe`を検証する。このlegacy fieldはserver-side detector attestationではなく、既存MVP trust boundaryである。
+Contribution schema / Security Rulesは今回変更しない。既存field `detectorType`はRulesで`mlkit`に固定されているため、Firestore writeでは後方互換値を維持し、実際のengineとversionは`detectorVersion=mediapipe-lite-hip-knee-v4`で識別する。Native→Flutter contractでは`detectorType=mediapipe`を検証する。このlegacy fieldはserver-side detector attestationではなく、既存MVP trust boundaryである。
 
 ## Consequences
 
