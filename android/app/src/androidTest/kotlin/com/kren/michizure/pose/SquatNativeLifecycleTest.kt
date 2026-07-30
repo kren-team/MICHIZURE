@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.google.mlkit.vision.pose.PoseDetection
 import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -147,6 +148,78 @@ class SquatNativeLifecycleTest {
             val failure = events.single { it["type"] == "detectorError" }
             assertEquals("cameraUnavailable", failure["code"])
             assertEquals("session-12345678", failure["squatSessionId"])
+        } finally {
+            instrumentation.runOnMainSync {
+                manager.close()
+                owner.destroy()
+            }
+            SquatEventBus.setListener(null)
+        }
+    }
+
+    @Test
+    fun debugSessionDeliversDerivedLowerBodyDiagnosticsWithoutCoordinates() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        val owner = TestLifecycleOwner()
+        val diagnosticsDelivered = CountDownLatch(1)
+        val events = mutableListOf<Map<String, Any?>>()
+        lateinit var manager: SquatSessionManager
+
+        SquatEventBus.setListener { event ->
+            events += event
+            if (event["type"] == "diagnostics") diagnosticsDelivered.countDown()
+        }
+        try {
+            instrumentation.runOnMainSync {
+                owner.resume()
+                manager =
+                    SquatSessionManager(owner) { _, _, onFrame, _ ->
+                        object : PoseSource {
+                            override fun start() {
+                                onFrame(
+                                    PoseFeatureResult.Valid(
+                                        PoseFeatureSample(
+                                            timestampMs = 1_000,
+                                            kneeAngleDeg = 170.0,
+                                            hipY = 0.25,
+                                            legLength = 0.50,
+                                            confidence = 0.90,
+                                            selectedSide = PoseSide.LEFT,
+                                        ),
+                                        PoseQualityMetrics.EMPTY.copy(
+                                            poseDetected = true,
+                                            leftHipConfidence = 0.90,
+                                            leftKneeConfidence = 0.91,
+                                            leftAnkleConfidence = 0.92,
+                                            selectedSide = PoseSide.LEFT,
+                                        ),
+                                    ),
+                                    75,
+                                )
+                            }
+
+                            override fun close() = Unit
+                        }
+                    }
+                val preview = PreviewView(context)
+                manager.attachPreview(preview)
+                manager.start(
+                    NativeSquatSession(
+                        squatSessionId = "session-12345678",
+                        debtId = "debt-1",
+                    ),
+                )
+            }
+
+            assertTrue(diagnosticsDelivered.await(2, TimeUnit.SECONDS))
+            val diagnostics = events.first { it["type"] == "diagnostics" }
+            assertEquals(true, diagnostics["poseDetected"])
+            assertEquals("left", diagnostics["selectedSide"])
+            assertFalse(diagnostics.containsKey("landmarks"))
+            assertFalse(diagnostics.containsKey("frame"))
+            assertFalse(diagnostics.containsKey("image"))
         } finally {
             instrumentation.runOnMainSync {
                 manager.close()

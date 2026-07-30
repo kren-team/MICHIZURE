@@ -34,6 +34,7 @@ final class SquatSessionState {
     this.qualityWarning,
     this.failure,
     this.lastAnalysisLatencyMs,
+    this.diagnostics,
   });
 
   const SquatSessionState.initial()
@@ -47,7 +48,8 @@ final class SquatSessionState {
       debtId = null,
       qualityWarning = null,
       failure = null,
-      lastAnalysisLatencyMs = null;
+      lastAnalysisLatencyMs = null,
+      diagnostics = null;
 
   final SquatSessionStatus status;
   final CameraPermissionState permission;
@@ -60,6 +62,7 @@ final class SquatSessionState {
   final SquatQualityWarning? qualityWarning;
   final SquatDetectorFailure? failure;
   final int? lastAnalysisLatencyMs;
+  final SquatDetectorDiagnostics? diagnostics;
 
   bool get isRunning => status == SquatSessionStatus.running;
 
@@ -75,6 +78,7 @@ final class SquatSessionState {
     SquatQualityWarning? qualityWarning,
     SquatDetectorFailure? failure,
     int? lastAnalysisLatencyMs,
+    SquatDetectorDiagnostics? diagnostics,
     bool clearSession = false,
     bool clearWarning = false,
     bool clearFailure = false,
@@ -96,6 +100,7 @@ final class SquatSessionState {
       failure: clearFailure ? null : failure ?? this.failure,
       lastAnalysisLatencyMs:
           lastAnalysisLatencyMs ?? this.lastAnalysisLatencyMs,
+      diagnostics: clearSession ? null : diagnostics ?? this.diagnostics,
     );
   }
 }
@@ -313,6 +318,13 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
         if (reason == SquatDetectorFailureReason.cameraUnavailable) {
           unawaited(stop());
         }
+      case SquatDetectorDiagnostics():
+        if (event.squatSessionId != sessionId) return;
+        state = state.copyWith(
+          detectorState: event.state,
+          lastAnalysisLatencyMs: event.analysisLatencyMs,
+          diagnostics: event,
+        );
     }
   }
 

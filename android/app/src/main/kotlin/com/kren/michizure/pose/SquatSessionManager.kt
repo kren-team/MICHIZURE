@@ -1,5 +1,6 @@
 package com.kren.michizure.pose
 
+import android.content.pm.ApplicationInfo
 import android.os.SystemClock
 import androidx.camera.view.PreviewView
 import androidx.lifecycle.LifecycleOwner
@@ -33,6 +34,7 @@ class SquatSessionManager(
     private var machine = SquatStateMachine()
     private var lastState: SquatState? = null
     private var lastWarning: PoseQualityWarning? = null
+    private var lastDiagnosticsEmitMs = Long.MIN_VALUE
     private val latenciesMs = ArrayDeque<Long>()
 
     @Synchronized
@@ -62,6 +64,7 @@ class SquatSessionManager(
         lastState = null
         lastWarning = null
         latenciesMs.clear()
+        lastDiagnosticsEmitMs = Long.MIN_VALUE
         emit(
             type = "calibrating",
             values =
@@ -88,6 +91,7 @@ class SquatSessionManager(
         lastState = null
         lastWarning = null
         latenciesMs.clear()
+        lastDiagnosticsEmitMs = Long.MIN_VALUE
         return true
     }
 
@@ -138,6 +142,7 @@ class SquatSessionManager(
         latenciesMs.addLast(latencyMs)
         while (latenciesMs.size > MAX_LATENCY_SAMPLES) latenciesMs.removeFirst()
         val update = machine.process(feature)
+        emitDiagnosticsIfDue(current, update, latencyMs)
         if (update.state != lastState) {
             lastState = update.state
             emit(
@@ -179,6 +184,50 @@ class SquatSessionManager(
                     ),
             )
         }
+    }
+
+    private fun emitDiagnosticsIfDue(
+        current: NativeSquatSession,
+        update: SquatDetectorUpdate,
+        latencyMs: Long,
+    ) {
+        val debugBuild =
+            previewView?.context?.applicationInfo?.flags
+                ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debugBuild) return
+        val now = elapsedMs()
+        if (lastDiagnosticsEmitMs != Long.MIN_VALUE &&
+            now - lastDiagnosticsEmitMs < DIAGNOSTICS_INTERVAL_MS &&
+            !update.repCompleted
+        ) {
+            return
+        }
+        lastDiagnosticsEmitMs = now
+        val diagnostics = update.diagnostics
+        emit(
+            type = "diagnostics",
+            values =
+                mapOf(
+                    "squatSessionId" to current.squatSessionId,
+                    "poseDetected" to diagnostics.poseDetected,
+                    "selectedSide" to diagnostics.selectedSide?.wireValue,
+                    "leftHipConfidence" to diagnostics.leftHipConfidence,
+                    "leftKneeConfidence" to diagnostics.leftKneeConfidence,
+                    "leftAnkleConfidence" to diagnostics.leftAnkleConfidence,
+                    "rightHipConfidence" to diagnostics.rightHipConfidence,
+                    "rightKneeConfidence" to diagnostics.rightKneeConfidence,
+                    "rightAnkleConfidence" to diagnostics.rightAnkleConfidence,
+                    "kneeAngle" to diagnostics.kneeAngleDeg,
+                    "normalizedHipDrop" to diagnostics.normalizedHipDrop,
+                    "kneeAngularVelocity" to diagnostics.kneeAngularVelocity,
+                    "hipVerticalVelocity" to diagnostics.hipVerticalVelocity,
+                    "state" to update.state.wireValue,
+                    "latestRejectReason" to diagnostics.latestRejectReason,
+                    "analysisLatencyMs" to latencyMs,
+                    "acceptedReps" to update.repSequence,
+                    "rejectedAttempts" to diagnostics.rejectedAttempts,
+                ),
+        )
     }
 
     @Synchronized
@@ -232,5 +281,6 @@ class SquatSessionManager(
 
     companion object {
         private const val MAX_LATENCY_SAMPLES = 300
+        private const val DIAGNOSTICS_INTERVAL_MS = 200
     }
 }

@@ -6,29 +6,32 @@ data class PosePoint(
     val confidence: Double,
 )
 
-data class BodySideLandmarks(
-    val shoulder: PosePoint,
-    val hip: PosePoint,
-    val knee: PosePoint,
-    val ankle: PosePoint,
+/**
+ * Model-independent lower-body pose. Camera and pose SDK adapters must reduce
+ * their output to this type before feature extraction.
+ */
+data class LowerBodySide(
+    val hip: PosePoint?,
+    val knee: PosePoint?,
+    val ankle: PosePoint?,
 )
 
-data class PoseLandmarkFrame(
+data class LowerBodyPose(
     val timestampMs: Long,
     val imageWidth: Int,
     val imageHeight: Int,
-    val left: BodySideLandmarks?,
-    val right: BodySideLandmarks?,
+    val poseDetected: Boolean,
+    val left: LowerBodySide?,
+    val right: LowerBodySide?,
 )
 
-enum class PoseSide {
-    LEFT,
-    RIGHT,
-    BOTH,
+enum class PoseSide(val wireValue: String) {
+    LEFT("left"),
+    RIGHT("right"),
 }
 
 enum class PoseQualityWarning(val wireValue: String) {
-    SHOW_FULL_BODY("showFullBody"),
+    SHOW_LOWER_BODY("showLowerBody"),
     MOVE_FARTHER_BACK("moveFartherBack"),
     MOVE_CLOSER("moveCloser"),
     LOW_LIGHT_OR_CONFIDENCE("lowLightOrConfidence"),
@@ -36,10 +39,34 @@ enum class PoseQualityWarning(val wireValue: String) {
     CAMERA_UNAVAILABLE("cameraUnavailable"),
 }
 
+data class PoseQualityMetrics(
+    val poseDetected: Boolean,
+    val leftHipConfidence: Double?,
+    val leftKneeConfidence: Double?,
+    val leftAnkleConfidence: Double?,
+    val rightHipConfidence: Double?,
+    val rightKneeConfidence: Double?,
+    val rightAnkleConfidence: Double?,
+    val selectedSide: PoseSide?,
+) {
+    companion object {
+        val EMPTY =
+            PoseQualityMetrics(
+                poseDetected = false,
+                leftHipConfidence = null,
+                leftKneeConfidence = null,
+                leftAnkleConfidence = null,
+                rightHipConfidence = null,
+                rightKneeConfidence = null,
+                rightAnkleConfidence = null,
+                selectedSide = null,
+            )
+    }
+}
+
 data class PoseFeatureSample(
     val timestampMs: Long,
     val kneeAngleDeg: Double,
-    val hipAngleDeg: Double,
     val hipY: Double,
     val legLength: Double,
     val confidence: Double,
@@ -47,11 +74,22 @@ data class PoseFeatureSample(
 )
 
 sealed interface PoseFeatureResult {
-    data class Valid(val sample: PoseFeatureSample) : PoseFeatureResult
+    val timestampMs: Long
+    val quality: PoseQualityMetrics
+
+    data class Valid(
+        val sample: PoseFeatureSample,
+        override val quality: PoseQualityMetrics = PoseQualityMetrics.EMPTY,
+    ) : PoseFeatureResult {
+        override val timestampMs: Long
+            get() = sample.timestampMs
+    }
 
     data class Invalid(
-        val timestampMs: Long,
+        override val timestampMs: Long,
         val warning: PoseQualityWarning,
+        override val quality: PoseQualityMetrics = PoseQualityMetrics.EMPTY,
+        val rejectReason: String = "qualityGate",
     ) : PoseFeatureResult
 }
 
@@ -63,9 +101,27 @@ enum class SquatState(val wireValue: String) {
     ASCENDING("ascending"),
 }
 
+data class SquatFrameDiagnostics(
+    val poseDetected: Boolean,
+    val selectedSide: PoseSide?,
+    val leftHipConfidence: Double?,
+    val leftKneeConfidence: Double?,
+    val leftAnkleConfidence: Double?,
+    val rightHipConfidence: Double?,
+    val rightKneeConfidence: Double?,
+    val rightAnkleConfidence: Double?,
+    val kneeAngleDeg: Double?,
+    val normalizedHipDrop: Double?,
+    val kneeAngularVelocity: Double?,
+    val hipVerticalVelocity: Double?,
+    val latestRejectReason: String?,
+    val rejectedAttempts: Int,
+)
+
 data class SquatDetectorUpdate(
     val state: SquatState,
     val qualityWarning: PoseQualityWarning?,
     val repCompleted: Boolean,
     val repSequence: Int,
+    val diagnostics: SquatFrameDiagnostics,
 )

@@ -3,13 +3,15 @@ enum CameraPermissionState { granted, denied, permanentlyDenied }
 enum SquatDetectorState { calibrating, standing, descending, bottom, ascending }
 
 enum SquatQualityWarning {
-  showFullBody,
+  showLowerBody,
   moveFartherBack,
   moveCloser,
   lowLightOrConfidence,
   holdStillToCalibrate,
   cameraUnavailable,
 }
+
+enum SquatPoseSide { left, right }
 
 enum SquatDetectorFailureReason {
   permissionDenied,
@@ -115,6 +117,50 @@ final class SquatDetectorFailed extends SquatDetectorEvent {
 
   final String squatSessionId;
   final String code;
+}
+
+final class SquatDetectorDiagnostics extends SquatDetectorEvent {
+  const SquatDetectorDiagnostics({
+    required super.eventId,
+    required super.occurredAt,
+    required this.squatSessionId,
+    required this.poseDetected,
+    required this.selectedSide,
+    required this.leftHipConfidence,
+    required this.leftKneeConfidence,
+    required this.leftAnkleConfidence,
+    required this.rightHipConfidence,
+    required this.rightKneeConfidence,
+    required this.rightAnkleConfidence,
+    required this.kneeAngle,
+    required this.normalizedHipDrop,
+    required this.kneeAngularVelocity,
+    required this.hipVerticalVelocity,
+    required this.state,
+    required this.latestRejectReason,
+    required this.analysisLatencyMs,
+    required this.acceptedReps,
+    required this.rejectedAttempts,
+  });
+
+  final String squatSessionId;
+  final bool poseDetected;
+  final SquatPoseSide? selectedSide;
+  final double? leftHipConfidence;
+  final double? leftKneeConfidence;
+  final double? leftAnkleConfidence;
+  final double? rightHipConfidence;
+  final double? rightKneeConfidence;
+  final double? rightAnkleConfidence;
+  final double? kneeAngle;
+  final double? normalizedHipDrop;
+  final double? kneeAngularVelocity;
+  final double? hipVerticalVelocity;
+  final SquatDetectorState state;
+  final String? latestRejectReason;
+  final int analysisLatencyMs;
+  final int acceptedReps;
+  final int rejectedAttempts;
 }
 
 abstract interface class SquatDetector {

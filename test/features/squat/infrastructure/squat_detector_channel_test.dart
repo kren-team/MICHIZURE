@@ -145,6 +145,69 @@ void main() {
       }
     },
   );
+
+  test('parses lower-body diagnostics and rejects coordinate payloads', () {
+    final detector = MethodChannelSquatDetector(methodChannel: channel);
+    final event = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'diagnostics',
+      'eventId': 'session-12345678_diagnostics_1000',
+      'occurredAtEpochMs': 1_000,
+      'squatSessionId': 'session-12345678',
+      'poseDetected': true,
+      'selectedSide': 'left',
+      'leftHipConfidence': 0.90,
+      'leftKneeConfidence': 0.91,
+      'leftAnkleConfidence': 0.88,
+      'rightHipConfidence': null,
+      'rightKneeConfidence': null,
+      'rightAnkleConfidence': null,
+      'kneeAngle': 120.0,
+      'normalizedHipDrop': 0.13,
+      'kneeAngularVelocity': -21.0,
+      'hipVerticalVelocity': 0.12,
+      'state': 'descending',
+      'latestRejectReason': null,
+      'analysisLatencyMs': 80,
+      'acceptedReps': 1,
+      'rejectedAttempts': 0,
+    });
+
+    expect(event, isA<SquatDetectorDiagnostics>());
+    final diagnostics = event as SquatDetectorDiagnostics;
+    expect(diagnostics.selectedSide, SquatPoseSide.left);
+    expect(diagnostics.leftKneeConfidence, 0.91);
+    expect(diagnostics.kneeAngle, 120);
+
+    expect(
+      () => detector.parseEvent({
+        'contractVersion': 1,
+        'type': 'diagnostics',
+        'eventId': 'session-12345678_diagnostics_1000',
+        'occurredAtEpochMs': 1_000,
+        'squatSessionId': 'session-12345678',
+        'poseDetected': true,
+        'selectedSide': 'left',
+        'leftHipConfidence': 0.90,
+        'leftKneeConfidence': 0.91,
+        'leftAnkleConfidence': 0.88,
+        'rightHipConfidence': null,
+        'rightKneeConfidence': null,
+        'rightAnkleConfidence': null,
+        'kneeAngle': 120.0,
+        'normalizedHipDrop': 0.13,
+        'kneeAngularVelocity': -21.0,
+        'hipVerticalVelocity': 0.12,
+        'state': 'descending',
+        'latestRejectReason': null,
+        'analysisLatencyMs': 80,
+        'acceptedReps': 1,
+        'rejectedAttempts': 0,
+        'landmarks': <Object>[],
+      }),
+      throwsA(isA<SquatDetectorFailure>()),
+    );
+  });
 }
 
 void _handle(

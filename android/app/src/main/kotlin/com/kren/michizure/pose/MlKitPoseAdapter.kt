@@ -3,6 +3,9 @@ package com.kren.michizure.pose
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 
+/**
+ * ML Kit adapter boundary. No ML Kit type is allowed past this class.
+ */
 object MlKitPoseAdapter {
     fun convert(
         pose: Pose,
@@ -10,15 +13,15 @@ object MlKitPoseAdapter {
         imageWidth: Int,
         imageHeight: Int,
         mirrorHorizontally: Boolean,
-    ): PoseLandmarkFrame {
-        return PoseLandmarkFrame(
+    ): LowerBodyPose {
+        return LowerBodyPose(
             timestampMs = timestampMs,
             imageWidth = imageWidth,
             imageHeight = imageHeight,
+            poseDetected = pose.allPoseLandmarks.isNotEmpty(),
             left =
                 side(
                     pose,
-                    PoseLandmark.LEFT_SHOULDER,
                     PoseLandmark.LEFT_HIP,
                     PoseLandmark.LEFT_KNEE,
                     PoseLandmark.LEFT_ANKLE,
@@ -28,7 +31,6 @@ object MlKitPoseAdapter {
             right =
                 side(
                     pose,
-                    PoseLandmark.RIGHT_SHOULDER,
                     PoseLandmark.RIGHT_HIP,
                     PoseLandmark.RIGHT_KNEE,
                     PoseLandmark.RIGHT_ANKLE,
@@ -40,30 +42,25 @@ object MlKitPoseAdapter {
 
     private fun side(
         pose: Pose,
-        shoulderType: Int,
         hipType: Int,
         kneeType: Int,
         ankleType: Int,
         imageWidth: Int,
         mirror: Boolean,
-    ): BodySideLandmarks? {
-        val shoulder = pose.getPoseLandmark(shoulderType) ?: return null
-        val hip = pose.getPoseLandmark(hipType) ?: return null
-        val knee = pose.getPoseLandmark(kneeType) ?: return null
-        val ankle = pose.getPoseLandmark(ankleType) ?: return null
-        return BodySideLandmarks(
-            shoulder = point(shoulder, imageWidth, mirror),
-            hip = point(hip, imageWidth, mirror),
-            knee = point(knee, imageWidth, mirror),
-            ankle = point(ankle, imageWidth, mirror),
+    ): LowerBodySide {
+        return LowerBodySide(
+            hip = point(pose.getPoseLandmark(hipType), imageWidth, mirror),
+            knee = point(pose.getPoseLandmark(kneeType), imageWidth, mirror),
+            ankle = point(pose.getPoseLandmark(ankleType), imageWidth, mirror),
         )
     }
 
     private fun point(
-        landmark: PoseLandmark,
+        landmark: PoseLandmark?,
         imageWidth: Int,
         mirror: Boolean,
-    ): PosePoint {
+    ): PosePoint? {
+        landmark ?: return null
         return PosePoint(
             x =
                 PoseCoordinateNormalizer.x(

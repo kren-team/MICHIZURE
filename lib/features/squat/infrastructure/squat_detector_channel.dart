@@ -162,6 +162,27 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'analysisLatencyMs',
       },
       'detectorError' => {..._baseEventFields, 'squatSessionId', 'code'},
+      'diagnostics' => {
+        ..._baseEventFields,
+        'squatSessionId',
+        'poseDetected',
+        'selectedSide',
+        'leftHipConfidence',
+        'leftKneeConfidence',
+        'leftAnkleConfidence',
+        'rightHipConfidence',
+        'rightKneeConfidence',
+        'rightAnkleConfidence',
+        'kneeAngle',
+        'normalizedHipDrop',
+        'kneeAngularVelocity',
+        'hipVerticalVelocity',
+        'state',
+        'latestRejectReason',
+        'analysisLatencyMs',
+        'acceptedReps',
+        'rejectedAttempts',
+      },
       _ => const <String>{},
     };
     if (allowed.isEmpty || raw.keys.any((key) => !allowed.contains(key))) {
@@ -196,10 +217,58 @@ final class MethodChannelSquatDetector implements SquatDetector {
         squatSessionId: _sessionId(raw),
         code: _string(raw, 'code'),
       ),
+      'diagnostics' => _diagnosticsEvent(raw, eventId, occurredAt),
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       ),
     };
+  }
+
+  SquatDetectorDiagnostics _diagnosticsEvent(
+    Map<dynamic, dynamic> raw,
+    String eventId,
+    DateTime occurredAt,
+  ) {
+    final poseDetected = raw['poseDetected'];
+    final latestRejectReason = raw['latestRejectReason'];
+    if (poseDetected is! bool ||
+        (latestRejectReason != null &&
+            (latestRejectReason is! String ||
+                latestRejectReason.isEmpty ||
+                latestRejectReason.length > 64))) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return SquatDetectorDiagnostics(
+      eventId: eventId,
+      occurredAt: occurredAt,
+      squatSessionId: _sessionId(raw),
+      poseDetected: poseDetected,
+      selectedSide: switch (raw['selectedSide']) {
+        null => null,
+        'left' => SquatPoseSide.left,
+        'right' => SquatPoseSide.right,
+        _ => throw const SquatDetectorFailure(
+          SquatDetectorFailureReason.malformedEvent,
+        ),
+      },
+      leftHipConfidence: _nullableDouble(raw, 'leftHipConfidence'),
+      leftKneeConfidence: _nullableDouble(raw, 'leftKneeConfidence'),
+      leftAnkleConfidence: _nullableDouble(raw, 'leftAnkleConfidence'),
+      rightHipConfidence: _nullableDouble(raw, 'rightHipConfidence'),
+      rightKneeConfidence: _nullableDouble(raw, 'rightKneeConfidence'),
+      rightAnkleConfidence: _nullableDouble(raw, 'rightAnkleConfidence'),
+      kneeAngle: _nullableDouble(raw, 'kneeAngle'),
+      normalizedHipDrop: _nullableDouble(raw, 'normalizedHipDrop'),
+      kneeAngularVelocity: _nullableDouble(raw, 'kneeAngularVelocity'),
+      hipVerticalVelocity: _nullableDouble(raw, 'hipVerticalVelocity'),
+      state: _state(_string(raw, 'state')),
+      latestRejectReason: latestRejectReason as String?,
+      analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
+      acceptedReps: _nonNegativeInt(raw, 'acceptedReps'),
+      rejectedAttempts: _nonNegativeInt(raw, 'rejectedAttempts'),
+    );
   }
 
   SquatDetectorReady _readyEvent(
@@ -296,6 +365,17 @@ final class MethodChannelSquatDetector implements SquatDetector {
     return value;
   }
 
+  double? _nullableDouble(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) return null;
+    if (value is! num || !value.isFinite) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value.toDouble();
+  }
+
   SquatDetectorState _state(String value) {
     return switch (value) {
       'calibrating' => SquatDetectorState.calibrating,
@@ -312,7 +392,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
   SquatQualityWarning? _quality(dynamic value) {
     return switch (value) {
       null => null,
-      'showFullBody' => SquatQualityWarning.showFullBody,
+      'showLowerBody' || 'showFullBody' => SquatQualityWarning.showLowerBody,
       'moveFartherBack' => SquatQualityWarning.moveFartherBack,
       'moveCloser' => SquatQualityWarning.moveCloser,
       'lowLightOrConfidence' => SquatQualityWarning.lowLightOrConfidence,
