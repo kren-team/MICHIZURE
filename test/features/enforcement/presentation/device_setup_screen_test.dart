@@ -58,6 +58,22 @@ void main() {
     expect(find.textContaining('PlatformException'), findsNothing);
     expect(find.textContaining('Firebase'), findsNothing);
   });
+
+  testWidgets('shows the same saved app count and labels as selection', (
+    tester,
+  ) async {
+    final repository = FakeDeviceControlRepository()
+      ..selectedPackageNames = {'social.app', 'video.app'};
+    await _pump(tester, repository);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('app-selection-route-button')),
+      300,
+    );
+    expect(find.text('2件選択済み'), findsOneWidget);
+    expect(find.text('Social、Video'), findsOneWidget);
+    expect(find.byKey(const Key('app-selection-route-button')), findsOneWidget);
+  });
 }
 
 Future<void> _pump(

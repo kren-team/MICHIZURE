@@ -23,7 +23,6 @@ final class DeviceCapabilities {
       isDeviceOwner &&
       hasUsageAccess &&
       hasNotificationPermission &&
-      packageVisibility == PackageVisibility.broad &&
       isUserUnlocked &&
       supportsHardEnforcement;
 }

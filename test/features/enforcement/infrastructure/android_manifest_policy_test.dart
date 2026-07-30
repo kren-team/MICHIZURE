@@ -15,7 +15,7 @@ void main() {
 
       expect(mainManifest, isNot(contains('QUERY_ALL_PACKAGES')));
       expect(mainManifest, isNot(contains('usesCleartextTraffic')));
-      expect(debugManifest, contains('QUERY_ALL_PACKAGES'));
+      expect(debugManifest, isNot(contains('QUERY_ALL_PACKAGES')));
       expect(debugManifest, contains('android:usesCleartextTraffic="true"'));
       expect(mainManifest, contains('android.permission.FOREGROUND_SERVICE"'));
       expect(

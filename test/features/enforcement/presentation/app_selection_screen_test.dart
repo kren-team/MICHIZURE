@@ -26,7 +26,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.selectedPackageNames, {'video.app'});
-    expect(find.text('封印対象を保存しました'), findsOneWidget);
+    expect(find.text('選択を保存しました'), findsOneWidget);
 
     await _pump(tester, repository);
     expect(_checkbox(tester, 'video.app').value, isTrue);
@@ -56,6 +56,33 @@ void main() {
     expect(find.byKey(const Key('app-selection-save-error')), findsOneWidget);
     expect(find.textContaining('Firebase'), findsNothing);
     expect(repository.selectedPackageNames, isEmpty);
+  });
+
+  testWidgets('distinguishes an empty catalog and allows retry', (
+    tester,
+  ) async {
+    final repository = FakeDeviceControlRepository()..apps = const [];
+    await _pump(tester, repository);
+
+    expect(find.byKey(const Key('app-selection-empty')), findsOneWidget);
+    expect(
+      find.byKey(const Key('app-selection-empty-retry-button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows loading failure separately from zero candidates', (
+    tester,
+  ) async {
+    final repository = FakeDeviceControlRepository()
+      ..loadError = const EnforcementFailure(
+        EnforcementFailureKind.nativeUnavailable,
+      );
+    await _pump(tester, repository);
+
+    expect(find.byKey(const Key('app-selection-load-error')), findsOneWidget);
+    expect(find.byKey(const Key('app-selection-empty')), findsNothing);
+    expect(find.byKey(const Key('app-selection-retry-button')), findsOneWidget);
   });
 }
 

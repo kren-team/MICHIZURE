@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../application/device_setup_controller.dart';
-import '../../domain/device_capabilities.dart';
 import '../enforcement_failure_message.dart';
+import '../selected_apps_summary.dart';
 
 final class DeviceSetupScreen extends ConsumerStatefulWidget {
   const DeviceSetupScreen({super.key});
@@ -109,14 +109,8 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
               _CapabilityTile(
                 key: const Key('package-visibility-capability'),
                 title: 'アプリ一覧',
-                ready:
-                    state.capabilities.packageVisibility ==
-                    PackageVisibility.broad,
-                detail:
-                    state.capabilities.packageVisibility ==
-                        PackageVisibility.broad
-                    ? 'デモ用のアプリ一覧を利用できます'
-                    : '公開buildではAndroidのscoped visibilityに限定されます',
+                ready: true,
+                detail: 'Launcherから通常起動できるアプリだけを端末内で取得します',
               ),
               _CapabilityTile(
                 key: const Key('user-unlocked-capability'),
@@ -140,11 +134,16 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
                 ),
               ],
               const SizedBox(height: 24),
-              FilledButton.icon(
-                key: const Key('app-selection-route-button'),
-                onPressed: () => context.go('/device-setup/apps'),
-                icon: const Icon(Icons.apps),
-                label: Text('封印対象アプリを選ぶ（${state.savedPackageNames.length}件）'),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SelectedAppsSummary(
+                    apps: state.apps,
+                    selectedPackageNames: state.savedPackageNames,
+                    manageButtonKey: const Key('app-selection-route-button'),
+                    onManage: () => context.go('/device-setup/apps'),
+                  ),
+                ),
               ),
               if (state.capabilities.isManagedDemoReady &&
                   state.savedPackageNames.isNotEmpty) ...[

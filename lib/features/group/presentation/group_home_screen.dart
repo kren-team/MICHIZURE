@@ -8,6 +8,7 @@ import '../../auth/presentation/auth_failure_message.dart';
 import '../../debt/application/debt_lock_release_controller.dart';
 import '../../debt/domain/debt.dart';
 import '../../enforcement/application/device_setup_controller.dart';
+import '../../enforcement/presentation/selected_apps_summary.dart';
 import '../../home/domain/home_guidance.dart';
 import '../application/group_controller.dart';
 import '../domain/group.dart';
@@ -194,6 +195,21 @@ final class _GroupDashboardViewState
               ? null
               : () => _openNextAction(context, guidance.action),
         ),
+        if (setup != null) ...[
+          const SizedBox(height: 12),
+          Card(
+            key: const Key('home-selected-apps-card'),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SelectedAppsSummary(
+                apps: setup.apps,
+                selectedPackageNames: setup.savedPackageNames,
+                manageButtonKey: const Key('home-app-selection-button'),
+                onManage: () => context.go('/device-setup/apps'),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 24),
         Text('メニュー', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
