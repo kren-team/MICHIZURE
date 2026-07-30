@@ -68,20 +68,22 @@ class SquatNativeLifecycleTest {
                 View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
             )
             container.layout(0, 0, 300, 400)
+            assertEquals(300, container.measuredWidth)
+            assertEquals(400, container.measuredHeight)
+            assertEquals(container.left, container.previewView.left)
+            assertEquals(container.top, container.previewView.top)
+            assertEquals(container.right, container.previewView.right)
+            assertEquals(container.bottom, container.previewView.bottom)
+            assertEquals(container.left, container.guideOverlayView.left)
+            assertEquals(container.top, container.guideOverlayView.top)
+            assertEquals(container.right, container.guideOverlayView.right)
+            assertEquals(container.bottom, container.guideOverlayView.bottom)
+            assertEquals(
+                PreviewView.ImplementationMode.COMPATIBLE,
+                container.previewView.implementationMode,
+            )
+            assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
         }
-
-        assertEquals(300, container.measuredWidth)
-        assertEquals(400, container.measuredHeight)
-        assertEquals(container.left, container.previewView.left)
-        assertEquals(container.top, container.previewView.top)
-        assertEquals(container.right, container.previewView.right)
-        assertEquals(container.bottom, container.previewView.bottom)
-        assertEquals(container.left, container.guideOverlayView.left)
-        assertEquals(container.top, container.guideOverlayView.top)
-        assertEquals(container.right, container.guideOverlayView.right)
-        assertEquals(container.bottom, container.guideOverlayView.bottom)
-        assertEquals(PreviewView.ImplementationMode.COMPATIBLE, container.previewView.implementationMode)
-        assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
     }
 
     @Test
