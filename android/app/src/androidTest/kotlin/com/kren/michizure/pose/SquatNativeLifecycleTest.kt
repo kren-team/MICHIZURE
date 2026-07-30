@@ -2,6 +2,7 @@ package com.kren.michizure.pose
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.view.View
 import androidx.camera.view.PreviewView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -24,6 +25,30 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class SquatNativeLifecycleTest {
+    @Test
+    fun nativePreviewAndGuideShareExactlyTheSameThreeByFourBounds() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        instrumentation.runOnMainSync {
+            val container = SquatCameraContainer(context)
+            val width = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY)
+            val height = View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY)
+            container.measure(width, height)
+            container.layout(0, 0, 300, 400)
+
+            assertEquals(300, container.previewView.width)
+            assertEquals(400, container.previewView.height)
+            assertEquals(300, container.guideOverlayView.width)
+            assertEquals(400, container.guideOverlayView.height)
+            assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
+            assertEquals(
+                PreviewView.ImplementationMode.COMPATIBLE,
+                container.previewView.implementationMode,
+            )
+        }
+    }
+
     @Test
     fun cameraPermissionIsDeclaredAndMediaPipeLiteModelInitializes() {
         val context =
@@ -63,7 +88,7 @@ class SquatNativeLifecycleTest {
         var starts = 0
         var closes = 0
         lateinit var manager: SquatSessionManager
-        lateinit var preview: PreviewView
+        lateinit var preview: SquatCameraContainer
         instrumentation.runOnMainSync {
             owner.resume()
             manager =
@@ -79,7 +104,7 @@ class SquatNativeLifecycleTest {
                         }
                     }
                 }
-            preview = PreviewView(context)
+            preview = SquatCameraContainer(context)
             manager.attachPreview(preview)
             assertTrue(
                 manager.start(
@@ -143,7 +168,7 @@ class SquatNativeLifecycleTest {
                             override fun close() = Unit
                         }
                     }
-                val preview = PreviewView(context)
+                val preview = SquatCameraContainer(context)
                 manager.attachPreview(preview)
                 manager.start(
                     NativeSquatSession(
@@ -226,7 +251,7 @@ class SquatNativeLifecycleTest {
                             override fun close() = Unit
                         }
                     }
-                val preview = PreviewView(context)
+                val preview = SquatCameraContainer(context)
                 manager.attachPreview(preview)
                 manager.start(
                     NativeSquatSession(

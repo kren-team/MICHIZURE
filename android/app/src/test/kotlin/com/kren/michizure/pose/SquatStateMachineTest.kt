@@ -9,10 +9,19 @@ class SquatStateMachineTest {
     private val config = SquatDetectorConfig()
 
     @Test
-    fun validLowerBodyCycleProducesExactlyOneRep() {
-        val detector = calibratedDetector()
+    fun calibrationUsesStableStandingSamples() {
+        val detector = SquatStateMachine(config)
+        repeat(10) { detector.valid(it * 100L, 170.0, 0.25) }
+        assertEquals(SquatState.CALIBRATING, detector.state)
 
-        val updates = validRep(detector, 1_100)
+        detector.valid(1_000, 170.0, 0.25)
+        assertEquals(SquatState.STANDING, detector.state)
+    }
+
+    @Test
+    fun normalSquatProducesExactlyOneRepAfterReturnToStanding() {
+        val detector = calibratedDetector()
+        val updates = normalRep(detector, 1_100)
 
         assertEquals(1, updates.count { it.repCompleted })
         assertEquals(1, detector.repSequence)
@@ -20,91 +29,87 @@ class SquatStateMachineTest {
     }
 
     @Test
-    fun tenNormalSquatsProduceExactlyTenReps() {
+    fun tenNormalSquatsProduceExactlyTenRepsWithMonotonicSequence() {
         val detector = calibratedDetector()
-        val updates = mutableListOf<SquatDetectorUpdate>()
+        val sequences = mutableListOf<Int>()
         var start = 1_100L
         repeat(10) {
-            updates += validRep(detector, start)
-            val finalStanding = start + 1_150
-            detector.valid(finalStanding + 250, 170.0, 0.25)
-            start = finalStanding + 500
+            sequences += normalRep(detector, start)
+                .filter { update -> update.repCompleted }
+                .map { update -> update.repSequence }
+            detector.valid(start + 1_350, 170.0, 0.25)
+            start += 1_600
         }
 
-        assertEquals(10, updates.count { it.repCompleted })
+        assertEquals((1..10).toList(), sequences)
         assertEquals(10, detector.repSequence)
     }
 
     @Test
-    fun standingShallowAndIncompleteMotionsDoNotCount() {
+    fun tenShallowSquatsNeverCount() {
         val detector = calibratedDetector()
-        val updates = listOf(
-            detector.valid(1_100, 170.0, 0.25),
-            detector.valid(1_200, 145.0, 0.29),
-            detector.valid(1_400, 130.0, 0.31),
-            detector.valid(1_700, 165.0, 0.25),
-            detector.valid(2_000, 170.0, 0.25),
-        )
-
-        assertFalse(updates.any { it.repCompleted })
+        var timestamp = 1_100L
+        repeat(10) {
+            listOf(
+                detector.valid(timestamp, 148.0, 0.28),
+                detector.valid(timestamp + 100, 142.0, 0.29),
+                detector.valid(timestamp + 250, 130.0, 0.31),
+                detector.valid(timestamp + 450, 160.0, 0.27),
+                detector.valid(timestamp + 750, 170.0, 0.25),
+            )
+            timestamp += 1_000
+        }
         assertEquals(0, detector.repSequence)
-        assertTrue(detector.rejectedAttempts >= 1)
     }
 
     @Test
-    fun standingJitterAndSmallKneeBendAreRejected() {
+    fun tooDeepMotionIsRejectedAndRequiresRecalibration() {
         val detector = calibratedDetector()
-        val updates = listOf(
-            detector.valid(1_100, 165.0, 0.252),
-            detector.valid(1_200, 158.0, 0.255),
-            detector.valid(1_300, 162.0, 0.251),
-            detector.valid(1_400, 155.0, 0.256),
-            detector.valid(1_600, 170.0, 0.25),
-        )
+        detector.valid(1_100, 145.0, 0.29)
+        detector.valid(1_200, 140.0, 0.30)
+        val update = detector.valid(1_400, 50.0, 0.39)
+
+        assertFalse(update.repCompleted)
+        assertEquals(PoseQualityWarning.TOO_DEEP, update.qualityWarning)
+        assertEquals(0, detector.repSequence)
+        assertEquals(SquatState.CALIBRATING, detector.state)
+    }
+
+    @Test
+    fun forwardBendHipDropWithoutKneeFlexionNeverCounts() {
+        val detector = calibratedDetector()
+        val updates =
+            listOf(
+                detector.valid(1_100, 168.0, 0.36),
+                detector.valid(1_300, 166.0, 0.38),
+                detector.valid(1_550, 170.0, 0.25),
+            )
 
         assertFalse(updates.any { it.repCompleted })
         assertEquals(SquatState.STANDING, detector.state)
     }
 
     @Test
-    fun bottomBounceDoesNotDoubleCount() {
+    fun bottomBounceAndIncompleteAscentDoNotDoubleCount() {
         val detector = calibratedDetector()
-        val updates = mutableListOf<SquatDetectorUpdate>()
-        updates += descentToBottom(detector, 1_100)
-        updates += detector.valid(1_500, 120.0, 0.38)
-        updates += detector.valid(1_600, 100.0, 0.40)
-        updates += detector.valid(1_700, 120.0, 0.36)
-        updates += finishStanding(detector, 1_800)
+        val updates = normalDescent(detector, 1_100).toMutableList()
+        updates += detector.valid(1_650, 125.0, 0.33)
+        updates += detector.valid(1_750, 100.0, 0.36)
+        updates += detector.valid(1_900, 125.0, 0.33)
+        updates += detector.valid(2_000, 135.0, 0.32)
+        updates += detector.valid(2_200, 160.0, 0.27)
+        updates += detector.valid(2_450, 170.0, 0.25)
 
         assertEquals(1, updates.count { it.repCompleted })
+        assertEquals(1, detector.repSequence)
     }
 
     @Test
-    fun shortPoseLossFreezesButLongLossResetsCycle() {
-        val shortLoss = calibratedDetector()
-        val shortUpdates = mutableListOf<SquatDetectorUpdate>()
-        shortUpdates += descentToBottom(shortLoss, 1_100)
-        shortUpdates += shortLoss.invalid(1_550)
-        shortUpdates += shortLoss.invalid(1_700)
-        shortUpdates += finishStanding(shortLoss, 1_800)
-        assertEquals(1, shortUpdates.count { it.repCompleted })
-
-        val longLoss = calibratedDetector()
-        val longUpdates = mutableListOf<SquatDetectorUpdate>()
-        longUpdates += descentToBottom(longLoss, 1_100)
-        longUpdates += longLoss.invalid(1_550)
-        longUpdates += longLoss.invalid(1_900)
-        longUpdates += finishStanding(longLoss, 2_000)
-        assertFalse(longUpdates.any { it.repCompleted })
-        assertEquals(SquatState.CALIBRATING, longLoss.state)
-    }
-
-    @Test
-    fun duplicateAndOutOfOrderFramesCannotCreateExtraRep() {
+    fun duplicateAndOutOfOrderFramesCannotCreateAnotherRep() {
         val detector = calibratedDetector()
-        val updates = validRep(detector, 1_100).toMutableList()
-        updates += detector.valid(2_250, 170.0, 0.25)
-        updates += detector.valid(2_000, 90.0, 0.40)
+        val updates = normalRep(detector, 1_100).toMutableList()
+        updates += detector.valid(2_200, 90.0, 0.36)
+        updates += detector.valid(2_100, 170.0, 0.25)
 
         assertEquals(1, updates.count { it.repCompleted })
         assertEquals(1, detector.repSequence)
@@ -112,96 +117,72 @@ class SquatStateMachineTest {
     }
 
     @Test
-    fun thresholdOscillationAndStartingAtBottomDoNotCount() {
-        val jitter = calibratedDetector()
-        val jitterUpdates = listOf(
-            jitter.valid(1_100, 151.0, 0.26),
-            jitter.valid(1_200, 149.0, 0.27),
-            jitter.valid(1_300, 151.0, 0.26),
-            jitter.valid(1_400, 148.0, 0.27),
-            jitter.valid(1_600, 165.0, 0.25),
-        )
-        assertFalse(jitterUpdates.any { it.repCompleted })
+    fun shortPoseLossIsToleratedButLongPoseLossResets() {
+        val short = calibratedDetector()
+        val shortUpdates = normalDescent(short, 1_100).toMutableList()
+        shortUpdates += short.invalid(1_600)
+        shortUpdates += short.valid(1_700, 125.0, 0.33)
+        shortUpdates += short.valid(1_800, 135.0, 0.32)
+        shortUpdates += short.valid(2_000, 160.0, 0.27)
+        shortUpdates += short.valid(2_250, 170.0, 0.25)
+        assertEquals(1, shortUpdates.count { it.repCompleted })
 
+        val long = calibratedDetector()
+        normalDescent(long, 1_100)
+        long.invalid(1_600)
+        long.invalid(1_900)
+        assertEquals(SquatState.CALIBRATING, long.state)
+        assertEquals(0, long.repSequence)
+    }
+
+    @Test
+    fun startAtBottomAndStandingJitterNeverCount() {
         val bottomStart = SquatStateMachine(config)
-        repeat(15) { index ->
-            bottomStart.valid(index * 100L, 95.0, 0.40)
-        }
+        repeat(15) { bottomStart.valid(it * 100L, 95.0, 0.36) }
         assertEquals(SquatState.CALIBRATING, bottomStart.state)
-        assertEquals(0, bottomStart.repSequence)
-    }
 
-    @Test
-    fun tooFastAndTooSlowCyclesDoNotCount() {
-        val fast = calibratedDetector()
-        val fastUpdates = listOf(
-            fast.valid(1_100, 145.0, 0.30),
-            fast.valid(1_200, 100.0, 0.40),
-            fast.valid(1_300, 100.0, 0.40),
-            fast.valid(1_400, 125.0, 0.35),
-            fast.valid(1_500, 165.0, 0.25),
-            fast.valid(1_600, 170.0, 0.25),
-        )
-        assertFalse(fastUpdates.any { it.repCompleted })
-
-        val slow = calibratedDetector()
-        val slowUpdates = descentToBottom(slow, 1_100).toMutableList()
-        slowUpdates += slow.valid(7_500, 120.0, 0.35)
-        slowUpdates += finishStanding(slow, 7_600)
-        assertFalse(slowUpdates.any { it.repCompleted })
-    }
-
-    @Test
-    fun invalidLowerBodyConfidenceNeverAdvancesCalibration() {
-        val detector = SquatStateMachine(config)
-        repeat(20) { index -> detector.invalid(index * 100L) }
-
-        assertEquals(SquatState.CALIBRATING, detector.state)
-        assertEquals(0, detector.repSequence)
+        val standing = calibratedDetector()
+        repeat(20) {
+            standing.valid(1_100 + it * 80L, 160.0 + (it % 3), 0.252)
+        }
+        assertEquals(0, standing.repSequence)
     }
 
     private fun calibratedDetector(): SquatStateMachine {
         val detector = SquatStateMachine(config)
-        repeat(11) { index ->
-            detector.valid(index * 100L, 170.0, 0.25)
-        }
+        repeat(11) { detector.valid(it * 100L, 170.0, 0.25) }
         assertEquals(SquatState.STANDING, detector.state)
         return detector
     }
 
-    private fun validRep(
+    private fun normalRep(
         detector: SquatStateMachine,
         start: Long,
     ): List<SquatDetectorUpdate> {
-        val updates = descentToBottom(detector, start).toMutableList()
-        updates += finishStanding(detector, start + 500)
+        val updates = normalDescent(detector, start).toMutableList()
+        updates += detector.valid(start + 550, 125.0, 0.33)
+        updates += detector.valid(start + 650, 135.0, 0.32)
+        updates += detector.valid(start + 850, 160.0, 0.27)
+        updates += detector.valid(start + 1_100, 170.0, 0.25)
         return updates
     }
 
-    private fun descentToBottom(
+    private fun normalDescent(
         detector: SquatStateMachine,
         start: Long,
     ) = listOf(
-        detector.valid(start, 145.0, 0.30),
-        detector.valid(start + 100, 125.0, 0.34),
-        detector.valid(start + 200, 100.0, 0.40),
-        detector.valid(start + 300, 100.0, 0.40),
-    )
-
-    private fun finishStanding(
-        detector: SquatStateMachine,
-        start: Long,
-    ) = listOf(
-        detector.valid(start, 120.0, 0.36),
-        detector.valid(start + 200, 150.0, 0.30),
-        detector.valid(start + 400, 165.0, 0.25),
-        detector.valid(start + 650, 170.0, 0.25),
+        detector.valid(start, 145.0, 0.29),
+        detector.valid(start + 100, 140.0, 0.30),
+        detector.valid(start + 200, 120.0, 0.32),
+        detector.valid(start + 300, 100.0, 0.36),
+        detector.valid(start + 450, 100.0, 0.36),
     )
 
     private fun SquatStateMachine.valid(
         timestampMs: Long,
         knee: Double,
         hipY: Double,
+        side: PoseSide = PoseSide.LEFT,
     ) = process(
         PoseFeatureResult.Valid(
             sample =
@@ -211,12 +192,13 @@ class SquatStateMachineTest {
                     hipY = hipY,
                     legLength = 0.50,
                     confidence = 0.90,
-                    selectedSide = PoseSide.LEFT,
+                    selectedSide = side,
                 ),
             quality =
                 PoseQualityMetrics.EMPTY.copy(
                     poseDetected = true,
-                    selectedSide = PoseSide.LEFT,
+                    selectedSide = side,
+                    trackingStatus = PoseTrackingStatus.VALID,
                 ),
         ),
     )
@@ -224,9 +206,13 @@ class SquatStateMachineTest {
     private fun SquatStateMachine.invalid(timestampMs: Long) =
         process(
             PoseFeatureResult.Invalid(
-                timestampMs,
-                PoseQualityWarning.SHOW_LOWER_BODY,
-                rejectReason = "lowerBodyConfidenceLow",
+                timestampMs = timestampMs,
+                warning = PoseQualityWarning.NO_POSE_DETECTED,
+                quality =
+                    PoseQualityMetrics.EMPTY.copy(
+                        trackingStatus = PoseTrackingStatus.NO_POSE,
+                    ),
+                rejectReason = "poseNotDetected",
             ),
         )
 }

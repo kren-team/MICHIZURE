@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/features/debt/application/contribution_controller.dart';
 import 'package:michizure/features/debt/application/submit_contribution.dart';
@@ -134,7 +135,7 @@ void main() {
               detectorReady: true,
               squatSessionId: 'session-12345678',
               debtId: 'debt-1',
-              qualityWarning: SquatQualityWarning.showLowerBody,
+              qualityWarning: SquatQualityWarning.ankleUnavailable,
             ),
             isFromCache: false,
             hasPendingWrites: false,
@@ -144,7 +145,7 @@ void main() {
     );
 
     expect(find.text('次の動作: 立った姿勢を調整中'), findsOneWidget);
-    expect(find.text('腰から足首まで映る位置に移動してください。'), findsOneWidget);
+    expect(find.text('足首を認識できません。'), findsOneWidget);
     expect(find.text('端末で検出 1 回'), findsOneWidget);
     expect(find.text('送信待ち 1 回'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
@@ -203,7 +204,89 @@ void main() {
     expect(find.byKey(const Key('squat-debug-diagnostics')), findsOneWidget);
     expect(find.textContaining('Selected side: left'), findsOneWidget);
     expect(find.textContaining('Latest reject: shallowSquat'), findsOneWidget);
-    expect(find.textContaining('腰から足首まで映してください'), findsOneWidget);
+    expect(find.textContaining('胸の下から足首まで映してください'), findsOneWidget);
+  });
+
+  testWidgets('uses one stable three-by-four native camera container', (
+    tester,
+  ) async {
+    Widget view(SquatDetectorState detectorState) => ProviderScope(
+      child: MaterialApp(
+        home: Scaffold(
+          body: ContributionSessionView(
+            debt: _debt(),
+            state: const ContributionControllerState.idle(),
+            squatState: SquatSessionState(
+              status: SquatSessionStatus.running,
+              permission: CameraPermissionState.granted,
+              detectorState: detectorState,
+              detectedReps: 0,
+              lastSequence: 0,
+              maximumLocalReps: 10,
+              detectorReady: true,
+              squatSessionId: 'session-12345678',
+              debtId: 'debt-1',
+            ),
+            isFromCache: false,
+            hasPendingWrites: false,
+            showNativePreview: true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(view(SquatDetectorState.standing));
+    final aspect = tester.widget<AspectRatio>(
+      find.byKey(const Key('pose-preview')),
+    );
+    final first = tester.widget<AndroidView>(
+      find.byKey(const Key('native-squat-camera-container')),
+    );
+    expect(aspect.aspectRatio, 3 / 4);
+
+    await tester.pumpWidget(view(SquatDetectorState.descending));
+    final second = tester.widget<AndroidView>(
+      find.byKey(const Key('native-squat-camera-container')),
+    );
+    expect(identical(first, second), isTrue);
+  });
+
+  testWidgets('shows explicit missing landmark and depth guidance', (
+    tester,
+  ) async {
+    for (final entry in {
+      SquatQualityWarning.noPoseDetected: '人物を認識できません。',
+      SquatQualityWarning.hipUnavailable: '腰を認識できません。',
+      SquatQualityWarning.kneeUnavailable: '膝を認識できません。',
+      SquatQualityWarning.ankleUnavailable: '足首を認識できません。',
+      SquatQualityWarning.squatDeeper: 'もう少し深くしゃがんでください。',
+    }.entries) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ContributionSessionView(
+              debt: _debt(),
+              state: const ContributionControllerState.idle(),
+              squatState: SquatSessionState(
+                status: SquatSessionStatus.running,
+                permission: CameraPermissionState.granted,
+                detectorState: SquatDetectorState.calibrating,
+                detectedReps: 0,
+                lastSequence: 0,
+                maximumLocalReps: 10,
+                detectorReady: true,
+                squatSessionId: 'session-12345678',
+                debtId: 'debt-1',
+                qualityWarning: entry.key,
+              ),
+              isFromCache: false,
+              hasPendingWrites: false,
+            ),
+          ),
+        ),
+      );
+      expect(find.text(entry.value), findsOneWidget);
+    }
   });
 
   testWidgets('shows camera settings after permanent denial', (tester) async {

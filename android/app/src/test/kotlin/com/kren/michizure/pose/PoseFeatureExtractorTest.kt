@@ -33,17 +33,30 @@ class PoseFeatureExtractorTest {
     @Test
     fun missingHipKneeOrAnkleIsRejected() {
         val missing = listOf(
-            standingSide().copy(hip = null),
-            standingSide().copy(knee = null),
-            standingSide().copy(ankle = null),
+            Triple(
+                standingSide().copy(hip = null),
+                "hipUnavailable",
+                PoseTrackingStatus.HIP_UNAVAILABLE,
+            ),
+            Triple(
+                standingSide().copy(knee = null),
+                "kneeUnavailable",
+                PoseTrackingStatus.KNEE_UNAVAILABLE,
+            ),
+            Triple(
+                standingSide().copy(ankle = null),
+                "ankleUnavailable",
+                PoseTrackingStatus.ANKLE_UNAVAILABLE,
+            ),
         )
 
-        missing.forEach { side ->
+        missing.forEach { (side, reason, trackingStatus) ->
             val result = extractor.extract(pose(left = side))
             assertEquals(
-                "lowerBodyLandmarkMissing",
+                reason,
                 (result as PoseFeatureResult.Invalid).rejectReason,
             )
+            assertEquals(trackingStatus, result.quality.trackingStatus)
         }
     }
 
@@ -125,7 +138,7 @@ class PoseFeatureExtractorTest {
 
         assertEquals("poseNotDetected", (noPose as PoseFeatureResult.Invalid).rejectReason)
         assertEquals(
-            "lowerBodyLandmarkMissing",
+            "ankleUnavailable",
             (partial as PoseFeatureResult.Invalid).rejectReason,
         )
         assertNull(noPose.quality.selectedSide)
