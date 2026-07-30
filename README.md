@@ -2,7 +2,7 @@
 
 約束した集中タスクからユーザー操作で離脱すると、選択したAndroidアプリを一時的に封印し、所属グループにスクワット負債を発生させるAndroid向けプロダクトです。グループは端末上のスクワット判定を使って共同返済します。
 
-計画したPhase 0〜11を実装済みです。Firebase、Group、Task、Android離脱検知・封印、Debt realtime、冪等Contribution / Outbox、CameraX + ML Kit Pose Detection、Recovery基盤を、managed Android Emulatorで説明可能なデモ導線へ統合しています。デモ前の確認は [final-checklist.md](docs/final-checklist.md) に従ってください。
+計画したPhase 0〜11を実装済みです。Firebase、Group、Task、Android離脱検知・封印、Debt realtime、冪等Contribution / Outbox、CameraX + MediaPipe Pose Landmarker Lite、Recovery基盤を、managed Android Emulatorで説明可能なデモ導線へ統合しています。デモ前の確認は [final-checklist.md](docs/final-checklist.md) に従ってください。
 
 ## 設計上の重要な結論
 
@@ -10,9 +10,9 @@
 - 封印は Kotlin から `DevicePolicyManager.setPackagesSuspended` を使用する。
 - タスク離脱検知は、Foreground Service が `UsageStatsManager` の `ACTIVITY_RESUMED` を監視し、画面OFF・Keyguard・既知のシステム割り込みを除外する。
 - 一般ユーザー向けの通常権限アプリでは、任意の他アプリを強制的に封印できない。公開版は「Android Enterprise管理端末版」または「強制封印を持たないコンシューマー版」に分ける。
-- UI、ユースケース、Firestore連携は Flutter / Dart、Device Owner、UsageStats、CameraX、ML Kit は Kotlin が担当する。
+- UI、ユースケース、Firestore連携は Flutter / Dart、Device Owner、UsageStats、CameraX、MediaPipe は Kotlin が担当する。
 - バックエンドは Firebase Authentication と Cloud Firestore のクライアントSDKのみを必須とし、MVPは Spark Plan で動かす。
-- スクワット映像は保存・外部送信せず、CameraX + ML Kit Pose Detection + 状態機械で端末内判定する。
+- スクワット映像は保存・外部送信せず、CameraX + MediaPipe Pose Landmarker Lite + One-Euro Filter + 状態機械で端末内判定する。
 - 封印候補は`LauncherApps`からLauncher起動可能appだけを取得し、debug / releaseとも`QUERY_ALL_PACKAGES`を使用しない。
 - スクワットは左右いずれかのhip / knee / ankleを入力とし、顔・肩を判定必須にしない。実Camera成立率とlatencyはデモ前manual gateで確認する。
 
@@ -178,7 +178,7 @@ firebase emulators:exec \
     --no-uninstall"
 ```
 
-スクワット判定は、CameraX / ML Kit adapter、model-independentな`LowerBodyPose`、pure Kotlin状態機械、Flutter契約テストで検証します。カメラframe・landmark座標はDartやFirestoreへ渡しません。
+スクワット判定は、CameraX / MediaPipe adapter、model-independentな`LowerBodyPose`、pure Kotlin One-Euro Filter / 状態機械、Flutter契約テストで検証します。カメラframe・landmark座標はDartやFirestoreへ渡しません。
 
 ```bash
 cd android
@@ -233,6 +233,6 @@ Rules test用のFirebase CLIはローカル・CI限定のdevDependencyです。�
 
 - デモ全手順、Device Owner provisioning、process kill / reboot、safe resetは [demo-plan.md](docs/demo-plan.md) を参照する。
 - 任意アプリの強制封印は通常の個人Android端末では利用できず、managed Emulator / Android Enterprise管理端末が必要。
-- 実カメラによるML Kit精度とp95は物理端末またはhost webcamで当日確認する。synthetic unit testを実カメラ性能として扱わない。
+- 実カメラによるMediaPipe Lite精度とp50 / p95は物理端末またはhost webcamで当日確認する。synthetic unit testやEmulator値を物理端末性能として扱わない。
 - `am force-stop`後はAndroidのstopped stateとなるため、明示的な再起動後にreconcileする。
 - MICHIZUREをDevice Ownerにした端末では通常の自動uninstallが拒否されるため、integration testは`--no-uninstall`を使う。

@@ -57,7 +57,7 @@ Firebase Emulator Suiteは本番性能の代替ではないが、デモのintern
   LauncherApps + scoped launcher queries
 
 現在のPhase 11 debug
-  productionと同じCameraX / ML Kit / FSM
+  productionと同じCameraX / MediaPipe Lite / One-Euro / FSM
   任意Debt・Contribution・failure・unlock commandなし
   scoped package visibilityとFirebase Emulator接続
 
@@ -382,12 +382,12 @@ firebase emulators:exec \
 1. BでDebtを選択。
 2. Phase 8画面で選択中のDebt ID、残回数、pending / confirmedを示す。
 3. camera setupで「画像は保存・送信しない」を示す。
-4. 当日のcameraが安定ならreal CameraX + ML Kit。
+4. 当日のcameraが安定ならreal CameraX + MediaPipe Lite。
 5. cameraが不安定なら実カメラScenario Cを未達として記録し、数値fixtureのinstrumentation結果をML精度の代用として説明しない。
 6. repごとにBのconfirmed count、Aのremainingが更新される。
 7. 20 repsでDebt completed。
 
-`integration_test/debt_contribution_test.dart`では3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。Production UIのrep生成はCameraX + ML Kitだけを使用する。
+`integration_test/debt_contribution_test.dart`では3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。Production UIのrep生成はCameraX + MediaPipe Liteだけを使用する。
 
 ## 10. Phase 10 Recovery smoke
 
@@ -434,13 +434,13 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
 3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
 4. host webcamを使う場合は腰から足首までをframeへ入れ、少し横向きで1秒以上直立する。
-5. debug diagnosticsで`Pose detected`、選択side、hip/knee/ankle confidence、knee angle、hip drop、velocity、reject reasonを確認する。
+5. 「姿勢判定を準備しています」の後、debug diagnosticsでdelegate、analysis FPS、drop / busy数、`Pose detected`、選択side、hip/knee/ankle confidence、knee angle、hip drop、velocity、reject reason、inference / pipeline p50・p95を確認する。
 6. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
 7. 浅い屈伸はcountされず、正常1 squatがexactly 1 repであることを確認する。
 8. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
 9. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
 
-Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/ML Kit精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。
+Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。公式model cardはfull-body cropを推奨するため、lower-bodyだけのpose成立率も当日manual gateに含める。
 
 camera permissionを再試験する場合はDevice Ownerやapp dataを消去せず、permission flagsだけを操作する。
 

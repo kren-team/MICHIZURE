@@ -42,7 +42,7 @@
 | package visibility | `LauncherApps.getActivityList()` + scoped launcher `<queries>`。debug / releaseとも`QUERY_ALL_PACKAGES`なし |
 | background execution | Device Owner要件を満たす`systemExempted` Foreground Service |
 
-ML KitとFlutterFireの現行要件もminSdk 23で整合するが、Task GuardのMVPは`ACTIVITY_RESUMED`が明確なAPI 29以上に限定する。
+MediaPipe Tasks Vision 1.0.0のAAR要件によりappのminSdkは24とするが、Task GuardのMVPは`ACTIVITY_RESUMED`が明確なAPI 29以上に限定する。
 
 ## 4. Native component
 

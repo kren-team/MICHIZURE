@@ -1,5 +1,9 @@
 # ADR 0004: CameraX + ML Kitの端末内状態機械でスクワットを数える
 
+> Production pose SDKの決定は実Camera検証後に
+> [ADR 0005](0005-mediapipe-pose-landmarker.md)で置き換えた。
+> 端末内処理、CameraX、model-independent feature、native FSM、privacyの決定は継続する。
+
 - Status: Accepted
 - Date: 2026-07-26
 

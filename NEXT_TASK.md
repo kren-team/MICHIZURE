@@ -5,10 +5,10 @@ Phase 0〜11の計画実装は完了した。新しいPhase 12は定義しない
 ## 現在の状態
 
 - Auth / Profile / Group / Task / Task Monitor / App Lockを実装済み
-- Debt realtime / Contribution / CameraX + ML Kit squat detectionを実装済み
+- Debt realtime / Contribution / CameraX + MediaPipe Pose Landmarker Lite squat detectionを実装済み
 - process / boot / network / outbox recoveryを実装済み
 - 状態別Home導線、端末setup案内、独立demo target、preflightを実装済み
-- LauncherAppsベースの封印候補、選択状態の画面間統一、lower-body squat inputとdebug diagnosticsを最終デモbugfixで追加
+- LauncherAppsベースの封印候補、選択状態の画面間統一、MediaPipe lower-body squat inputとdebug diagnosticsを最終デモbugfixで追加
 - Firestore schema / Rules / IndexはPhase 11で変更なし
 - debug shortcut、任意Debt / Contribution / unlock APIは追加していない
 

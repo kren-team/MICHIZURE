@@ -9,6 +9,8 @@
 - [ ] `./android/gradlew -p tools/demo-target assembleDebug`
 - [ ] GitHub Actionsがgreen
 - [ ] debug / release APKのsizeを記録
+- [ ] release APKに`pose_landmarker_lite.task`が1件だけ含まれる
+- [ ] ML Kit Pose dependencyがrelease dependency graphにない
 
 ## 2. Host / Firebase
 
@@ -67,6 +69,8 @@
 - [ ] `webcam0`をfrontへ割り当ててCamera previewを確認
 - [ ] 腰〜足首guide、lower-body quality warning
 - [ ] debug diagnosticsでpose / side / confidence / feature / reject reasonを確認
+- [ ] delegateがGPUまたはCPU fallbackとして1回だけ確定
+- [ ] diagnosticsが5 FPS以下、analysisがGPU 15 FPS / CPU 10 FPS近傍
 - [ ] 直立calibration
 - [ ] 正常1 squatを1回だけcount
 - [ ] 浅い屈伸をreject
@@ -88,8 +92,10 @@
 ## 9. Camera latency / resources
 
 - [ ] 測定端末とCamera設定を記録
-- [ ] local latency sample数、p50、p95、maxを記録
-- [ ] p95 500ms未満、または超過理由を記録
+- [ ] analysis FPS、drop / busy、result / no-pose数を記録
+- [ ] inference p50 / p95、native pipeline p50 / p95を記録
+- [ ] 物理端末ではinference p95 100ms、native pipeline p95 180ms、rep表示p95 400msを目標とし、未達なら理由を記録
+- [ ] Emulator値と物理端末値を分けて記録
 - [ ] 返済画面離脱後にcamera privacy indicatorが消える
 - [ ] Task terminal後にForeground Service通知が消える
 - [ ] logcatにFATAL / unhandled / SecurityException / ImageProxy leakなし

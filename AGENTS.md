@@ -127,7 +127,7 @@ Rules変更はFirebase Emulator Suiteでallow / deny両方をtestする。
 
 ## 7. Squat / Camera privacy
 
-- Production detectorはCameraX + ML Kit Pose Detectionを使用する。
+- Production detectorはCameraX + MediaPipe Pose Landmarker Liteを使用する。
 - Camera画像・動画を保存しない。
 - Camera画像・動画を外部送信しない。
 - OpenAI APIをスクワット画像判定へ追加しない。
@@ -187,7 +187,7 @@ commit禁止:
 | Kotlin pure logic | JVM unit |
 | Platform Channel | Dart/Kotlin contract |
 | DPC / UsageStats | managed emulator instrumentation |
-| CameraX / ML Kit | analyzer + instrumentation |
+| CameraX / MediaPipe | analyzer + instrumentation |
 | Recovery | process / network / boot matrix |
 
 特に回帰させない:
@@ -210,7 +210,7 @@ testをskip / weakenして通さない。flaky testは原因とownerを明記し
 - dependency追加時はmaintainer、license、Android minSdk、binary size、privacy、release cadenceを確認する。
 - current versionを公式sourceで確認しlockfileをcommitする。
 - abandoned pluginでAndroid native capabilityを迂回しない。
-- Firebase、ML Kit、CameraXのversionを無根拠に一斉upgradeしない。
+- Firebase、MediaPipe、CameraXのversionを無根拠に一斉upgradeしない。
 - code generator追加はADRまたは明確な反復削減根拠が必要。
 
 ## 12. Docs
