@@ -275,7 +275,7 @@ Coordinator自体とContribution deliveryはsingle-flightであり、listener、
 - sideloadしたdebug APK
 - fresh Android EmulatorをDevice Owner化
 - Usage Accessをadbまたは設定画面で許可
-- `QUERY_ALL_PACKAGES` はdebug/demo flavorだけで使用
+- launchable app catalogは`LauncherApps`とscoped `<queries>`で取得し、debug / releaseとも`QUERY_ALL_PACKAGES`を使用しない
 - foreground service `systemExempted` はDevice Owner要件を満たす構成
 - Firebase Emulator Suiteを第一選択、Sparkのlive projectをbackup
 - App CheckはEmulatorでは無効、live debugでは登録済みdebug token

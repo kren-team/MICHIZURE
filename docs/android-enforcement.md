@@ -39,7 +39,7 @@
 | provisioning | fresh emulator + `adb shell dpm set-device-owner` |
 | distribution | debug/demo APKのsideload |
 | Usage Access | Settingsまたはdebug adb app-op |
-| package visibility | Phase 3はdebug source setのみ`QUERY_ALL_PACKAGES`。将来demo flavorへ分離 |
+| package visibility | `LauncherApps.getActivityList()` + scoped launcher `<queries>`。debug / releaseとも`QUERY_ALL_PACKAGES`なし |
 | background execution | Device Owner要件を満たす`systemExempted` Foreground Service |
 
 ML KitとFlutterFireの現行要件もminSdk 23で整合するが、Task GuardのMVPは`ACTIVITY_RESUMED`が明確なAPI 29以上に限定する。
@@ -326,7 +326,7 @@ android.permission.FOREGROUND_SERVICE
 android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED
 ```
 
-serviceは`android:foregroundServiceType="systemExempted"`かつ`exported=false`である。MVPのDevice Owner appは`systemExempted`の許可条件を満たす。`POST_NOTIFICATIONS`と`PACKAGE_USAGE_STATS`はPhase 3 preflightで既に導入済みで、Task開始前に確認する。Camera、Accessibility、phone state、releaseの`QUERY_ALL_PACKAGES`は追加しない。一般Play公開版ではDevice Ownerを前提にできないため、このFGS構成をそのまま提供しない。
+serviceは`android:foregroundServiceType="systemExempted"`かつ`exported=false`である。MVPのDevice Owner appは`systemExempted`の許可条件を満たす。`POST_NOTIFICATIONS`と`PACKAGE_USAGE_STATS`はPhase 3 preflightで既に導入済みで、Task開始前に確認する。Camera permissionはPhase 9で追加済みだが、Accessibility、phone state、`QUERY_ALL_PACKAGES`は追加しない。一般Play公開版ではDevice Ownerを前提にできないため、このFGS構成をそのまま提供しない。
 
 ## 10. Lock obligation
 
@@ -408,17 +408,17 @@ Android 12以降のinexact alarmはdeadlineより前には発火しない一方�
 - non-launchable system component
 - DPM testでfailedを返したpackage
 
-Android 11+ package visibilityによりinstalled app列挙はfilterされる。Phase 3のdebug source setではsideload + `QUERY_ALL_PACKAGES`を採用し、Phase 11でdemo flavorへ分離する。Production Play配布では審査対象であり、scoped launcher queryへ縮退する。
+Android 11+ package visibilityを考慮し、installed package全件は列挙しない。現在userの`LauncherApps.getActivityList(null, Process.myUserHandle())`からLauncher起動可能activityだけを取得し、package単位へdedupeする。debug / releaseとも`QUERY_ALL_PACKAGES`は宣言せず、manifestのlauncher intent `<queries>`だけを維持する。
 
 ### 13.1 Phase 3実装境界
 
 Phase 3ではpackage suspensionを呼ばず、次だけを実装する。
 
-- `ACTION_MAIN` + `CATEGORY_LAUNCHER`のactivityをuser-facing catalogとして取得する。
+- `LauncherApps.getActivityList()`のactivityをuser-facing catalogとして取得し、uninstall / disableとのraceはactivity enabled確認時に除外する。
 - 自app、active Device Admin、active launcher、default dialer、Settings、permission controller、installer / uninstaller / verifierをAndroid APIから動的に特定し、理由付きで選択不可にする。
-- debug source setだけに`QUERY_ALL_PACKAGES`を宣言し、main/releaseはlauncher intentの`<queries>`に限定する。
+- debug / releaseとも`QUERY_ALL_PACKAGES`を宣言せず、launcher intentの`<queries>`に限定する。
 - labelとpackage nameをversion 1 MethodChannelでFlutterへ返す。icon転送はPhase 11のpolishまで行わず、Flutterのgeneric iconを使う。
-- 選択package nameをPreferences DataStore `selected_lock_apps`へ保存する。app backupは無効化する。
+- 選択package nameをPreferences DataStore `selected_lock_apps`のkey `selected_package_names_v1`へ保存する。app backupは無効化する。
 - 読込時に現在のcatalogと再照合し、uninstall済みまたは保護対象になったpackageをローカル選択から除去する。
 
 catalogの`isSelectable`は静的な事前診断である。Phase 6で実際に`setPackagesSuspended()`を呼ぶ際は、DPMが返すfailed package配列を最終authorityとして扱い、catalog判定だけで成功を仮定しない。
@@ -474,7 +474,7 @@ UIはerror codeから復旧操作を出し、Kotlin exception messageを直接�
 - hard suspensionを削除
 - Usage Accessによるfailure検知もprominent disclosureとconsentが必要
 - penaltyはMICHIZURE内表示・通知に縮退
-- QUERY_ALL_PACKAGESが許可されなければscoped selection
+- LauncherApps / scoped queryで見えない管理対象が必要なら、Play policy reviewを伴う別配布設計
 
 ### Android Enterprise product
 

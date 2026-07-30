@@ -73,7 +73,7 @@ MICHIZUREは、個人の集中タスク失敗をグループの共同スクワ�
 
 - Production実装はCameraX + ML Kit Pose Detectionのbase SDK / stream modeを使用する。
 - カメラ画像・映像は保存、ログ出力、Firestore送信、外部API送信をしない。
-- 33ランドマークのうち肩・股関節・膝・足首を中心に利用し、角度、信頼度、速度、時間、ヒステリシスを持つ状態機械で1repを確定する。
+- 33ランドマークのうち片側の股関節・膝・足首を必須入力とし、膝角度、正規化した腰の沈み、速度、信頼度、時間、ヒステリシスを持つ状態機械で1repを確定する。顔・肩は必須にしない。
 - debug buildに限り、UI操作または合成ランドマーク列を供給する `FakeSquatDetector` をDIできる。
 - debug detector由来のContributionはメタデータで識別し、Production buildにはFake実装を含めない。
 
@@ -173,7 +173,7 @@ Firebaseと公衆インターネットにはMVPのSLAがないため、これら
 ## 10. Productionへ進む条件
 
 - コンシューマー版かAndroid Enterprise版かを事業判断する。
-- DPC承認、managed provisioning、Play policy、`QUERY_ALL_PACKAGES`、Foreground Service申告を審査する。
+- DPC承認、managed provisioning、scoped package visibility、Foreground Service申告を審査する。現構成では`QUERY_ALL_PACKAGES`を使用しない。
 - trusted backendでTask failure、Debt生成、Contribution検証、時刻を権威化する。
 - App Check Play Integrityを強制し、debug providerを完全分離する。
 - abuse、監査、削除要求、データ保持期間、サポート導線を整備する。

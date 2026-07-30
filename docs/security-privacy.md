@@ -123,11 +123,11 @@ Contribution Eventへ保存するのはuid、Debt配下のevent identity、1 rep
 ## 8. Installed app privacy
 
 - package inventoryはPlay policy上もsensitive dataとして扱う。
-- debug source set（将来のdemo flavor）の `QUERY_ALL_PACKAGES` で得た結果をnetworkへ送らない。
+- `LauncherApps`から得たlaunchable app catalogをnetworkへ送らない。debug / releaseとも`QUERY_ALL_PACKAGES`は宣言しない。
 - FirestoreのDebtにはpackage名やカテゴリを持たせない。
 - local DataStoreはapp sandboxに置き、Phase 3で`android:allowBackup="false"`としてcloud / device backup対象外にする。
 - ログは件数と結果codeだけにし、package名を出す場合はローカルdebug buildに限定する。
-- Production Play配布前にbroad package visibilityの許可可能性を審査し、不可なら選択UIをscoped visibilityへ縮退する。
+- Production Play配布でもscoped launcher visibilityを維持する。将来broad visibilityが必要になった場合だけ、用途とPlay policyを別途審査する。
 
 ## 9. Secret / configuration policy
 

@@ -455,6 +455,6 @@ firebase emulators:exec --project demo-michizure \
 
 Rulesの5 member / 50 Contribution高競合testは競合量を維持し、そのtestだけ30秒timeoutを持つ。global timeout変更や無条件retryは使わない。
 
-release境界はDart testでmain/debug manifestとproduction sourceを検査し、最終ローカルgateで`processReleaseMainManifest`とrelease APKをbuildする。`QUERY_ALL_PACKAGES`とcleartextはdebugだけ、fake / synthetic pose実装は`android/app/src/main`に置かない。
+release境界はDart testでmain/debug manifestとproduction sourceを検査し、最終ローカルgateで`processReleaseMainManifest`とrelease APKをbuildする。`QUERY_ALL_PACKAGES`はdebug / releaseとも禁止し、cleartextはdebugだけ、fake / synthetic pose実装は`android/app/src/main`に置かない。
 
 Device Owner、UsageStats、Camera、2 Emulator E2Eは一般GitHub-hosted runnerでは再現しない。managed Emulatorの`connectedDebugAndroidTest`と [final-checklist.md](final-checklist.md) のmanual gateを合否記録として残し、retryで隠さない。

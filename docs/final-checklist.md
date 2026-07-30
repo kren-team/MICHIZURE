@@ -27,7 +27,8 @@
 - [ ] Notification Ready
 - [ ] user unlocked
 - [ ] BのCamera permission
-- [ ] Aへ`MICHIZURE Demo SNS`をinstall
+- [ ] Aへ`MICHIZURE Demo Target`をinstall
+- [ ] App Selection候補にDemo Targetのlabelが表示される
 - [ ] Aのdemo targetが開始時点でunsuspended
 - [ ] `tool/demo_preflight.sh`がA/Bで成功
 
@@ -35,7 +36,8 @@
 
 - [ ] A/BのAuth userをUIで確認
 - [ ] A/Bが同一Group、member 2人
-- [ ] Aで封印対象1件（Demo SNS）を保存
+- [ ] Aで封印対象1件（Demo Target）をcheckbox選択して保存
+- [ ] App Selection / Home / Device Setup / Task Composerが同じ選択件数・labelを表示
 - [ ] active Taskなし
 - [ ] 既存active Debt / lock obligationを確認し、無視して削除していない
 - [ ] Recoveryがhealthy。degradedなら原因を解消
@@ -46,22 +48,25 @@
 - [ ] Foreground Service通知とcountdown
 - [ ] MICHIZURE内に留まる
 - [ ] `succeeded`
-- [ ] Demo SNSはunsuspendedのまま
+- [ ] Demo Targetはunsuspendedのまま
 
 ## 6. Scenario B — 失敗・封印
 
 - [ ] Aで約束を開始
-- [ ] Demo SNSへ移動し600ms以上滞在
+- [ ] Demo Targetへ移動し600ms以上滞在
 - [ ] Aの約束が`failed`
 - [ ] same-ID Debtが1件、member数×10回
-- [ ] Demo SNSがsuspendedで起動不能
+- [ ] Demo Targetがsuspendedで起動不能
+- [ ] toolbar Homeまたは`adb shell input keyevent KEYCODE_HOME`でLauncherへ戻れる
 - [ ] Bへ負債がrealtime表示
 - [ ] screen off / notification shadeだけでは誤failureしない
 
 ## 7. Scenario C — 返済・解除
 
 - [ ] Bで対象負債を明示選択
-- [ ] Camera preview、全身guide、quality warning
+- [ ] `webcam0`をfrontへ割り当ててCamera previewを確認
+- [ ] 腰〜足首guide、lower-body quality warning
+- [ ] debug diagnosticsでpose / side / confidence / feature / reject reasonを確認
 - [ ] 直立calibration
 - [ ] 正常1 squatを1回だけcount
 - [ ] 浅い屈伸をreject
@@ -69,7 +74,7 @@
 - [ ] pending / confirmedを区別
 - [ ] 最終repでDebt completed
 - [ ] Aのobligation release
-- [ ] Demo SNSがunsuspendedで起動可能
+- [ ] Demo Targetがunsuspendedで起動可能
 
 ## 8. Recovery
 
@@ -106,5 +111,6 @@ active Debt、obligation、Firestore document、DataStoreを強制削除するre
 - [ ] process kill、可能ならrebootが通る
 - [ ] 実カメラ確認とlatency記録済み
 - [ ] Security Rules 103件、Flutter、Kotlin、instrumentationがgreen
-- [ ] release manifestにcleartext / `QUERY_ALL_PACKAGES` / fake sourceなし
+- [ ] debug / release manifestに`QUERY_ALL_PACKAGES`なし
+- [ ] release manifestにcleartext / fake sourceなし
 - [ ] Camera / pose / package inventory / Usage historyが端末外へ出ていない

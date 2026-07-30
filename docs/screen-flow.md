@@ -131,7 +131,7 @@ stateDiagram-v2
     permissionCheck --> cameraReady: permissionあり
     permissionCheck --> blocked: permission拒否
     cameraReady --> calibrating
-    calibrating --> detecting: 全身と信頼度が安定
+    calibrating --> detecting: 腰〜足首と信頼度が安定
     detecting --> detecting: pose state changes
     detecting --> syncing: rep completed
     syncing --> detecting: transaction ack
@@ -160,7 +160,7 @@ stateDiagram-v2
 - Task開始前に「別アプリへ移動すると失敗」「画面OFFは失敗ではない」を明示する。
 - Device Owner端末であることと管理権限の強さを説明する。
 - lock対象ごとに「封印可能 / OS保護のため不可」を示す。
-- Squat画面は膝角度の数値より「全身を映す」「もう少し深く」「ゆっくり立つ」を優先する。
+- Squat画面は膝角度の数値より「腰から足首を映す」「もう少し深く」「ゆっくり立つ」を優先する。
 - offline時はローカル検出数とFirestore確定数を分ける。
 - Debt完済でも他Debtによる封印が残る場合、「Debt A完済、Debt Bのため封印継続」と表示する。
 - Rules拒否や競合を単なる「通信エラー」とせず、再読込で最新状態を提示する。

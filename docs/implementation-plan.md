@@ -285,7 +285,7 @@ android/app/src/debug/AndroidManifest.xml
 
 - Device Owner emulatorで全capability green
 - 通常emulatorでcrashせずsetup blocked
-- Demo SNSを選択・再起動復元
+- MICHIZURE Demo Targetを選択・再起動復元
 - MICHIZURE、launcher、dialer等を選択不可
 - package名がFirestore / production logへ出ない
 
@@ -423,7 +423,7 @@ android/app/src/androidTest/
 
 ### 完了条件
 
-- Demo SNSを開くと1秒以内を目標にfailure
+- MICHIZURE Demo Targetを開くと1秒以内を目標にfailure
 - screen off / keyguardでfailureしない
 - Home / Settings / foreign appはfailure
 - Usage Access revokeはcapability failure
@@ -500,7 +500,7 @@ lib/features/enforcement/presentation/lock_status/
 
 ### 完了条件
 
-- Firestore failure確定後にDemo SNS suspend
+- Firestore failure確定後にMICHIZURE Demo Target suspend
 - Debt A/Bが同packageでもAだけ完済時は維持
 - 全obligation解決でrelease
 - deadline offline release
@@ -691,7 +691,7 @@ CameraX + ML Kit + Kotlin状態機械でスクワットを検出し、Phase 8の
 ### 実装結果（Phase 9）
 
 - CameraX 1.6.1 `Preview` / `ImageAnalysis`とML Kit base 18.0.0-beta5 `STREAM_MODE`をKotlinへ隔離した。
-- confidence、全身scale、左右side、knee / hip angle、normalized hip drop、velocity、median + EMAを`SquatDetectorConfig squat-v1`で評価する。
+- confidence、leg length scale、左右side、knee angle、normalized hip drop、knee / hip velocity、median + EMAを`SquatDetectorConfig squat-lower-body-v2`で評価する。
 - calibrationを通った`STANDING → DESCENDING → BOTTOM → ASCENDING → STANDING`だけを1 repとし、depth、ROM、phase時間、valid frame率、refractoryで二重countを防ぐ。
 - versioned MethodChannel / EventChannel / PlatformViewを追加し、frameとlandmarkをDartへ渡さないstrict payloadにした。
 - Flutter `SquatSessionController`が明示Debtをsession中固定し、native sequenceをPhase 8のContribution / Outboxへ1 repずつ渡す。

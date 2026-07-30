@@ -13,6 +13,8 @@
 - UI、ユースケース、Firestore連携は Flutter / Dart、Device Owner、UsageStats、CameraX、ML Kit は Kotlin が担当する。
 - バックエンドは Firebase Authentication と Cloud Firestore のクライアントSDKのみを必須とし、MVPは Spark Plan で動かす。
 - スクワット映像は保存・外部送信せず、CameraX + ML Kit Pose Detection + 状態機械で端末内判定する。
+- 封印候補は`LauncherApps`からLauncher起動可能appだけを取得し、debug / releaseとも`QUERY_ALL_PACKAGES`を使用しない。
+- スクワットは左右いずれかのhip / knee / ankleを入力とし、顔・肩を判定必須にしない。実Camera成立率とlatencyはデモ前manual gateで確認する。
 
 ## ドキュメント
 
@@ -176,7 +178,7 @@ firebase emulators:exec \
     --no-uninstall"
 ```
 
-Phase 9のスクワット判定は、CameraX / ML Kitを含むAndroidテストとFlutter契約テストで検証します。カメラframe・landmarkはDartやFirestoreへ渡しません。
+スクワット判定は、CameraX / ML Kit adapter、model-independentな`LowerBodyPose`、pure Kotlin状態機械、Flutter契約テストで検証します。カメラframe・landmark座標はDartやFirestoreへ渡しません。
 
 ```bash
 cd android
