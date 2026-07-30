@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/features/debt/application/contribution_controller.dart';
 import 'package:michizure/features/debt/application/submit_contribution.dart';
@@ -134,7 +135,7 @@ void main() {
               detectorReady: true,
               squatSessionId: 'session-12345678',
               debtId: 'debt-1',
-              qualityWarning: SquatQualityWarning.showLowerBody,
+              qualityWarning: SquatQualityWarning.noPoseDetected,
             ),
             isFromCache: false,
             hasPendingWrites: false,
@@ -144,11 +145,65 @@ void main() {
     );
 
     expect(find.text('次の動作: 立った姿勢を調整中'), findsOneWidget);
-    expect(find.text('腰から足首まで映る位置に移動してください。'), findsOneWidget);
+    expect(find.text('人物を検出できません。みぞおちから膝下まで映してください。'), findsOneWidget);
     expect(find.text('端末で検出 1 回'), findsOneWidget);
     expect(find.text('送信待ち 1 回'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
   });
+
+  testWidgets(
+    'keeps one native 3:4 camera container across detector state updates',
+    (tester) async {
+      Widget buildView(SquatDetectorState detectorState) {
+        return ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ContributionSessionView(
+                debt: _debt(),
+                state: const ContributionControllerState.idle(),
+                squatState: SquatSessionState(
+                  status: SquatSessionStatus.running,
+                  permission: CameraPermissionState.granted,
+                  detectorState: detectorState,
+                  detectedReps: 0,
+                  lastSequence: 0,
+                  maximumLocalReps: 10,
+                  detectorReady: true,
+                  squatSessionId: 'session-12345678',
+                  debtId: 'debt-1',
+                ),
+                isFromCache: false,
+                hasPendingWrites: false,
+                showNativePreview: true,
+              ),
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildView(SquatDetectorState.calibrating));
+
+      final previewFinder = find.byKey(const Key('pose-preview'));
+      final nativeFinder = find.byKey(
+        const Key('native-squat-camera-container'),
+      );
+      expect(previewFinder, findsOneWidget);
+      expect(nativeFinder, findsOneWidget);
+      final previewSize = tester.getSize(previewFinder);
+      expect(previewSize.width / previewSize.height, closeTo(3 / 4, 0.001));
+      final originalAndroidView = tester.widget<AndroidView>(nativeFinder);
+
+      await tester.pumpWidget(buildView(SquatDetectorState.standing));
+      expect(find.text('次の動作: 準備OK'), findsOneWidget);
+      expect(
+        identical(
+          originalAndroidView,
+          tester.widget<AndroidView>(nativeFinder),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   testWidgets('shows lower-body diagnostics only in debug builds', (
     tester,
@@ -173,6 +228,7 @@ void main() {
                 occurredAt: DateTime.utc(2026),
                 squatSessionId: 'session-12345678',
                 poseDetected: true,
+                trackingStatus: SquatTrackingStatus.valid,
                 selectedSide: SquatPoseSide.left,
                 leftHipConfidence: 0.91,
                 leftKneeConfidence: 0.92,
@@ -180,10 +236,8 @@ void main() {
                 rightHipConfidence: 0.40,
                 rightKneeConfidence: 0.42,
                 rightAnkleConfidence: 0.39,
-                kneeAngle: 121,
+                normalizedVerticalGap: 0.64,
                 normalizedHipDrop: 0.13,
-                kneeAngularVelocity: -22,
-                hipVerticalVelocity: 0.12,
                 state: SquatDetectorState.descending,
                 latestRejectReason: 'shallowSquat',
                 analysisLatencyMs: 85,
@@ -203,7 +257,7 @@ void main() {
     expect(find.byKey(const Key('squat-debug-diagnostics')), findsOneWidget);
     expect(find.textContaining('Selected side: left'), findsOneWidget);
     expect(find.textContaining('Latest reject: shallowSquat'), findsOneWidget);
-    expect(find.textContaining('腰から足首まで映してください'), findsOneWidget);
+    expect(find.textContaining('みぞおちから膝下まで映してください'), findsOneWidget);
   });
 
   testWidgets('shows camera settings after permanent denial', (tester) async {

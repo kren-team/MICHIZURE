@@ -30,8 +30,18 @@ enum class PoseSide(val wireValue: String) {
     RIGHT("right"),
 }
 
+enum class PoseTrackingStatus(val wireValue: String) {
+    NO_POSE("noPose"),
+    HIP_UNAVAILABLE("hipUnavailable"),
+    KNEE_UNAVAILABLE("kneeUnavailable"),
+    CONFIDENCE_INSUFFICIENT("confidenceInsufficient"),
+    VALID("valid"),
+}
+
 enum class PoseQualityWarning(val wireValue: String) {
-    SHOW_LOWER_BODY("showLowerBody"),
+    NO_POSE_DETECTED("noPoseDetected"),
+    HIP_UNAVAILABLE("hipUnavailable"),
+    KNEE_UNAVAILABLE("kneeUnavailable"),
     MOVE_FARTHER_BACK("moveFartherBack"),
     MOVE_CLOSER("moveCloser"),
     LOW_LIGHT_OR_CONFIDENCE("lowLightOrConfidence"),
@@ -41,6 +51,7 @@ enum class PoseQualityWarning(val wireValue: String) {
 
 data class PoseQualityMetrics(
     val poseDetected: Boolean,
+    val trackingStatus: PoseTrackingStatus,
     val leftHipConfidence: Double?,
     val leftKneeConfidence: Double?,
     val leftAnkleConfidence: Double?,
@@ -53,6 +64,7 @@ data class PoseQualityMetrics(
         val EMPTY =
             PoseQualityMetrics(
                 poseDetected = false,
+                trackingStatus = PoseTrackingStatus.NO_POSE,
                 leftHipConfidence = null,
                 leftKneeConfidence = null,
                 leftAnkleConfidence = null,
@@ -66,9 +78,8 @@ data class PoseQualityMetrics(
 
 data class PoseFeatureSample(
     val timestampMs: Long,
-    val kneeAngleDeg: Double,
     val hipY: Double,
-    val legLength: Double,
+    val kneeY: Double,
     val confidence: Double,
     val selectedSide: PoseSide,
 )
@@ -103,6 +114,7 @@ enum class SquatState(val wireValue: String) {
 
 data class SquatFrameDiagnostics(
     val poseDetected: Boolean,
+    val trackingStatus: PoseTrackingStatus,
     val selectedSide: PoseSide?,
     val leftHipConfidence: Double?,
     val leftKneeConfidence: Double?,
@@ -110,10 +122,8 @@ data class SquatFrameDiagnostics(
     val rightHipConfidence: Double?,
     val rightKneeConfidence: Double?,
     val rightAnkleConfidence: Double?,
-    val kneeAngleDeg: Double?,
+    val normalizedVerticalGap: Double?,
     val normalizedHipDrop: Double?,
-    val kneeAngularVelocity: Double?,
-    val hipVerticalVelocity: Double?,
     val latestRejectReason: String?,
     val rejectedAttempts: Int,
 )

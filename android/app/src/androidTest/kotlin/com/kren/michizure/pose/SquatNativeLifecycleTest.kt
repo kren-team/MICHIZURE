@@ -2,6 +2,7 @@ package com.kren.michizure.pose
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.view.View
 import androidx.camera.view.PreviewView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -55,6 +56,35 @@ class SquatNativeLifecycleTest {
     }
 
     @Test
+    fun nativePreviewAndGuideShareExactlyTheSameThreeByFourBounds() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        lateinit var container: SquatCameraContainer
+        instrumentation.runOnMainSync {
+            container = SquatCameraContainer(context)
+            container.measure(
+                View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
+            )
+            container.layout(0, 0, 300, 400)
+        }
+
+        assertEquals(300, container.measuredWidth)
+        assertEquals(400, container.measuredHeight)
+        assertEquals(container.left, container.previewView.left)
+        assertEquals(container.top, container.previewView.top)
+        assertEquals(container.right, container.previewView.right)
+        assertEquals(container.bottom, container.previewView.bottom)
+        assertEquals(container.left, container.guideOverlayView.left)
+        assertEquals(container.top, container.guideOverlayView.top)
+        assertEquals(container.right, container.guideOverlayView.right)
+        assertEquals(container.bottom, container.guideOverlayView.bottom)
+        assertEquals(PreviewView.ImplementationMode.COMPATIBLE, container.previewView.implementationMode)
+        assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
+    }
+
+    @Test
     fun previewLifecycleStartsOnceAndReleasesOnDispose() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context =
@@ -63,7 +93,7 @@ class SquatNativeLifecycleTest {
         var starts = 0
         var closes = 0
         lateinit var manager: SquatSessionManager
-        lateinit var preview: PreviewView
+        lateinit var preview: SquatCameraContainer
         instrumentation.runOnMainSync {
             owner.resume()
             manager =
@@ -79,7 +109,7 @@ class SquatNativeLifecycleTest {
                         }
                     }
                 }
-            preview = PreviewView(context)
+            preview = SquatCameraContainer(context)
             manager.attachPreview(preview)
             assertTrue(
                 manager.start(
@@ -143,7 +173,7 @@ class SquatNativeLifecycleTest {
                             override fun close() = Unit
                         }
                     }
-                val preview = PreviewView(context)
+                val preview = SquatCameraContainer(context)
                 manager.attachPreview(preview)
                 manager.start(
                     NativeSquatSession(
@@ -194,14 +224,14 @@ class SquatNativeLifecycleTest {
                                             PoseFeatureResult.Valid(
                                                 PoseFeatureSample(
                                                     timestampMs = 1_000,
-                                                    kneeAngleDeg = 170.0,
                                                     hipY = 0.25,
-                                                    legLength = 0.50,
+                                                    kneeY = 0.50,
                                                     confidence = 0.90,
                                                     selectedSide = PoseSide.LEFT,
                                                 ),
                                                 PoseQualityMetrics.EMPTY.copy(
                                                     poseDetected = true,
+                                                    trackingStatus = PoseTrackingStatus.VALID,
                                                     leftHipConfidence = 0.90,
                                                     leftKneeConfidence = 0.91,
                                                     leftAnkleConfidence = 0.92,
@@ -226,7 +256,7 @@ class SquatNativeLifecycleTest {
                             override fun close() = Unit
                         }
                     }
-                val preview = PreviewView(context)
+                val preview = SquatCameraContainer(context)
                 manager.attachPreview(preview)
                 manager.start(
                     NativeSquatSession(

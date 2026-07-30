@@ -3,12 +3,22 @@ enum CameraPermissionState { granted, denied, permanentlyDenied }
 enum SquatDetectorState { calibrating, standing, descending, bottom, ascending }
 
 enum SquatQualityWarning {
-  showLowerBody,
+  noPoseDetected,
+  hipUnavailable,
+  kneeUnavailable,
   moveFartherBack,
   moveCloser,
   lowLightOrConfidence,
   holdStillToCalibrate,
   cameraUnavailable,
+}
+
+enum SquatTrackingStatus {
+  noPose,
+  hipUnavailable,
+  kneeUnavailable,
+  confidenceInsufficient,
+  valid,
 }
 
 enum SquatPoseSide { left, right }
@@ -129,6 +139,7 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required super.occurredAt,
     required this.squatSessionId,
     required this.poseDetected,
+    required this.trackingStatus,
     required this.selectedSide,
     required this.leftHipConfidence,
     required this.leftKneeConfidence,
@@ -136,10 +147,8 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required this.rightHipConfidence,
     required this.rightKneeConfidence,
     required this.rightAnkleConfidence,
-    required this.kneeAngle,
+    required this.normalizedVerticalGap,
     required this.normalizedHipDrop,
-    required this.kneeAngularVelocity,
-    required this.hipVerticalVelocity,
     required this.state,
     required this.latestRejectReason,
     required this.analysisLatencyMs,
@@ -161,6 +170,7 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
 
   final String squatSessionId;
   final bool poseDetected;
+  final SquatTrackingStatus trackingStatus;
   final SquatPoseSide? selectedSide;
   final double? leftHipConfidence;
   final double? leftKneeConfidence;
@@ -168,10 +178,8 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final double? rightHipConfidence;
   final double? rightKneeConfidence;
   final double? rightAnkleConfidence;
-  final double? kneeAngle;
+  final double? normalizedVerticalGap;
   final double? normalizedHipDrop;
-  final double? kneeAngularVelocity;
-  final double? hipVerticalVelocity;
   final SquatDetectorState state;
   final String? latestRejectReason;
   final int analysisLatencyMs;

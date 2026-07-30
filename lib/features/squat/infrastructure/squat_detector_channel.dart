@@ -167,6 +167,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
         ..._baseEventFields,
         'squatSessionId',
         'poseDetected',
+        'trackingStatus',
         'selectedSide',
         'leftHipConfidence',
         'leftKneeConfidence',
@@ -174,10 +175,8 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'rightHipConfidence',
         'rightKneeConfidence',
         'rightAnkleConfidence',
-        'kneeAngle',
+        'normalizedVerticalGap',
         'normalizedHipDrop',
-        'kneeAngularVelocity',
-        'hipVerticalVelocity',
         'state',
         'latestRejectReason',
         'analysisLatencyMs',
@@ -258,6 +257,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       occurredAt: occurredAt,
       squatSessionId: _sessionId(raw),
       poseDetected: poseDetected,
+      trackingStatus: _trackingStatus(raw['trackingStatus']),
       selectedSide: switch (raw['selectedSide']) {
         null => null,
         'left' => SquatPoseSide.left,
@@ -272,10 +272,8 @@ final class MethodChannelSquatDetector implements SquatDetector {
       rightHipConfidence: _nullableDouble(raw, 'rightHipConfidence'),
       rightKneeConfidence: _nullableDouble(raw, 'rightKneeConfidence'),
       rightAnkleConfidence: _nullableDouble(raw, 'rightAnkleConfidence'),
-      kneeAngle: _nullableDouble(raw, 'kneeAngle'),
+      normalizedVerticalGap: _nullableDouble(raw, 'normalizedVerticalGap'),
       normalizedHipDrop: _nullableDouble(raw, 'normalizedHipDrop'),
-      kneeAngularVelocity: _nullableDouble(raw, 'kneeAngularVelocity'),
-      hipVerticalVelocity: _nullableDouble(raw, 'hipVerticalVelocity'),
       state: _state(_string(raw, 'state')),
       latestRejectReason: latestRejectReason as String?,
       analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
@@ -452,12 +450,27 @@ final class MethodChannelSquatDetector implements SquatDetector {
   SquatQualityWarning? _quality(dynamic value) {
     return switch (value) {
       null => null,
-      'showLowerBody' || 'showFullBody' => SquatQualityWarning.showLowerBody,
+      'noPoseDetected' => SquatQualityWarning.noPoseDetected,
+      'hipUnavailable' => SquatQualityWarning.hipUnavailable,
+      'kneeUnavailable' => SquatQualityWarning.kneeUnavailable,
       'moveFartherBack' => SquatQualityWarning.moveFartherBack,
       'moveCloser' => SquatQualityWarning.moveCloser,
       'lowLightOrConfidence' => SquatQualityWarning.lowLightOrConfidence,
       'holdStillToCalibrate' => SquatQualityWarning.holdStillToCalibrate,
       'cameraUnavailable' => SquatQualityWarning.cameraUnavailable,
+      _ => throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      ),
+    };
+  }
+
+  SquatTrackingStatus _trackingStatus(dynamic value) {
+    return switch (value) {
+      'noPose' => SquatTrackingStatus.noPose,
+      'hipUnavailable' => SquatTrackingStatus.hipUnavailable,
+      'kneeUnavailable' => SquatTrackingStatus.kneeUnavailable,
+      'confidenceInsufficient' => SquatTrackingStatus.confidenceInsufficient,
+      'valid' => SquatTrackingStatus.valid,
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       ),

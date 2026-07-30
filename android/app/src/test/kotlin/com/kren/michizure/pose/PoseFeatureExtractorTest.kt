@@ -9,19 +9,19 @@ class PoseFeatureExtractorTest {
     private val extractor = PoseFeatureExtractor()
 
     @Test
-    fun lowerBodyOnlyNeedsNoFaceShoulderOrUpperBody() {
-        val result = extractor.extract(pose(left = standingSide()))
+    fun hipAndKneeOnlyPassWithoutFaceShoulderOrAnkle() {
+        val result = extractor.extract(pose(left = standingSide(ankle = null)))
 
         assertTrue(result is PoseFeatureResult.Valid)
         val sample = (result as PoseFeatureResult.Valid).sample
-        assertEquals(180.0, sample.kneeAngleDeg, 0.001)
         assertEquals(0.25, sample.hipY, 0.001)
-        assertEquals(0.50, sample.legLength, 0.001)
+        assertEquals(0.50, sample.kneeY, 0.001)
         assertEquals(PoseSide.LEFT, sample.selectedSide)
+        assertEquals(PoseTrackingStatus.VALID, result.quality.trackingStatus)
     }
 
     @Test
-    fun eitherLeftOrRightLegCanPassTheQualityGate() {
+    fun eitherLeftOrRightSameSideHipKneeCanPass() {
         val left = extractor.extract(pose(left = standingSide()))
         extractor.reset()
         val right = extractor.extract(pose(right = standingSide()))
@@ -31,59 +31,36 @@ class PoseFeatureExtractorTest {
     }
 
     @Test
-    fun missingHipKneeOrAnkleIsRejected() {
-        val missing = listOf(
-            standingSide().copy(hip = null),
-            standingSide().copy(knee = null),
-            standingSide().copy(ankle = null),
-        )
+    fun missingHipAndMissingKneeAreDistinct() {
+        val missingHip =
+            extractor.extract(pose(left = standingSide().copy(hip = null)))
+                as PoseFeatureResult.Invalid
+        val missingKnee =
+            extractor.extract(pose(left = standingSide().copy(knee = null)))
+                as PoseFeatureResult.Invalid
 
-        missing.forEach { side ->
-            val result = extractor.extract(pose(left = side))
-            assertEquals(
-                "lowerBodyLandmarkMissing",
-                (result as PoseFeatureResult.Invalid).rejectReason,
-            )
-        }
+        assertEquals(PoseTrackingStatus.HIP_UNAVAILABLE, missingHip.quality.trackingStatus)
+        assertEquals(PoseQualityWarning.HIP_UNAVAILABLE, missingHip.warning)
+        assertEquals("hipUnavailable", missingHip.rejectReason)
+        assertEquals(PoseTrackingStatus.KNEE_UNAVAILABLE, missingKnee.quality.trackingStatus)
+        assertEquals(PoseQualityWarning.KNEE_UNAVAILABLE, missingKnee.warning)
+        assertEquals("kneeUnavailable", missingKnee.rejectReason)
     }
 
     @Test
-    fun lowConfidenceIsRejectedWithoutLoweringTheThreshold() {
+    fun lowHipOrKneeConfidenceIsRejectedWithoutRequiringAnkle() {
         val result =
             extractor.extract(
                 pose(
                     left =
-                        standingSide().copy(
-                            ankle = point(50.0, 300.0, 0.40),
+                        standingSide(ankle = null).copy(
+                            knee = point(50.0, 200.0, 0.40),
                         ),
                 ),
-            )
+            ) as PoseFeatureResult.Invalid
 
-        assertEquals(
-            PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
-            (result as PoseFeatureResult.Invalid).warning,
-        )
-        assertEquals("lowerBodyConfidenceLow", result.rejectReason)
-    }
-
-    @Test
-    fun legScaleIsNormalizedByFrameHeight() {
-        val tooSmall =
-            extractor.extract(
-                pose(
-                    left =
-                        LowerBodySide(
-                            hip = point(50.0, 100.0),
-                            knee = point(50.0, 120.0),
-                            ankle = point(50.0, 140.0),
-                        ),
-                ),
-            )
-
-        assertEquals(
-            PoseQualityWarning.MOVE_CLOSER,
-            (tooSmall as PoseFeatureResult.Invalid).warning,
-        )
+        assertEquals(PoseTrackingStatus.CONFIDENCE_INSUFFICIENT, result.quality.trackingStatus)
+        assertEquals(PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE, result.warning)
     }
 
     @Test
@@ -119,15 +96,13 @@ class PoseFeatureExtractorTest {
     }
 
     @Test
-    fun noPoseAndPartialPoseExposeDiagnosticReasons() {
+    fun noPoseIsNotMisreportedAsLowConfidence() {
         val noPose = extractor.extract(pose(poseDetected = false))
-        val partial = extractor.extract(pose(left = standingSide().copy(ankle = null)))
+            as PoseFeatureResult.Invalid
 
-        assertEquals("poseNotDetected", (noPose as PoseFeatureResult.Invalid).rejectReason)
-        assertEquals(
-            "lowerBodyLandmarkMissing",
-            (partial as PoseFeatureResult.Invalid).rejectReason,
-        )
+        assertEquals(PoseTrackingStatus.NO_POSE, noPose.quality.trackingStatus)
+        assertEquals(PoseQualityWarning.NO_POSE_DETECTED, noPose.warning)
+        assertEquals("poseNotDetected", noPose.rejectReason)
         assertNull(noPose.quality.selectedSide)
     }
 
@@ -145,12 +120,14 @@ class PoseFeatureExtractorTest {
         right = right,
     )
 
-    private fun standingSide(confidence: Double = 0.90) =
-        LowerBodySide(
-            hip = point(50.0, 100.0, confidence),
-            knee = point(50.0, 200.0, confidence),
-            ankle = point(50.0, 300.0, confidence),
-        )
+    private fun standingSide(
+        confidence: Double = 0.90,
+        ankle: PosePoint? = point(50.0, 300.0, confidence),
+    ) = LowerBodySide(
+        hip = point(50.0, 100.0, confidence),
+        knee = point(50.0, 200.0, confidence),
+        ankle = ankle,
+    )
 
     private fun point(
         x: Double,
