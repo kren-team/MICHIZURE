@@ -26,6 +26,30 @@ import java.util.concurrent.TimeUnit
 @RunWith(AndroidJUnit4::class)
 class SquatNativeLifecycleTest {
     @Test
+    fun nativePreviewAndGuideShareExactlyTheSameThreeByFourBounds() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        instrumentation.runOnMainSync {
+            val container = SquatCameraContainer(context)
+            val width = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY)
+            val height = View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY)
+            container.measure(width, height)
+            container.layout(0, 0, 300, 400)
+
+            assertEquals(300, container.previewView.width)
+            assertEquals(400, container.previewView.height)
+            assertEquals(300, container.guideOverlayView.width)
+            assertEquals(400, container.guideOverlayView.height)
+            assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
+            assertEquals(
+                PreviewView.ImplementationMode.COMPATIBLE,
+                container.previewView.implementationMode,
+            )
+        }
+    }
+
+    @Test
     fun cameraPermissionIsDeclaredAndMediaPipeLiteModelInitializes() {
         val context =
             ApplicationProvider.getApplicationContext<android.content.Context>()

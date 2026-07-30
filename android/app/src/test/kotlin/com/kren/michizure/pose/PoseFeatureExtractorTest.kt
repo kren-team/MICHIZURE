@@ -9,19 +9,19 @@ class PoseFeatureExtractorTest {
     private val extractor = PoseFeatureExtractor()
 
     @Test
-    fun hipAndKneeOnlyPassWithoutFaceShoulderOrAnkle() {
-        val result = extractor.extract(pose(left = standingSide(ankle = null)))
+    fun lowerBodyOnlyNeedsNoFaceShoulderOrUpperBody() {
+        val result = extractor.extract(pose(left = standingSide()))
 
         assertTrue(result is PoseFeatureResult.Valid)
         val sample = (result as PoseFeatureResult.Valid).sample
+        assertEquals(180.0, sample.kneeAngleDeg, 0.001)
         assertEquals(0.25, sample.hipY, 0.001)
-        assertEquals(0.50, sample.kneeY, 0.001)
+        assertEquals(0.50, sample.legLength, 0.001)
         assertEquals(PoseSide.LEFT, sample.selectedSide)
-        assertEquals(PoseTrackingStatus.VALID, result.quality.trackingStatus)
     }
 
     @Test
-    fun eitherLeftOrRightSameSideHipKneeCanPass() {
+    fun eitherLeftOrRightLegCanPassTheQualityGate() {
         val left = extractor.extract(pose(left = standingSide()))
         extractor.reset()
         val right = extractor.extract(pose(right = standingSide()))
@@ -31,36 +31,72 @@ class PoseFeatureExtractorTest {
     }
 
     @Test
-    fun missingHipAndMissingKneeAreDistinct() {
-        val missingHip =
-            extractor.extract(pose(left = standingSide().copy(hip = null)))
-                as PoseFeatureResult.Invalid
-        val missingKnee =
-            extractor.extract(pose(left = standingSide().copy(knee = null)))
-                as PoseFeatureResult.Invalid
+    fun missingHipKneeOrAnkleIsRejected() {
+        val missing = listOf(
+            Triple(
+                standingSide().copy(hip = null),
+                "hipUnavailable",
+                PoseTrackingStatus.HIP_UNAVAILABLE,
+            ),
+            Triple(
+                standingSide().copy(knee = null),
+                "kneeUnavailable",
+                PoseTrackingStatus.KNEE_UNAVAILABLE,
+            ),
+            Triple(
+                standingSide().copy(ankle = null),
+                "ankleUnavailable",
+                PoseTrackingStatus.ANKLE_UNAVAILABLE,
+            ),
+        )
 
-        assertEquals(PoseTrackingStatus.HIP_UNAVAILABLE, missingHip.quality.trackingStatus)
-        assertEquals(PoseQualityWarning.HIP_UNAVAILABLE, missingHip.warning)
-        assertEquals("hipUnavailable", missingHip.rejectReason)
-        assertEquals(PoseTrackingStatus.KNEE_UNAVAILABLE, missingKnee.quality.trackingStatus)
-        assertEquals(PoseQualityWarning.KNEE_UNAVAILABLE, missingKnee.warning)
-        assertEquals("kneeUnavailable", missingKnee.rejectReason)
+        missing.forEach { (side, reason, trackingStatus) ->
+            val result = extractor.extract(pose(left = side))
+            assertEquals(
+                reason,
+                (result as PoseFeatureResult.Invalid).rejectReason,
+            )
+            assertEquals(trackingStatus, result.quality.trackingStatus)
+        }
     }
 
     @Test
-    fun lowHipOrKneeConfidenceIsRejectedWithoutRequiringAnkle() {
+    fun lowConfidenceIsRejectedWithoutLoweringTheThreshold() {
         val result =
             extractor.extract(
                 pose(
                     left =
-                        standingSide(ankle = null).copy(
-                            knee = point(50.0, 200.0, 0.40),
+                        standingSide().copy(
+                            ankle = point(50.0, 300.0, 0.40),
                         ),
                 ),
-            ) as PoseFeatureResult.Invalid
+            )
 
-        assertEquals(PoseTrackingStatus.CONFIDENCE_INSUFFICIENT, result.quality.trackingStatus)
-        assertEquals(PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE, result.warning)
+        assertEquals(
+            PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
+            (result as PoseFeatureResult.Invalid).warning,
+        )
+        assertEquals("lowerBodyConfidenceLow", result.rejectReason)
+    }
+
+    @Test
+    fun legScaleIsNormalizedByFrameHeight() {
+        val tooSmall =
+            extractor.extract(
+                pose(
+                    left =
+                        LowerBodySide(
+                            hip = point(50.0, 100.0),
+                            knee = point(50.0, 120.0),
+                            ankle = point(50.0, 140.0),
+                        ),
+                ),
+            )
+
+        assertEquals(
+            PoseQualityWarning.MOVE_CLOSER,
+            (tooSmall as PoseFeatureResult.Invalid).warning,
+        )
     }
 
     @Test
@@ -96,13 +132,15 @@ class PoseFeatureExtractorTest {
     }
 
     @Test
-    fun noPoseIsNotMisreportedAsLowConfidence() {
+    fun noPoseAndPartialPoseExposeDiagnosticReasons() {
         val noPose = extractor.extract(pose(poseDetected = false))
-            as PoseFeatureResult.Invalid
+        val partial = extractor.extract(pose(left = standingSide().copy(ankle = null)))
 
-        assertEquals(PoseTrackingStatus.NO_POSE, noPose.quality.trackingStatus)
-        assertEquals(PoseQualityWarning.NO_POSE_DETECTED, noPose.warning)
-        assertEquals("poseNotDetected", noPose.rejectReason)
+        assertEquals("poseNotDetected", (noPose as PoseFeatureResult.Invalid).rejectReason)
+        assertEquals(
+            "ankleUnavailable",
+            (partial as PoseFeatureResult.Invalid).rejectReason,
+        )
         assertNull(noPose.quality.selectedSide)
     }
 
@@ -120,14 +158,12 @@ class PoseFeatureExtractorTest {
         right = right,
     )
 
-    private fun standingSide(
-        confidence: Double = 0.90,
-        ankle: PosePoint? = point(50.0, 300.0, confidence),
-    ) = LowerBodySide(
-        hip = point(50.0, 100.0, confidence),
-        knee = point(50.0, 200.0, confidence),
-        ankle = ankle,
-    )
+    private fun standingSide(confidence: Double = 0.90) =
+        LowerBodySide(
+            hip = point(50.0, 100.0, confidence),
+            knee = point(50.0, 200.0, confidence),
+            ankle = point(50.0, 300.0, confidence),
+        )
 
     private fun point(
         x: Double,
