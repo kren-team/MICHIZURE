@@ -38,7 +38,7 @@ class AndroidPackageCatalogTest {
                         listOf(
                             LaunchableApp(
                                 "com.kren.michizure.demotarget",
-                                "MICHIZURE Demo SNS",
+                                "MICHIZURE Demo Target",
                             ),
                         )
                     },
@@ -48,7 +48,7 @@ class AndroidPackageCatalogTest {
         val target = catalog.listLockableApps().single()
 
         assertEquals("com.kren.michizure.demotarget", target.packageName)
-        assertEquals("MICHIZURE Demo SNS", target.label)
+        assertEquals("MICHIZURE Demo Target", target.label)
         assertTrue(target.isSelectable)
     }
 

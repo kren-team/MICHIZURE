@@ -18,7 +18,7 @@ public final class MainActivity extends Activity {
     content.setPadding(48, 48, 48, 48);
 
     TextView title = new TextView(this);
-    title.setText("MICHIZURE Demo SNS");
+    title.setText("MICHIZURE Demo Target");
     title.setTextColor(Color.rgb(35, 35, 45));
     title.setTextSize(24);
     title.setGravity(Gravity.CENTER);
