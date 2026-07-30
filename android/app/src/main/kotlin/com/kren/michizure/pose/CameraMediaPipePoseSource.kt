@@ -10,10 +10,12 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.camera.view.transform.ImageProxyTransformFactory
+import androidx.camera.view.transform.OutputTransform
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -32,7 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 class CameraMediaPipePoseSource(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
-    private val previewView: PreviewView,
+    private val cameraContainer: SquatCameraContainer,
     private val onReady: (PoseDelegate) -> Unit,
     private val onFrame: (PoseFrameDelivery) -> PoseFrameCompletion,
     private val onFailure: (String) -> Unit,
@@ -111,7 +113,12 @@ class CameraMediaPipePoseSource(
                 runCatching {
                     val provider = future.get()
                     cameraProvider = provider
-                    bindUseCases(provider)
+                    cameraContainer.previewView.post {
+                        if (!closed.get()) {
+                            runCatching { bindUseCases(provider) }
+                                .onFailure { onFailure("cameraUnavailable") }
+                        }
+                    }
                 }.onFailure {
                     onFailure("cameraUnavailable")
                 }
@@ -121,6 +128,7 @@ class CameraMediaPipePoseSource(
     }
 
     private fun bindUseCases(provider: ProcessCameraProvider) {
+        val previewView = cameraContainer.previewView
         val selector =
             CameraSelector.DEFAULT_FRONT_CAMERA.takeIf {
                 provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
@@ -130,7 +138,7 @@ class CameraMediaPipePoseSource(
 
         val preview =
             Preview.Builder()
-                .setTargetFrameRate(Range(PREVIEW_TARGET_FPS, PREVIEW_TARGET_FPS))
+                .setTargetFrameRate(Range(PREVIEW_MIN_FPS, PREVIEW_TARGET_FPS))
                 .build()
                 .also {
                 it.surfaceProvider = previewView.surfaceProvider
@@ -154,8 +162,15 @@ class CameraMediaPipePoseSource(
                     useCase.setAnalyzer(analyzerExecutor, ::analyze)
                 }
 
+        val viewPort = previewView.viewPort ?: error("Preview viewport is not ready")
+        val useCases =
+            UseCaseGroup.Builder()
+                .setViewPort(viewPort)
+                .addUseCase(preview)
+                .addUseCase(analysis)
+                .build()
         provider.unbindAll()
-        provider.bindToLifecycle(lifecycleOwner, selector, preview, analysis)
+        provider.bindToLifecycle(lifecycleOwner, selector, useCases)
     }
 
     private fun analyze(imageProxy: ImageProxy) {
@@ -182,12 +197,18 @@ class CameraMediaPipePoseSource(
 
             val preprocessingStartedNs = monotonicNs()
             val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+            val sourceTransform =
+                ImageProxyTransformFactory().apply {
+                    isUsingCropRect = false
+                    isUsingRotationDegrees = true
+                }.getOutputTransform(imageProxy)
             val frame =
                 prepareFrame(
                     imageProxy = imageProxy,
                     rotationDegrees = rotationDegrees,
                     analyzerReceivedNs = analyzerReceivedNs,
                     preprocessingStartedNs = preprocessingStartedNs,
+                    sourceTransform = sourceTransform,
                 )
             pending.set(frame)
             stats.recordSubmitted(frame.inferenceSubmittedNs)
@@ -212,6 +233,7 @@ class CameraMediaPipePoseSource(
         rotationDegrees: Int,
         analyzerReceivedNs: Long,
         preprocessingStartedNs: Long,
+        sourceTransform: OutputTransform,
     ): PendingFrame {
         val source =
             Bitmap.createBitmap(
@@ -234,6 +256,7 @@ class CameraMediaPipePoseSource(
                 inferenceSubmittedNs = inferenceSubmittedNs,
                 imageWidth = prepared.width,
                 imageHeight = prepared.height,
+                sourceTransform = sourceTransform,
                 bitmap = prepared,
                 mpImage = mpImage,
             )
@@ -280,7 +303,8 @@ class CameraMediaPipePoseSource(
                             },
                     ),
                 )
-            val feature = extractor.extract(poseFilter.filter(pose))
+            val filteredPose = poseFilter.filter(pose)
+            val feature = extractor.extract(filteredPose)
             val beforeStateMachine =
                 PoseLatencySample(
                     analyzerReceivedNs = frame.analyzerReceivedNs,
@@ -299,6 +323,26 @@ class CameraMediaPipePoseSource(
                         delegate = requireNotNull(delegate),
                     ),
                 )
+            val selectedSide =
+                (feature as? PoseFeatureResult.Valid)?.sample?.selectedSide
+                    ?: feature.quality.selectedSide
+            val guideSide =
+                when (selectedSide) {
+                    PoseSide.LEFT -> filteredPose.left
+                    PoseSide.RIGHT -> filteredPose.right
+                    null -> preferredGuideSide(filteredPose)
+                }
+            cameraContainer.updateGuide(
+                SquatGuideFrame(
+                    timestampMs = frame.timestampMs,
+                    sourceTransform = frame.sourceTransform,
+                    hip = guideSide?.hip,
+                    knee = guideSide?.knee,
+                    ankle = guideSide?.ankle,
+                    trackingStatus = completion.trackingStatus,
+                    state = completion.state,
+                ),
+            )
             val completed =
                 beforeStateMachine.copy(
                     stateMachineCompletedNs = completion.stateMachineCompletedNs,
@@ -347,6 +391,7 @@ class CameraMediaPipePoseSource(
         if (!closed.compareAndSet(false, true)) return
         cameraProvider?.unbindAll()
         cameraProvider = null
+        cameraContainer.clearGuide()
         frameGate.reset()
         runCatching {
             analyzerExecutor.execute {
@@ -370,6 +415,7 @@ class CameraMediaPipePoseSource(
         val inferenceSubmittedNs: Long,
         val imageWidth: Int,
         val imageHeight: Int,
+        val sourceTransform: OutputTransform,
         val bitmap: Bitmap,
         val mpImage: MPImage,
     ) : AutoCloseable {
@@ -384,8 +430,19 @@ class CameraMediaPipePoseSource(
 
     private fun monotonicNs(): Long = SystemClock.elapsedRealtimeNanos()
 
+    private fun preferredGuideSide(pose: LowerBodyPose): LowerBodySide? {
+        fun score(side: LowerBodySide?): Double =
+            listOfNotNull(
+                side?.hip?.confidence,
+                side?.knee?.confidence,
+                side?.ankle?.confidence,
+            ).minOrNull() ?: -1.0
+        return if (score(pose.left) >= score(pose.right)) pose.left else pose.right
+    }
+
     private companion object {
         const val NANOS_PER_MILLISECOND = 1_000_000L
+        const val PREVIEW_MIN_FPS = 24
         const val PREVIEW_TARGET_FPS = 30
     }
 }

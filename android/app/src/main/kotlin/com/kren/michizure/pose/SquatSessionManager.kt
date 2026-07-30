@@ -2,7 +2,6 @@ package com.kren.michizure.pose
 
 import android.content.pm.ApplicationInfo
 import android.os.SystemClock
-import androidx.camera.view.PreviewView
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
 
@@ -14,7 +13,7 @@ data class NativeSquatSession(
 class SquatSessionManager(
     private val lifecycleOwner: LifecycleOwner,
     private val sourceFactory: (
-        PreviewView,
+        SquatCameraContainer,
         LifecycleOwner,
         (PoseDelegate) -> Unit,
         (PoseFrameDelivery) -> PoseFrameCompletion,
@@ -23,7 +22,7 @@ class SquatSessionManager(
         CameraMediaPipePoseSource(
             context = view.context.applicationContext,
             lifecycleOwner = owner,
-            previewView = view,
+            cameraContainer = view,
             onReady = onReady,
             onFrame = onFrame,
             onFailure = onFailure,
@@ -32,7 +31,7 @@ class SquatSessionManager(
 ) : AutoCloseable {
     private val detectorConfig = SquatDetectorConfig()
     private var session: NativeSquatSession? = null
-    private var previewView: PreviewView? = null
+    private var previewView: SquatCameraContainer? = null
     private var source: PoseSource? = null
     private var machine = SquatStateMachine(detectorConfig)
     private var lastState: SquatState? = null
@@ -44,13 +43,13 @@ class SquatSessionManager(
     private var delegate: PoseDelegate? = null
 
     @Synchronized
-    fun attachPreview(view: PreviewView) {
+    fun attachPreview(view: SquatCameraContainer) {
         previewView = view
         startSourceIfReady()
     }
 
     @Synchronized
-    fun detachPreview(view: PreviewView) {
+    fun detachPreview(view: SquatCameraContainer) {
         if (previewView !== view) return
         previewView = null
         source?.close()
@@ -160,6 +159,8 @@ class SquatSessionManager(
                 ?: return PoseFrameCompletion(
                     stateMachineCompletedNs = elapsedNs(),
                     nativeEventDispatchedNs = null,
+                    state = machine.state,
+                    trackingStatus = PoseTrackingStatus.NO_POSE,
                 )
         val feature = delivery.feature
         val update = machine.process(feature)
@@ -220,6 +221,8 @@ class SquatSessionManager(
         return PoseFrameCompletion(
             stateMachineCompletedNs = stateMachineCompletedNs,
             nativeEventDispatchedNs = lastDispatchNs,
+            state = update.state,
+            trackingStatus = update.diagnostics.trackingStatus,
         )
     }
 
@@ -246,6 +249,7 @@ class SquatSessionManager(
                 "squatSessionId" to current.squatSessionId,
                 "delegate" to delegate?.wireValue,
                 "poseDetected" to diagnostics.poseDetected,
+                "trackingStatus" to diagnostics.trackingStatus.wireValue,
                 "selectedSide" to diagnostics.selectedSide?.wireValue,
                 "leftHipConfidence" to diagnostics.leftHipConfidence,
                 "leftKneeConfidence" to diagnostics.leftKneeConfidence,

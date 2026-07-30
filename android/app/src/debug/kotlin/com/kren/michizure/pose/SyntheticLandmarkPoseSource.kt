@@ -11,14 +11,15 @@ class SyntheticLandmarkPoseSource {
             frames += sample(startTimestampMs + index * 100, 170.0, 0.25)
         }
         val movementStart = startTimestampMs + 1_100
-        frames += sample(movementStart, 145.0, 0.30)
-        frames += sample(movementStart + 100, 125.0, 0.34)
-        frames += sample(movementStart + 200, 100.0, 0.40)
-        frames += sample(movementStart + 300, 100.0, 0.40)
-        frames += sample(movementStart + 500, 120.0, 0.36)
-        frames += sample(movementStart + 700, 150.0, 0.30)
-        frames += sample(movementStart + 900, 165.0, 0.25)
-        frames += sample(movementStart + 1_150, 170.0, 0.25)
+        frames += sample(movementStart, 145.0, 0.29)
+        frames += sample(movementStart + 100, 140.0, 0.30)
+        frames += sample(movementStart + 200, 120.0, 0.32)
+        frames += sample(movementStart + 300, 100.0, 0.36)
+        frames += sample(movementStart + 450, 100.0, 0.36)
+        frames += sample(movementStart + 550, 125.0, 0.33)
+        frames += sample(movementStart + 650, 135.0, 0.32)
+        frames += sample(movementStart + 850, 160.0, 0.27)
+        frames += sample(movementStart + 1_100, 170.0, 0.25)
         return frames
     }
 

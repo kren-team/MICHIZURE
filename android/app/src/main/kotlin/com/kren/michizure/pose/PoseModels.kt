@@ -31,12 +31,26 @@ enum class PoseSide(val wireValue: String) {
 }
 
 enum class PoseQualityWarning(val wireValue: String) {
-    SHOW_LOWER_BODY("showLowerBody"),
+    NO_POSE_DETECTED("noPoseDetected"),
+    HIP_UNAVAILABLE("hipUnavailable"),
+    KNEE_UNAVAILABLE("kneeUnavailable"),
+    ANKLE_UNAVAILABLE("ankleUnavailable"),
     MOVE_FARTHER_BACK("moveFartherBack"),
     MOVE_CLOSER("moveCloser"),
     LOW_LIGHT_OR_CONFIDENCE("lowLightOrConfidence"),
     HOLD_STILL_TO_CALIBRATE("holdStillToCalibrate"),
+    SQUAT_DEEPER("squatDeeper"),
+    TOO_DEEP("tooDeep"),
     CAMERA_UNAVAILABLE("cameraUnavailable"),
+}
+
+enum class PoseTrackingStatus(val wireValue: String) {
+    NO_POSE("noPose"),
+    HIP_UNAVAILABLE("hipUnavailable"),
+    KNEE_UNAVAILABLE("kneeUnavailable"),
+    ANKLE_UNAVAILABLE("ankleUnavailable"),
+    CONFIDENCE_INSUFFICIENT("confidenceInsufficient"),
+    VALID("valid"),
 }
 
 data class PoseQualityMetrics(
@@ -48,6 +62,7 @@ data class PoseQualityMetrics(
     val rightKneeConfidence: Double?,
     val rightAnkleConfidence: Double?,
     val selectedSide: PoseSide?,
+    val trackingStatus: PoseTrackingStatus = PoseTrackingStatus.NO_POSE,
 ) {
     companion object {
         val EMPTY =
@@ -60,6 +75,7 @@ data class PoseQualityMetrics(
                 rightKneeConfidence = null,
                 rightAnkleConfidence = null,
                 selectedSide = null,
+                trackingStatus = PoseTrackingStatus.NO_POSE,
             )
     }
 }
@@ -116,6 +132,7 @@ data class SquatFrameDiagnostics(
     val hipVerticalVelocity: Double?,
     val latestRejectReason: String?,
     val rejectedAttempts: Int,
+    val trackingStatus: PoseTrackingStatus,
 )
 
 data class SquatDetectorUpdate(

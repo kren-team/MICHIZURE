@@ -11,21 +11,49 @@ class PoseFeatureExtractor(
     private var selectedAtMs: Long = Long.MIN_VALUE
 
     fun extract(pose: LowerBodyPose): PoseFeatureResult {
-        val baseQuality = quality(pose, selectedSide = null)
         if (pose.imageWidth <= 0 || pose.imageHeight <= 0) {
             return invalid(
                 pose,
-                PoseQualityWarning.SHOW_LOWER_BODY,
-                baseQuality,
+                PoseQualityWarning.NO_POSE_DETECTED,
+                quality(pose, null, PoseTrackingStatus.NO_POSE),
                 "invalidFrameSize",
             )
         }
         if (!pose.poseDetected) {
             return invalid(
                 pose,
-                PoseQualityWarning.SHOW_LOWER_BODY,
-                baseQuality,
+                PoseQualityWarning.NO_POSE_DETECTED,
+                quality(pose, null, PoseTrackingStatus.NO_POSE),
                 "poseNotDetected",
+            )
+        }
+
+        val sides = listOfNotNull(pose.left, pose.right)
+        if (sides.none { it.hip.isUsable() }) {
+            return invalid(
+                pose,
+                PoseQualityWarning.HIP_UNAVAILABLE,
+                quality(pose, null, PoseTrackingStatus.HIP_UNAVAILABLE),
+                "hipUnavailable",
+            )
+        }
+        if (sides.none { it.hip.isUsable() && it.knee.isUsable() }) {
+            return invalid(
+                pose,
+                PoseQualityWarning.KNEE_UNAVAILABLE,
+                quality(pose, null, PoseTrackingStatus.KNEE_UNAVAILABLE),
+                "kneeUnavailable",
+            )
+        }
+        if (sides.none {
+                it.hip.isUsable() && it.knee.isUsable() && it.ankle.isUsable()
+            }
+        ) {
+            return invalid(
+                pose,
+                PoseQualityWarning.ANKLE_UNAVAILABLE,
+                quality(pose, null, PoseTrackingStatus.ANKLE_UNAVAILABLE),
+                "ankleUnavailable",
             )
         }
 
@@ -34,9 +62,9 @@ class PoseFeatureExtractor(
         if (left == null && right == null) {
             return invalid(
                 pose,
-                PoseQualityWarning.SHOW_LOWER_BODY,
-                baseQuality,
-                "lowerBodyLandmarkMissing",
+                PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
+                quality(pose, null, PoseTrackingStatus.CONFIDENCE_INSUFFICIENT),
+                "lowerBodyGeometryInvalid",
             )
         }
         val validLeft =
@@ -47,13 +75,13 @@ class PoseFeatureExtractor(
             return invalid(
                 pose,
                 PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
-                baseQuality,
+                quality(pose, null, PoseTrackingStatus.CONFIDENCE_INSUFFICIENT),
                 "lowerBodyConfidenceLow",
             )
         }
 
         val selected = selectSide(validLeft, validRight, pose.timestampMs)
-        val quality = quality(pose, selected.side)
+        val quality = quality(pose, selected.side, PoseTrackingStatus.VALID)
         val legLengthRatio = selected.legLength / pose.imageHeight.toDouble()
         if (legLengthRatio < config.minimumLegLengthRatio) {
             return invalid(
@@ -157,6 +185,7 @@ class PoseFeatureExtractor(
     private fun quality(
         pose: LowerBodyPose,
         selectedSide: PoseSide?,
+        trackingStatus: PoseTrackingStatus,
     ) = PoseQualityMetrics(
         poseDetected = pose.poseDetected,
         leftHipConfidence = pose.left?.hip?.confidence,
@@ -166,6 +195,7 @@ class PoseFeatureExtractor(
         rightKneeConfidence = pose.right?.knee?.confidence,
         rightAnkleConfidence = pose.right?.ankle?.confidence,
         selectedSide = selectedSide,
+        trackingStatus = trackingStatus,
     )
 
     private fun angle(a: PosePoint, b: PosePoint, c: PosePoint): Double? {
@@ -183,8 +213,8 @@ class PoseFeatureExtractor(
     private fun distance(a: PosePoint, b: PosePoint): Double =
         hypot(a.x - b.x, a.y - b.y)
 
-    private fun PosePoint.isUsable(): Boolean =
-        x.isFinite() && y.isFinite() && confidence.isFinite()
+    private fun PosePoint?.isUsable(): Boolean =
+        this != null && x.isFinite() && y.isFinite() && confidence.isFinite()
 
     private fun invalid(
         pose: LowerBodyPose,

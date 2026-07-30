@@ -2,7 +2,6 @@ package com.kren.michizure.pose
 
 import android.content.Context
 import android.view.View
-import androidx.camera.view.PreviewView
 import io.flutter.plugin.common.MessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
@@ -22,19 +21,15 @@ private class PosePreviewView(
     context: Context,
     private val manager: SquatSessionManager,
 ) : PlatformView {
-    private val previewView =
-        PreviewView(context).apply {
-            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-            scaleType = PreviewView.ScaleType.FIT_CENTER
-        }
+    private val cameraContainer = SquatCameraContainer(context)
 
     init {
-        manager.attachPreview(previewView)
+        manager.attachPreview(cameraContainer)
     }
 
-    override fun getView(): View = previewView
+    override fun getView(): View = cameraContainer
 
     override fun dispose() {
-        manager.detachPreview(previewView)
+        manager.detachPreview(cameraContainer)
     }
 }

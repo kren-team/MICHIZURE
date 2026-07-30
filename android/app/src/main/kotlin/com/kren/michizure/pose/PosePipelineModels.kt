@@ -53,6 +53,8 @@ data class PoseFrameDelivery(
 data class PoseFrameCompletion(
     val stateMachineCompletedNs: Long,
     val nativeEventDispatchedNs: Long?,
+    val state: SquatState = SquatState.CALIBRATING,
+    val trackingStatus: PoseTrackingStatus = PoseTrackingStatus.NO_POSE,
 )
 
 data class InitializedPoseEngine<T>(

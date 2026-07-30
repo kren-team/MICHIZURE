@@ -167,6 +167,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
         ..._baseEventFields,
         'squatSessionId',
         'poseDetected',
+        'trackingStatus',
         'selectedSide',
         'leftHipConfidence',
         'leftKneeConfidence',
@@ -258,6 +259,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       occurredAt: occurredAt,
       squatSessionId: _sessionId(raw),
       poseDetected: poseDetected,
+      trackingStatus: _trackingStatus(_string(raw, 'trackingStatus')),
       selectedSide: switch (raw['selectedSide']) {
         null => null,
         'left' => SquatPoseSide.left,
@@ -452,12 +454,32 @@ final class MethodChannelSquatDetector implements SquatDetector {
   SquatQualityWarning? _quality(dynamic value) {
     return switch (value) {
       null => null,
-      'showLowerBody' || 'showFullBody' => SquatQualityWarning.showLowerBody,
+      'noPoseDetected' => SquatQualityWarning.noPoseDetected,
+      'hipUnavailable' => SquatQualityWarning.hipUnavailable,
+      'kneeUnavailable' => SquatQualityWarning.kneeUnavailable,
+      'ankleUnavailable' => SquatQualityWarning.ankleUnavailable,
       'moveFartherBack' => SquatQualityWarning.moveFartherBack,
       'moveCloser' => SquatQualityWarning.moveCloser,
       'lowLightOrConfidence' => SquatQualityWarning.lowLightOrConfidence,
       'holdStillToCalibrate' => SquatQualityWarning.holdStillToCalibrate,
+      'squatDeeper' => SquatQualityWarning.squatDeeper,
+      'tooDeep' => SquatQualityWarning.tooDeep,
       'cameraUnavailable' => SquatQualityWarning.cameraUnavailable,
+      _ => throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      ),
+    };
+  }
+
+  SquatPoseTrackingStatus _trackingStatus(String value) {
+    return switch (value) {
+      'noPose' => SquatPoseTrackingStatus.noPose,
+      'hipUnavailable' => SquatPoseTrackingStatus.hipUnavailable,
+      'kneeUnavailable' => SquatPoseTrackingStatus.kneeUnavailable,
+      'ankleUnavailable' => SquatPoseTrackingStatus.ankleUnavailable,
+      'confidenceInsufficient' =>
+        SquatPoseTrackingStatus.confidenceInsufficient,
+      'valid' => SquatPoseTrackingStatus.valid,
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       ),

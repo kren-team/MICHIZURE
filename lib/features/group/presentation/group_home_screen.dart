@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -429,6 +430,13 @@ List<Widget> _accountActions(
   AsyncValue<void> authCommand,
 ) {
   return [
+    if (kDebugMode)
+      IconButton(
+        key: const Key('debug-squat-lab-route-button'),
+        tooltip: 'Squat Lab（Debug）',
+        onPressed: () => context.go('/debug/squat-lab'),
+        icon: const Icon(Icons.science_outlined),
+      ),
     IconButton(
       key: const Key('device-setup-route-button'),
       tooltip: '端末セットアップ',

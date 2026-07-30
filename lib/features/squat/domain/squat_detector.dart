@@ -3,15 +3,29 @@ enum CameraPermissionState { granted, denied, permanentlyDenied }
 enum SquatDetectorState { calibrating, standing, descending, bottom, ascending }
 
 enum SquatQualityWarning {
-  showLowerBody,
+  noPoseDetected,
+  hipUnavailable,
+  kneeUnavailable,
+  ankleUnavailable,
   moveFartherBack,
   moveCloser,
   lowLightOrConfidence,
   holdStillToCalibrate,
+  squatDeeper,
+  tooDeep,
   cameraUnavailable,
 }
 
 enum SquatPoseSide { left, right }
+
+enum SquatPoseTrackingStatus {
+  noPose,
+  hipUnavailable,
+  kneeUnavailable,
+  ankleUnavailable,
+  confidenceInsufficient,
+  valid,
+}
 
 enum SquatInferenceDelegate { gpu, cpu }
 
@@ -145,6 +159,7 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required this.analysisLatencyMs,
     required this.acceptedReps,
     required this.rejectedAttempts,
+    this.trackingStatus = SquatPoseTrackingStatus.noPose,
     this.delegate,
     this.sampleCount = 0,
     this.actualAnalysisFps = 0,
@@ -177,6 +192,7 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final int analysisLatencyMs;
   final int acceptedReps;
   final int rejectedAttempts;
+  final SquatPoseTrackingStatus trackingStatus;
   final SquatInferenceDelegate? delegate;
   final int sampleCount;
   final double actualAnalysisFps;
