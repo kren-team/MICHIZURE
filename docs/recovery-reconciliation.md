@@ -82,6 +82,8 @@ lock reconcileとTask Guard recoveryは独立して`runCatching`し、一方の�
 
 `FirebaseAuth.currentUser`の存在だけでvalidとみなさず、ID tokenをforce refreshする。
 
+cold startではFirebaseのlocal auth eventをそのまま`authStateProvider`のauthenticated dataとして公開しない。`getIdTokenResult(true)`相当の検証が`authenticated`を返した後だけProfileを起点とするFirestore listenerを開始する。検証中はrouteをloadingに保ち、一時network failureはtyped errorとして再試行可能にする。
+
 - `invalid-user-token`
 - `invalid-refresh-token`
 - `user-token-expired`
@@ -90,6 +92,10 @@ lock reconcileとTask Guard recoveryは独立して`runCatching`し、一方の�
 - `user-not-found`
 
 だけを恒久credential invalidとして安全にsign outする。`network-request-failed`や分類不能な一時障害ではlogoutせず`degraded`とする。sign outはnative lock obligation、owned suspension、Task native outboxを削除しない。
+
+Androidの`firebase_auth 6.5.6`ではAuth Emulatorの`INVALID_REFRESH_TOKEN`が、Dart上で`FirebaseAuthException`（`FirebaseException`派生）、`code=unknown`、角括弧付き`INVALID_REFRESH_TOKEN` protocol markerを含むmessageとして伝播する。`firebase_auth_platform_interface 9.0.5`のAndroid message parserは末尾`" ]"`を除去するため、実環境では閉じ括弧が欠落した完全marker shapeも観測された。公開されたtyped codeを第一に分類し、`plugin=firebase_auth`かつ`code=unknown`の場合だけ、完全な角括弧markerまたはこのSDK固有の末尾欠落shapeを構造的に抽出して互換fallbackとする。`exception.toString()`や部分一致する一般メッセージは認証破棄の根拠にしない。
+
+Profile listenerの`UNAUTHENTICATED`は、即時logoutではなくsingle-flight Auth再検証のsignalとする。tokenがvalidならlistenerの通常再接続または明示的な再試行へ戻し、恒久無効ならFirebase Authをsign outする。auth stateがnullへ変わることでProfile、Group、Task、Debt、Contribution providerの依存が切れ、旧UIDのsubscriptionをdisposeしてLogin routeへ収束する。
 
 ## 6. Task / native event
 

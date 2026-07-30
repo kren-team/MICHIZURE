@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +29,7 @@ import '../features/profile/domain/profile_repository.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/profile/infrastructure/firestore_profile_repository.dart';
 import '../features/recovery/application/recovery_coordinator.dart';
+import '../features/recovery/application/auth_revalidation_gate.dart';
 import '../features/recovery/domain/recovery.dart';
 import '../features/recovery/infrastructure/firebase_recovery_auth_gateway.dart';
 import '../features/recovery/infrastructure/firestore_recovery_remote_store.dart';
@@ -51,7 +54,24 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 });
 
 final authStateProvider = StreamProvider<AuthUser?>((ref) {
-  return ref.watch(authRepositoryProvider).authStateChanges();
+  final authGateway = ref.watch(recoveryAuthGatewayProvider);
+  return ref.watch(authRepositoryProvider).authStateChanges().asyncMap((
+    user,
+  ) async {
+    if (user == null) {
+      return null;
+    }
+    final result = await authGateway.recoverSession();
+    return switch (result.status) {
+      RecoveryAuthStatus.authenticated when result.userId == user.id => user,
+      RecoveryAuthStatus.signedOut ||
+      RecoveryAuthStatus.invalidCredentialSignedOut => null,
+      RecoveryAuthStatus.temporarilyUnavailable =>
+        throw const AuthSessionValidationFailure(),
+      RecoveryAuthStatus.authenticated =>
+        throw const AuthSessionValidationFailure(),
+    };
+  });
 });
 
 final deviceControlRepositoryProvider = Provider<DeviceControlRepository>((
@@ -71,7 +91,9 @@ final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
 final recoveryAuthGatewayProvider = Provider<RecoveryAuthGateway>((ref) {
-  return FirebaseRecoveryAuthGateway(ref.watch(firebaseAuthProvider));
+  return FirebaseRecoveryAuthGateway(
+    FlutterFireAuthSessionClient(ref.watch(firebaseAuthProvider)),
+  );
 });
 
 final recoveryRemoteStoreProvider = Provider<RecoveryRemoteStore>((ref) {
@@ -119,7 +141,10 @@ final currentProfileProvider = StreamProvider<UserProfile?>((ref) {
   if (user == null) {
     return Stream.value(null);
   }
-  return ref.watch(profileRepositoryProvider).watchProfile(user.id);
+  return _withAuthRevalidation(
+    ref,
+    ref.watch(profileRepositoryProvider).watchProfile(user.id),
+  );
 });
 
 final inviteTokenGeneratorProvider = Provider<InviteTokenGenerator>((ref) {
@@ -138,7 +163,10 @@ final currentGroupProvider = StreamProvider<Group?>((ref) {
   if (groupId == null) {
     return Stream.value(null);
   }
-  return ref.watch(groupRepositoryProvider).watchGroup(groupId);
+  return _withAuthRevalidation(
+    ref,
+    ref.watch(groupRepositoryProvider).watchGroup(groupId),
+  );
 });
 
 final currentGroupMembersProvider = StreamProvider<List<GroupMember>>((ref) {
@@ -146,7 +174,10 @@ final currentGroupMembersProvider = StreamProvider<List<GroupMember>>((ref) {
   if (groupId == null) {
     return Stream.value(const []);
   }
-  return ref.watch(groupRepositoryProvider).watchMembers(groupId);
+  return _withAuthRevalidation(
+    ref,
+    ref.watch(groupRepositoryProvider).watchMembers(groupId),
+  );
 });
 
 final activeGroupDebtsProvider =
@@ -166,19 +197,28 @@ final activeGroupDebtsProvider =
               ),
             );
           }
-          return ref.watch(debtRepositoryProvider).watchActiveDebts(groupId);
+          return _withAuthRevalidation(
+            ref,
+            ref.watch(debtRepositoryProvider).watchActiveDebts(groupId),
+          );
         },
       );
     });
 
 final debtProvider = StreamProvider.autoDispose
     .family<DebtSnapshot<Debt?>, String>((ref, debtId) {
-      return ref.watch(debtRepositoryProvider).watchDebt(debtId);
+      return _withAuthRevalidation(
+        ref,
+        ref.watch(debtRepositoryProvider).watchDebt(debtId),
+      );
     });
 
 final debtContributionsProvider = StreamProvider.autoDispose
     .family<DebtSnapshot<List<DebtContributionSummary>>, String>((ref, debtId) {
-      return ref.watch(debtRepositoryProvider).watchContributions(debtId);
+      return _withAuthRevalidation(
+        ref,
+        ref.watch(debtRepositoryProvider).watchContributions(debtId),
+      );
     });
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
@@ -217,6 +257,14 @@ final recoveryCoordinatorProvider = Provider<RecoveryCoordinator>((ref) {
   );
 });
 
+final authRevalidationGateProvider = Provider<AuthRevalidationGate>((ref) {
+  return AuthRevalidationGate(() async {
+    await ref
+        .read(recoveryCoordinatorProvider)
+        .run(RecoveryTrigger.authenticationRejected);
+  });
+});
+
 final activeTaskSessionProvider = StreamProvider<TaskSession?>((ref) {
   final profile = ref.watch(currentProfileProvider);
   return profile.when(
@@ -227,7 +275,23 @@ final activeTaskSessionProvider = StreamProvider<TaskSession?>((ref) {
       if (taskId == null) {
         return Stream.value(null);
       }
-      return ref.watch(taskRepositoryProvider).watchTask(taskId);
+      return _withAuthRevalidation(
+        ref,
+        ref.watch(taskRepositoryProvider).watchTask(taskId),
+      );
     },
   );
 });
+
+Stream<T> _withAuthRevalidation<T>(Ref ref, Stream<T> source) {
+  return source.transform(
+    StreamTransformer<T, T>.fromHandlers(
+      handleError: (error, stackTrace, sink) {
+        if (error is FirebaseException && error.code == 'unauthenticated') {
+          unawaited(ref.read(authRevalidationGateProvider).request());
+        }
+        sink.addError(error, stackTrace);
+      },
+    ),
+  );
+}
