@@ -131,6 +131,7 @@ void main() {
               detectedReps: 1,
               lastSequence: 1,
               maximumLocalReps: 10,
+              detectorReady: true,
               squatSessionId: 'session-12345678',
               debtId: 'debt-1',
               qualityWarning: SquatQualityWarning.showLowerBody,
@@ -197,6 +198,8 @@ void main() {
       ),
     );
 
+    await tester.tap(find.byKey(const Key('squat-debug-diagnostics-panel')));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const Key('squat-debug-diagnostics')), findsOneWidget);
     expect(find.textContaining('Selected side: left'), findsOneWidget);
     expect(find.textContaining('Latest reject: shallowSquat'), findsOneWidget);

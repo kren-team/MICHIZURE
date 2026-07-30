@@ -302,6 +302,15 @@ final class _SquatControls extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
+        if (!state.detectorReady)
+          const Card(
+            key: Key('pose-model-loading'),
+            child: ListTile(
+              leading: CircularProgressIndicator(),
+              title: Text('姿勢判定を準備しています'),
+              subtitle: Text('カメラ映像は端末内だけで処理します。'),
+            ),
+          ),
         const Text(
           '腰から足首まで映してください。少し横向きになると判定しやすくなります。',
           textAlign: TextAlign.center,
@@ -327,7 +336,9 @@ final class _SquatControls extends StatelessWidget {
           Text('端末内判定 ${latency}ms', key: const Key('squat-latency')),
         if (kDebugMode)
           if (state.diagnostics case final diagnostics?)
-            _SquatDiagnosticsCard(diagnostics: diagnostics),
+            _CollapsibleDiagnostics(diagnostics: diagnostics)
+          else if (showNativePreview)
+            const _LiveSquatDiagnosticsPanel(),
         if (state.failure case final failure?)
           Text(
             _detectorFailureMessage(failure.reason),
@@ -420,6 +431,7 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Debug detector diagnostics'),
+              Text('Delegate: ${diagnostics.delegate?.name ?? 'initializing'}'),
               Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
               Text(
                 'Selected side: ${diagnostics.selectedSide?.name ?? 'none'}',
@@ -455,10 +467,63 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
                 '${diagnostics.acceptedReps} / ${diagnostics.rejectedAttempts}',
               ),
               Text('Inference latency: ${diagnostics.analysisLatencyMs}ms'),
+              Text(
+                'Analysis FPS: '
+                '${diagnostics.actualAnalysisFps.toStringAsFixed(1)}',
+              ),
+              Text(
+                'Inference p50 / p95: '
+                '${diagnostics.inferenceP50Ms ?? '-'} / '
+                '${diagnostics.inferenceP95Ms ?? '-'} ms',
+              ),
+              Text(
+                'Pipeline p50 / p95: '
+                '${diagnostics.nativePipelineP50Ms ?? '-'} / '
+                '${diagnostics.nativePipelineP95Ms ?? '-'} ms',
+              ),
+              Text(
+                'Dropped / busy: '
+                '${diagnostics.droppedBeforePreprocessing} / '
+                '${diagnostics.rejectedAsBusy}',
+              ),
+              Text(
+                'Results / no pose: '
+                '${diagnostics.resultCount} / ${diagnostics.noPoseCount}',
+              ),
+              Text(
+                'Diagnostic events: '
+                '${diagnostics.diagnosticEventFps.toStringAsFixed(1)} FPS',
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+final class _LiveSquatDiagnosticsPanel extends ConsumerWidget {
+  const _LiveSquatDiagnosticsPanel();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final diagnostics = ref.watch(squatDiagnosticsProvider);
+    if (diagnostics == null) return const SizedBox.shrink();
+    return _CollapsibleDiagnostics(diagnostics: diagnostics);
+  }
+}
+
+final class _CollapsibleDiagnostics extends StatelessWidget {
+  const _CollapsibleDiagnostics({required this.diagnostics});
+
+  final SquatDetectorDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      key: const Key('squat-debug-diagnostics-panel'),
+      title: const Text('判定診断（Debug）'),
+      initiallyExpanded: false,
+      children: [_SquatDiagnosticsCard(diagnostics: diagnostics)],
     );
   }
 }

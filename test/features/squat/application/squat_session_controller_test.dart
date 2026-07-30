@@ -51,6 +51,37 @@ void main() {
     expect(container.read(squatSessionControllerProvider).detectedReps, 1);
   });
 
+  test('model loading converges to ready with the native delegate', () async {
+    final detector = FakeSquatDetector();
+    final container = _container(detector, FakeContributionRepository());
+    addTearDown(() async {
+      container.dispose();
+      await detector.close();
+    });
+    final controller = container.read(squatSessionControllerProvider.notifier);
+    await _settle();
+
+    await controller.start(debtId: 'debt-a', remainingReps: 3);
+    expect(
+      container.read(squatSessionControllerProvider).detectorReady,
+      isFalse,
+    );
+    detector.emit(
+      SquatDetectorReady(
+        eventId: '$sessionId-ready',
+        occurredAt: DateTime.utc(2026, 7, 30),
+        squatSessionId: sessionId,
+        detectorVersion: 'mediapipe-lite-v1',
+        delegate: SquatInferenceDelegate.gpu,
+      ),
+    );
+    await _settle();
+
+    final state = container.read(squatSessionControllerProvider);
+    expect(state.detectorReady, isTrue);
+    expect(state.detectorDelegate, SquatInferenceDelegate.gpu);
+  });
+
   test('offline accepted rep converges into the Phase 8 Outbox', () async {
     final detector = FakeSquatDetector();
     final repository = FakeContributionRepository()
@@ -135,7 +166,7 @@ void main() {
   });
 
   test(
-    'lower-body diagnostics update UI state without creating a rep',
+    'lower-body diagnostics use isolated debug state without creating a rep',
     () async {
       final detector = FakeSquatDetector();
       final repository = FakeContributionRepository();
@@ -178,8 +209,9 @@ void main() {
       await _settle();
 
       final state = container.read(squatSessionControllerProvider);
-      expect(state.detectorState, SquatDetectorState.descending);
-      expect(state.diagnostics?.selectedSide, SquatPoseSide.right);
+      final diagnostics = container.read(squatDiagnosticsProvider);
+      expect(state.detectorState, SquatDetectorState.calibrating);
+      expect(diagnostics?.selectedSide, SquatPoseSide.right);
       expect(state.detectedReps, 0);
       expect(repository.requests, isEmpty);
     },

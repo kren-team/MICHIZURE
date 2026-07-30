@@ -24,7 +24,7 @@ private class PosePreviewView(
 ) : PlatformView {
     private val previewView =
         PreviewView(context).apply {
-            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
             scaleType = PreviewView.ScaleType.FIT_CENTER
         }
 

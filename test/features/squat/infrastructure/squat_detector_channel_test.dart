@@ -75,6 +75,23 @@ void main() {
     );
   });
 
+  test('parses MediaPipe readiness and delegate', () {
+    final detector = MethodChannelSquatDetector(methodChannel: channel);
+    final event = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'detectorReady',
+      'eventId': 'session-12345678_ready_1',
+      'occurredAtEpochMs': 1_000,
+      'squatSessionId': 'session-12345678',
+      'detectorType': 'mediapipe',
+      'detectorVersion': 'mediapipe-lite-v1',
+      'delegate': 'gpu',
+    });
+
+    expect(event, isA<SquatDetectorReady>());
+    expect((event as SquatDetectorReady).delegate, SquatInferenceDelegate.gpu);
+  });
+
   test(
     'parses a minimal rep event and rejects private or malformed fields',
     () {
@@ -86,7 +103,7 @@ void main() {
         'occurredAtEpochMs': 1_000,
         'squatSessionId': 'session-12345678',
         'sequence': 1,
-        'detectorType': 'mlkit',
+        'detectorType': 'mediapipe',
         'detectorVersion': 'squat-v1',
         'frameObservedElapsedMs': 500,
         'uiEmittedElapsedMs': 550,
@@ -106,7 +123,7 @@ void main() {
             'occurredAtEpochMs': 1_000,
             'squatSessionId': 'session-12345678',
             'sequence': 1,
-            'detectorType': 'mlkit',
+            'detectorType': 'mediapipe',
             'detectorVersion': 'squat-v1',
             'frameObservedElapsedMs': 500,
             'uiEmittedElapsedMs': 550,
@@ -133,7 +150,7 @@ void main() {
             'occurredAtEpochMs': 1_000,
             'squatSessionId': 'session-12345678',
             'sequence': 1,
-            'detectorType': 'mlkit',
+            'detectorType': 'mediapipe',
             'detectorVersion': 'squat-v1',
             'frameObservedElapsedMs': 500,
             'uiEmittedElapsedMs': 550,
@@ -171,6 +188,18 @@ void main() {
       'analysisLatencyMs': 80,
       'acceptedReps': 1,
       'rejectedAttempts': 0,
+      'delegate': 'cpu',
+      'sampleCount': 20,
+      'actualAnalysisFps': 10.0,
+      'droppedBeforePreprocessing': 12,
+      'rejectedAsBusy': 2,
+      'resultCount': 20,
+      'noPoseCount': 3,
+      'inferenceP50Ms': 45,
+      'inferenceP95Ms': 80,
+      'nativePipelineP50Ms': 55,
+      'nativePipelineP95Ms': 95,
+      'diagnosticEventFps': 5.0,
     });
 
     expect(event, isA<SquatDetectorDiagnostics>());
@@ -203,6 +232,18 @@ void main() {
         'analysisLatencyMs': 80,
         'acceptedReps': 1,
         'rejectedAttempts': 0,
+        'delegate': 'cpu',
+        'sampleCount': 20,
+        'actualAnalysisFps': 10.0,
+        'droppedBeforePreprocessing': 12,
+        'rejectedAsBusy': 2,
+        'resultCount': 20,
+        'noPoseCount': 3,
+        'inferenceP50Ms': 45,
+        'inferenceP95Ms': 80,
+        'nativePipelineP50Ms': 55,
+        'nativePipelineP95Ms': 95,
+        'diagnosticEventFps': 5.0,
         'landmarks': <Object>[],
       }),
       throwsA(isA<SquatDetectorFailure>()),

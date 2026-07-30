@@ -138,10 +138,13 @@ class PoseFeatureExtractor(
         val hip = landmarks.hip ?: return null
         val knee = landmarks.knee ?: return null
         val ankle = landmarks.ankle ?: return null
+        if (!hip.isUsable() || !knee.isUsable() || !ankle.isUsable()) return null
         val confidence = min(hip.confidence, min(knee.confidence, ankle.confidence))
         val kneeAngle = angle(hip, knee, ankle) ?: return null
         val legLength = distance(hip, knee) + distance(knee, ankle)
-        if (legLength <= 1e-6) return null
+        if (!kneeAngle.isFinite() || !legLength.isFinite() || legLength <= 1e-6) {
+            return null
+        }
         return SideMeasurement(
             kneeAngle = kneeAngle,
             hipY = hip.y,
@@ -179,6 +182,9 @@ class PoseFeatureExtractor(
 
     private fun distance(a: PosePoint, b: PosePoint): Double =
         hypot(a.x - b.x, a.y - b.y)
+
+    private fun PosePoint.isUsable(): Boolean =
+        x.isFinite() && y.isFinite() && confidence.isFinite()
 
     private fun invalid(
         pose: LowerBodyPose,

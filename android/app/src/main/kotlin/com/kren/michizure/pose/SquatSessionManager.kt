@@ -16,26 +16,32 @@ class SquatSessionManager(
     private val sourceFactory: (
         PreviewView,
         LifecycleOwner,
-        (PoseFeatureResult, Long) -> Unit,
+        (PoseDelegate) -> Unit,
+        (PoseFrameDelivery) -> PoseFrameCompletion,
         (String) -> Unit,
-    ) -> PoseSource = { view, owner, onFrame, onFailure ->
-        CameraMlKitPoseSource(
+    ) -> PoseSource = { view, owner, onReady, onFrame, onFailure ->
+        CameraMediaPipePoseSource(
             context = view.context.applicationContext,
             lifecycleOwner = owner,
             previewView = view,
+            onReady = onReady,
             onFrame = onFrame,
             onFailure = onFailure,
         )
     },
 ) : AutoCloseable {
+    private val detectorConfig = SquatDetectorConfig()
     private var session: NativeSquatSession? = null
     private var previewView: PreviewView? = null
     private var source: PoseSource? = null
-    private var machine = SquatStateMachine()
+    private var machine = SquatStateMachine(detectorConfig)
     private var lastState: SquatState? = null
     private var lastWarning: PoseQualityWarning? = null
     private var lastDiagnosticsEmitMs = Long.MIN_VALUE
+    private var lastDiagnosticsPayload: Map<String, Any?>? = null
+    private val diagnosticEmitTimesMs = ArrayDeque<Long>()
     private val latenciesMs = ArrayDeque<Long>()
+    private var delegate: PoseDelegate? = null
 
     @Synchronized
     fun attachPreview(view: PreviewView) {
@@ -60,11 +66,14 @@ class SquatSessionManager(
         }
         check(current == null) { "A different squat session is already active" }
         session = newSession
-        machine = SquatStateMachine()
+        machine = SquatStateMachine(detectorConfig)
         lastState = null
         lastWarning = null
         latenciesMs.clear()
+        diagnosticEmitTimesMs.clear()
         lastDiagnosticsEmitMs = Long.MIN_VALUE
+        lastDiagnosticsPayload = null
+        delegate = null
         emit(
             type = "calibrating",
             values =
@@ -91,7 +100,10 @@ class SquatSessionManager(
         lastState = null
         lastWarning = null
         latenciesMs.clear()
+        diagnosticEmitTimesMs.clear()
         lastDiagnosticsEmitMs = Long.MIN_VALUE
+        lastDiagnosticsPayload = null
+        delegate = null
         return true
     }
 
@@ -112,40 +124,59 @@ class SquatSessionManager(
 
     @Synchronized
     private fun startSourceIfReady() {
-        val currentSession = session ?: return
+        session ?: return
         val view = previewView ?: return
         if (source != null) return
         source =
             sourceFactory(
                 view,
                 lifecycleOwner,
+                ::onDetectorReady,
                 ::onFrame,
                 ::onDetectorFailure,
             ).also { it.start() }
+    }
+
+    @Synchronized
+    private fun onDetectorReady(selectedDelegate: PoseDelegate) {
+        val currentSession = session ?: return
+        delegate = selectedDelegate
         emit(
             type = "detectorReady",
             values =
                 mapOf(
-                    "detectorType" to "mlkit",
+                    "detectorType" to "mediapipe",
                     "detectorVersion" to SquatDetectorConfig.VERSION,
+                    "delegate" to selectedDelegate.wireValue,
                     "squatSessionId" to currentSession.squatSessionId,
                 ),
         )
     }
 
     @Synchronized
-    private fun onFrame(
-        feature: PoseFeatureResult,
-        latencyMs: Long,
-    ) {
-        val current = session ?: return
+    private fun onFrame(delivery: PoseFrameDelivery): PoseFrameCompletion {
+        val current =
+            session
+                ?: return PoseFrameCompletion(
+                    stateMachineCompletedNs = elapsedNs(),
+                    nativeEventDispatchedNs = null,
+                )
+        val feature = delivery.feature
+        val update = machine.process(feature)
+        val stateMachineCompletedNs = elapsedNs()
+        val latency =
+            delivery.latency.copy(
+                stateMachineCompletedNs = stateMachineCompletedNs,
+            )
+        val latencyMs = latency.nativePipelineMs
         latenciesMs.addLast(latencyMs)
         while (latenciesMs.size > MAX_LATENCY_SAMPLES) latenciesMs.removeFirst()
-        val update = machine.process(feature)
-        emitDiagnosticsIfDue(current, update, latencyMs)
+        emitDiagnosticsIfDue(current, update, latencyMs, delivery.metrics)
+        var lastDispatchNs: Long? = null
         if (update.state != lastState) {
             lastState = update.state
-            emit(
+            lastDispatchNs =
+                emit(
                 type = "stateChanged",
                 values =
                     mapOf(
@@ -153,11 +184,12 @@ class SquatSessionManager(
                         "squatSessionId" to current.squatSessionId,
                         "analysisLatencyMs" to latencyMs,
                     ),
-            )
+                )
         }
         if (update.qualityWarning != lastWarning) {
             lastWarning = update.qualityWarning
-            emit(
+            lastDispatchNs =
+                emit(
                 type = "qualityWarning",
                 values =
                     mapOf(
@@ -165,31 +197,37 @@ class SquatSessionManager(
                         "squatSessionId" to current.squatSessionId,
                         "analysisLatencyMs" to latencyMs,
                     ),
-            )
+                )
         }
         if (update.repCompleted) {
-            emit(
+            lastDispatchNs =
+                emit(
                 type = "repCompleted",
                 eventId = "${current.squatSessionId}_${update.repSequence}",
                 values =
                     mapOf(
                         "squatSessionId" to current.squatSessionId,
                         "sequence" to update.repSequence,
-                        "detectorType" to "mlkit",
+                        "detectorType" to "mediapipe",
                         "detectorVersion" to SquatDetectorConfig.VERSION,
                         "frameObservedElapsedMs" to
                             (feature as? PoseFeatureResult.Valid)?.sample?.timestampMs,
                         "uiEmittedElapsedMs" to elapsedMs(),
                         "analysisLatencyMs" to latencyMs,
                     ),
-            )
+                )
         }
+        return PoseFrameCompletion(
+            stateMachineCompletedNs = stateMachineCompletedNs,
+            nativeEventDispatchedNs = lastDispatchNs,
+        )
     }
 
     private fun emitDiagnosticsIfDue(
         current: NativeSquatSession,
         update: SquatDetectorUpdate,
         latencyMs: Long,
+        metrics: PosePipelineMetrics,
     ) {
         val debugBuild =
             previewView?.context?.applicationInfo?.flags
@@ -197,37 +235,53 @@ class SquatSessionManager(
         if (!debugBuild) return
         val now = elapsedMs()
         if (lastDiagnosticsEmitMs != Long.MIN_VALUE &&
-            now - lastDiagnosticsEmitMs < DIAGNOSTICS_INTERVAL_MS &&
+            now - lastDiagnosticsEmitMs < detectorConfig.diagnosticIntervalMs &&
             !update.repCompleted
         ) {
             return
         }
-        lastDiagnosticsEmitMs = now
         val diagnostics = update.diagnostics
-        emit(
-            type = "diagnostics",
-            values =
-                mapOf(
-                    "squatSessionId" to current.squatSessionId,
-                    "poseDetected" to diagnostics.poseDetected,
-                    "selectedSide" to diagnostics.selectedSide?.wireValue,
-                    "leftHipConfidence" to diagnostics.leftHipConfidence,
-                    "leftKneeConfidence" to diagnostics.leftKneeConfidence,
-                    "leftAnkleConfidence" to diagnostics.leftAnkleConfidence,
-                    "rightHipConfidence" to diagnostics.rightHipConfidence,
-                    "rightKneeConfidence" to diagnostics.rightKneeConfidence,
-                    "rightAnkleConfidence" to diagnostics.rightAnkleConfidence,
-                    "kneeAngle" to diagnostics.kneeAngleDeg,
-                    "normalizedHipDrop" to diagnostics.normalizedHipDrop,
-                    "kneeAngularVelocity" to diagnostics.kneeAngularVelocity,
-                    "hipVerticalVelocity" to diagnostics.hipVerticalVelocity,
-                    "state" to update.state.wireValue,
-                    "latestRejectReason" to diagnostics.latestRejectReason,
-                    "analysisLatencyMs" to latencyMs,
-                    "acceptedReps" to update.repSequence,
-                    "rejectedAttempts" to diagnostics.rejectedAttempts,
-                ),
-        )
+        val values =
+            mapOf(
+                "squatSessionId" to current.squatSessionId,
+                "delegate" to delegate?.wireValue,
+                "poseDetected" to diagnostics.poseDetected,
+                "selectedSide" to diagnostics.selectedSide?.wireValue,
+                "leftHipConfidence" to diagnostics.leftHipConfidence,
+                "leftKneeConfidence" to diagnostics.leftKneeConfidence,
+                "leftAnkleConfidence" to diagnostics.leftAnkleConfidence,
+                "rightHipConfidence" to diagnostics.rightHipConfidence,
+                "rightKneeConfidence" to diagnostics.rightKneeConfidence,
+                "rightAnkleConfidence" to diagnostics.rightAnkleConfidence,
+                "kneeAngle" to diagnostics.kneeAngleDeg,
+                "normalizedHipDrop" to diagnostics.normalizedHipDrop,
+                "kneeAngularVelocity" to diagnostics.kneeAngularVelocity,
+                "hipVerticalVelocity" to diagnostics.hipVerticalVelocity,
+                "state" to update.state.wireValue,
+                "latestRejectReason" to diagnostics.latestRejectReason,
+                "analysisLatencyMs" to latencyMs,
+                "acceptedReps" to update.repSequence,
+                "rejectedAttempts" to diagnostics.rejectedAttempts,
+                "sampleCount" to metrics.sampleCount,
+                "actualAnalysisFps" to metrics.actualAnalysisFps,
+                "droppedBeforePreprocessing" to metrics.droppedBeforePreprocessing,
+                "rejectedAsBusy" to metrics.rejectedAsBusy,
+                "resultCount" to metrics.resultCount,
+                "noPoseCount" to metrics.noPoseCount,
+                "inferenceP50Ms" to metrics.inferenceP50Ms,
+                "inferenceP95Ms" to metrics.inferenceP95Ms,
+                "nativePipelineP50Ms" to metrics.nativePipelineP50Ms,
+                "nativePipelineP95Ms" to metrics.nativePipelineP95Ms,
+                "diagnosticEventFps" to diagnosticEventFps(now) + 1,
+            )
+        if (values == lastDiagnosticsPayload && !update.repCompleted) return
+        lastDiagnosticsEmitMs = now
+        lastDiagnosticsPayload = values
+        diagnosticEmitTimesMs.addLast(now)
+        while (diagnosticEmitTimesMs.size > MAX_DIAGNOSTIC_EMIT_SAMPLES) {
+            diagnosticEmitTimesMs.removeFirst()
+        }
+        emit(type = "diagnostics", values = values)
     }
 
     @Synchronized
@@ -247,8 +301,8 @@ class SquatSessionManager(
         type: String,
         eventId: String? = null,
         values: Map<String, Any?> = emptyMap(),
-    ) {
-        val current = session ?: return
+    ): Long? {
+        val current = session ?: return null
         val emittedAt = elapsedMs()
         SquatEventBus.emit(
             SquatContract.versioned(
@@ -263,6 +317,7 @@ class SquatSessionManager(
                 ) + values,
             ),
         )
+        return elapsedNs()
     }
 
     private fun latencyP95(): Long? {
@@ -274,6 +329,17 @@ class SquatSessionManager(
 
     private fun elapsedMs(): Long = SystemClock.elapsedRealtimeNanos() / 1_000_000
 
+    private fun elapsedNs(): Long = SystemClock.elapsedRealtimeNanos()
+
+    private fun diagnosticEventFps(nowMs: Long): Double {
+        while (diagnosticEmitTimesMs.isNotEmpty() &&
+            nowMs - diagnosticEmitTimesMs.first() > 1_000
+        ) {
+            diagnosticEmitTimesMs.removeFirst()
+        }
+        return diagnosticEmitTimesMs.size.toDouble()
+    }
+
     override fun close() {
         stop(null)
         previewView = null
@@ -281,6 +347,6 @@ class SquatSessionManager(
 
     companion object {
         private const val MAX_LATENCY_SAMPLES = 300
-        private const val DIAGNOSTICS_INTERVAL_MS = 200
+        private const val MAX_DIAGNOSTIC_EMIT_SAMPLES = 8
     }
 }

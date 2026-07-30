@@ -6,11 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SquatStateMachineTest {
-    private val config =
-        SquatDetectorConfig(
-            medianWindowSize = 1,
-            emaAlpha = 1.0,
-        )
+    private val config = SquatDetectorConfig()
 
     @Test
     fun validLowerBodyCycleProducesExactlyOneRep() {

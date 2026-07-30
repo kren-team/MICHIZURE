@@ -13,6 +13,8 @@ enum SquatQualityWarning {
 
 enum SquatPoseSide { left, right }
 
+enum SquatInferenceDelegate { gpu, cpu }
+
 enum SquatDetectorFailureReason {
   permissionDenied,
   permissionPermanentlyDenied,
@@ -53,10 +55,12 @@ final class SquatDetectorReady extends SquatDetectorEvent {
     required super.occurredAt,
     required this.squatSessionId,
     required this.detectorVersion,
+    required this.delegate,
   });
 
   final String squatSessionId;
   final String detectorVersion;
+  final SquatInferenceDelegate delegate;
 }
 
 final class SquatStateChanged extends SquatDetectorEvent {
@@ -141,6 +145,18 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required this.analysisLatencyMs,
     required this.acceptedReps,
     required this.rejectedAttempts,
+    this.delegate,
+    this.sampleCount = 0,
+    this.actualAnalysisFps = 0,
+    this.droppedBeforePreprocessing = 0,
+    this.rejectedAsBusy = 0,
+    this.resultCount = 0,
+    this.noPoseCount = 0,
+    this.inferenceP50Ms,
+    this.inferenceP95Ms,
+    this.nativePipelineP50Ms,
+    this.nativePipelineP95Ms,
+    this.diagnosticEventFps = 0,
   });
 
   final String squatSessionId;
@@ -161,6 +177,18 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final int analysisLatencyMs;
   final int acceptedReps;
   final int rejectedAttempts;
+  final SquatInferenceDelegate? delegate;
+  final int sampleCount;
+  final double actualAnalysisFps;
+  final int droppedBeforePreprocessing;
+  final int rejectedAsBusy;
+  final int resultCount;
+  final int noPoseCount;
+  final int? inferenceP50Ms;
+  final int? inferenceP95Ms;
+  final int? nativePipelineP50Ms;
+  final int? nativePipelineP95Ms;
+  final double diagnosticEventFps;
 }
 
 abstract interface class SquatDetector {

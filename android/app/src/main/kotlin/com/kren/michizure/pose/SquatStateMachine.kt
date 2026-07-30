@@ -1,6 +1,5 @@
 package com.kren.michizure.pose
 
-import java.util.ArrayDeque
 import kotlin.math.max
 import kotlin.math.min
 
@@ -16,10 +15,6 @@ class SquatStateMachine(
     var rejectedAttempts: Int = 0
         private set
 
-    private val samples = ArrayDeque<PoseFeatureSample>()
-    private var filteredKnee: Double? = null
-    private var filteredHipY: Double? = null
-    private var filteredLegLength: Double? = null
     private var previousTimestampMs: Long? = null
     private var previousKnee: Double? = null
     private var previousHipY: Double? = null
@@ -54,10 +49,6 @@ class SquatStateMachine(
         state = SquatState.CALIBRATING
         repSequence = 0
         rejectedAttempts = 0
-        samples.clear()
-        filteredKnee = null
-        filteredHipY = null
-        filteredLegLength = null
         previousTimestampMs = null
         previousKnee = null
         previousHipY = null
@@ -112,7 +103,7 @@ class SquatStateMachine(
             resetToCalibrating()
         }
         invalidSinceMs = null
-        val sample = smooth(raw)
+        val sample = raw
         val priorKnee = previousKnee
         val priorHipY = previousHipY
         val priorTimestamp = previousTimestampMs
@@ -325,25 +316,6 @@ class SquatStateMachine(
         return update(repCompleted = true)
     }
 
-    private fun smooth(raw: PoseFeatureSample): PoseFeatureSample {
-        samples.addLast(raw)
-        while (samples.size > config.medianWindowSize) samples.removeFirst()
-        val medianKnee = median(samples.map { it.kneeAngleDeg })
-        val medianHipY = median(samples.map { it.hipY })
-        val medianLeg = median(samples.map { it.legLength })
-        filteredKnee = ema(filteredKnee, medianKnee)
-        filteredHipY = ema(filteredHipY, medianHipY)
-        filteredLegLength = ema(filteredLegLength, medianLeg)
-        return raw.copy(
-            kneeAngleDeg = requireNotNull(filteredKnee),
-            hipY = requireNotNull(filteredHipY),
-            legLength = requireNotNull(filteredLegLength),
-        )
-    }
-
-    private fun ema(previous: Double?, current: Double): Double =
-        previous?.let { config.emaAlpha * current + (1 - config.emaAlpha) * it } ?: current
-
     private fun isStanding(sample: PoseFeatureSample): Boolean =
         sample.kneeAngleDeg >=
             max(
@@ -384,10 +356,6 @@ class SquatStateMachine(
         stateEnteredMs = null
         resetCalibration()
         clearCycle()
-        samples.clear()
-        filteredKnee = null
-        filteredHipY = null
-        filteredLegLength = null
         previousKnee = null
         previousHipY = null
         previousTimestampMs = null

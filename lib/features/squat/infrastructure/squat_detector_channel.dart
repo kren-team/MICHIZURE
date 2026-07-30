@@ -132,6 +132,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'squatSessionId',
         'detectorType',
         'detectorVersion',
+        'delegate',
       },
       'calibrating' => {
         ..._baseEventFields,
@@ -182,6 +183,18 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'analysisLatencyMs',
         'acceptedReps',
         'rejectedAttempts',
+        'delegate',
+        'sampleCount',
+        'actualAnalysisFps',
+        'droppedBeforePreprocessing',
+        'rejectedAsBusy',
+        'resultCount',
+        'noPoseCount',
+        'inferenceP50Ms',
+        'inferenceP95Ms',
+        'nativePipelineP50Ms',
+        'nativePipelineP95Ms',
+        'diagnosticEventFps',
       },
       _ => const <String>{},
     };
@@ -268,6 +281,21 @@ final class MethodChannelSquatDetector implements SquatDetector {
       analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
       acceptedReps: _nonNegativeInt(raw, 'acceptedReps'),
       rejectedAttempts: _nonNegativeInt(raw, 'rejectedAttempts'),
+      delegate: _delegate(raw['delegate']),
+      sampleCount: _nonNegativeInt(raw, 'sampleCount'),
+      actualAnalysisFps: _nonNegativeDouble(raw, 'actualAnalysisFps'),
+      droppedBeforePreprocessing: _nonNegativeInt(
+        raw,
+        'droppedBeforePreprocessing',
+      ),
+      rejectedAsBusy: _nonNegativeInt(raw, 'rejectedAsBusy'),
+      resultCount: _nonNegativeInt(raw, 'resultCount'),
+      noPoseCount: _nonNegativeInt(raw, 'noPoseCount'),
+      inferenceP50Ms: _nullableNonNegativeInt(raw, 'inferenceP50Ms'),
+      inferenceP95Ms: _nullableNonNegativeInt(raw, 'inferenceP95Ms'),
+      nativePipelineP50Ms: _nullableNonNegativeInt(raw, 'nativePipelineP50Ms'),
+      nativePipelineP95Ms: _nullableNonNegativeInt(raw, 'nativePipelineP95Ms'),
+      diagnosticEventFps: _nonNegativeDouble(raw, 'diagnosticEventFps'),
     );
   }
 
@@ -276,7 +304,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
     String eventId,
     DateTime occurredAt,
   ) {
-    if (raw['detectorType'] != 'mlkit') {
+    if (raw['detectorType'] != 'mediapipe') {
       throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       );
@@ -286,6 +314,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       occurredAt: occurredAt,
       squatSessionId: _sessionId(raw),
       detectorVersion: _detectorVersion(raw),
+      delegate: _delegate(raw['delegate']),
     );
   }
 
@@ -297,7 +326,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
     final sessionId = _sessionId(raw);
     final sequence = _positiveInt(raw, 'sequence');
     if (sequence > 999999999 ||
-        raw['detectorType'] != 'mlkit' ||
+        raw['detectorType'] != 'mediapipe' ||
         eventId != '${sessionId}_$sequence') {
       throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
@@ -363,6 +392,37 @@ final class MethodChannelSquatDetector implements SquatDetector {
       );
     }
     return value;
+  }
+
+  int? _nullableNonNegativeInt(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) return null;
+    if (value is! int || value < 0) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value;
+  }
+
+  double _nonNegativeDouble(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value is! num || !value.isFinite || value < 0) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value.toDouble();
+  }
+
+  SquatInferenceDelegate _delegate(Object? value) {
+    return switch (value) {
+      'gpu' => SquatInferenceDelegate.gpu,
+      'cpu' => SquatInferenceDelegate.cpu,
+      _ => throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      ),
+    };
   }
 
   double? _nullableDouble(Map<dynamic, dynamic> map, String key) {
