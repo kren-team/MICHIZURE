@@ -63,6 +63,25 @@ void main() {
     expect(productionText, isNot(contains('syntheticPose')));
   });
 
+  test('release uses one bundled MediaPipe Lite model without ML Kit', () {
+    final appBuild = File('android/app/build.gradle.kts').readAsStringSync();
+    final taskModels = Directory('android/app/src/main/assets')
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.task'))
+        .toList();
+    final contributionScreen = File(
+      'lib/features/debt/presentation/contribution_session_screen.dart',
+    ).readAsStringSync();
+
+    expect(appBuild, contains('com.google.mediapipe:tasks-vision:1.0.0'));
+    expect(appBuild, isNot(contains('pose-detection')));
+    expect(taskModels, hasLength(1));
+    expect(taskModels.single.path, endsWith('pose_landmarker_lite.task'));
+    expect(taskModels.single.lengthSync(), 5777746);
+    expect(contributionScreen, contains('if (kDebugMode)'));
+  });
+
   test('demo target is isolated and requests no permission', () {
     final targetManifest = File(
       'tools/demo-target/app/src/main/AndroidManifest.xml',
