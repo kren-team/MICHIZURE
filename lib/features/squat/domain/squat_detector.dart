@@ -6,22 +6,26 @@ enum SquatQualityWarning {
   noPoseDetected,
   hipUnavailable,
   kneeUnavailable,
+  ankleUnavailable,
   moveFartherBack,
   moveCloser,
   lowLightOrConfidence,
   holdStillToCalibrate,
+  squatDeeper,
+  tooDeep,
   cameraUnavailable,
 }
 
-enum SquatTrackingStatus {
+enum SquatPoseSide { left, right }
+
+enum SquatPoseTrackingStatus {
   noPose,
   hipUnavailable,
   kneeUnavailable,
+  ankleUnavailable,
   confidenceInsufficient,
   valid,
 }
-
-enum SquatPoseSide { left, right }
 
 enum SquatInferenceDelegate { gpu, cpu }
 
@@ -139,7 +143,6 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required super.occurredAt,
     required this.squatSessionId,
     required this.poseDetected,
-    required this.trackingStatus,
     required this.selectedSide,
     required this.leftHipConfidence,
     required this.leftKneeConfidence,
@@ -147,13 +150,16 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required this.rightHipConfidence,
     required this.rightKneeConfidence,
     required this.rightAnkleConfidence,
-    required this.normalizedVerticalGap,
+    required this.kneeAngle,
     required this.normalizedHipDrop,
+    required this.kneeAngularVelocity,
+    required this.hipVerticalVelocity,
     required this.state,
     required this.latestRejectReason,
     required this.analysisLatencyMs,
     required this.acceptedReps,
     required this.rejectedAttempts,
+    this.trackingStatus = SquatPoseTrackingStatus.noPose,
     this.delegate,
     this.sampleCount = 0,
     this.actualAnalysisFps = 0,
@@ -170,7 +176,6 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
 
   final String squatSessionId;
   final bool poseDetected;
-  final SquatTrackingStatus trackingStatus;
   final SquatPoseSide? selectedSide;
   final double? leftHipConfidence;
   final double? leftKneeConfidence;
@@ -178,13 +183,16 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final double? rightHipConfidence;
   final double? rightKneeConfidence;
   final double? rightAnkleConfidence;
-  final double? normalizedVerticalGap;
+  final double? kneeAngle;
   final double? normalizedHipDrop;
+  final double? kneeAngularVelocity;
+  final double? hipVerticalVelocity;
   final SquatDetectorState state;
   final String? latestRejectReason;
   final int analysisLatencyMs;
   final int acceptedReps;
   final int rejectedAttempts;
+  final SquatPoseTrackingStatus trackingStatus;
   final SquatInferenceDelegate? delegate;
   final int sampleCount;
   final double actualAnalysisFps;

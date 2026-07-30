@@ -116,7 +116,12 @@ class CameraMediaPipePoseSource(
                 runCatching {
                     val provider = future.get()
                     cameraProvider = provider
-                    bindUseCases(provider)
+                    cameraContainer.previewView.post {
+                        if (!closed.get()) {
+                            runCatching { bindUseCases(provider) }
+                                .onFailure { onFailure("cameraUnavailable") }
+                        }
+                    }
                 }.onFailure {
                     onFailure("cameraUnavailable")
                 }
@@ -141,7 +146,7 @@ class CameraMediaPipePoseSource(
 
         val preview =
             Preview.Builder()
-                .setTargetFrameRate(Range(PREVIEW_TARGET_FPS, PREVIEW_TARGET_FPS))
+                .setTargetFrameRate(Range(PREVIEW_MIN_FPS, PREVIEW_TARGET_FPS))
                 .build()
                 .also {
                 it.surfaceProvider = previewView.surfaceProvider
@@ -165,17 +170,15 @@ class CameraMediaPipePoseSource(
                     useCase.setAnalyzer(analyzerExecutor, ::analyze)
                 }
 
-        provider.unbindAll()
         val viewPort = previewView.viewPort ?: error("Preview viewport is not ready")
-        provider.bindToLifecycle(
-            lifecycleOwner,
-            selector,
+        val useCases =
             UseCaseGroup.Builder()
                 .setViewPort(viewPort)
                 .addUseCase(preview)
                 .addUseCase(analysis)
-                .build(),
-        )
+                .build()
+        provider.unbindAll()
+        provider.bindToLifecycle(lifecycleOwner, selector, useCases)
     }
 
     private fun analyze(imageProxy: ImageProxy) {
@@ -328,28 +331,32 @@ class CameraMediaPipePoseSource(
                         delegate = requireNotNull(delegate),
                     ),
                 )
+            val selectedSide =
+                (feature as? PoseFeatureResult.Valid)?.sample?.selectedSide
+                    ?: feature.quality.selectedSide
+            val guideSide =
+                when (selectedSide) {
+                    PoseSide.LEFT -> filteredPose.left
+                    PoseSide.RIGHT -> filteredPose.right
+                    null -> preferredGuideSide(filteredPose)
+                }
+            cameraContainer.updateGuide(
+                SquatGuideFrame(
+                    timestampMs = frame.timestampMs,
+                    sourceTransform = frame.sourceTransform,
+                    hip = guideSide?.hip,
+                    knee = guideSide?.knee,
+                    ankle = guideSide?.ankle,
+                    trackingStatus = completion.trackingStatus,
+                    state = completion.state,
+                ),
+            )
             val completed =
                 beforeStateMachine.copy(
                     stateMachineCompletedNs = completion.stateMachineCompletedNs,
                     nativeEventDispatchedNs = completion.nativeEventDispatchedNs,
                 )
             stats.recordResult(completed, pose.poseDetected)
-            val selectedSide =
-                when (completion.selectedSide) {
-                    PoseSide.LEFT -> filteredPose.left
-                    PoseSide.RIGHT -> filteredPose.right
-                    null -> bestOverlaySide(filteredPose)
-                }
-            cameraContainer.updateGuide(
-                SquatGuideFrame(
-                    sourceTransform = frame.sourceTransform,
-                    hip = selectedSide?.hip,
-                    knee = selectedSide?.knee,
-                    trackingStatus = completion.trackingStatus,
-                    state = completion.state,
-                    timestampMs = frame.timestampMs,
-                ),
-            )
         } finally {
             frame.close()
             frameGate.release()
@@ -398,6 +405,7 @@ class CameraMediaPipePoseSource(
         if (!closed.compareAndSet(false, true)) return
         cameraProvider?.unbindAll()
         cameraProvider = null
+        cameraContainer.clearGuide()
         frameGate.reset()
         runCatching {
             analyzerExecutor.execute {
@@ -436,8 +444,19 @@ class CameraMediaPipePoseSource(
 
     private fun monotonicNs(): Long = SystemClock.elapsedRealtimeNanos()
 
+    private fun preferredGuideSide(pose: LowerBodyPose): LowerBodySide? {
+        fun score(side: LowerBodySide?): Double =
+            listOfNotNull(
+                side?.hip?.confidence,
+                side?.knee?.confidence,
+                side?.ankle?.confidence,
+            ).minOrNull() ?: -1.0
+        return if (score(pose.left) >= score(pose.right)) pose.left else pose.right
+    }
+
     private companion object {
         const val NANOS_PER_MILLISECOND = 1_000_000L
+        const val PREVIEW_MIN_FPS = 24
         const val PREVIEW_TARGET_FPS = 30
     }
 }

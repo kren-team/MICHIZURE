@@ -175,8 +175,10 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'rightHipConfidence',
         'rightKneeConfidence',
         'rightAnkleConfidence',
-        'normalizedVerticalGap',
+        'kneeAngle',
         'normalizedHipDrop',
+        'kneeAngularVelocity',
+        'hipVerticalVelocity',
         'state',
         'latestRejectReason',
         'analysisLatencyMs',
@@ -257,7 +259,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       occurredAt: occurredAt,
       squatSessionId: _sessionId(raw),
       poseDetected: poseDetected,
-      trackingStatus: _trackingStatus(raw['trackingStatus']),
+      trackingStatus: _trackingStatus(_string(raw, 'trackingStatus')),
       selectedSide: switch (raw['selectedSide']) {
         null => null,
         'left' => SquatPoseSide.left,
@@ -272,8 +274,10 @@ final class MethodChannelSquatDetector implements SquatDetector {
       rightHipConfidence: _nullableDouble(raw, 'rightHipConfidence'),
       rightKneeConfidence: _nullableDouble(raw, 'rightKneeConfidence'),
       rightAnkleConfidence: _nullableDouble(raw, 'rightAnkleConfidence'),
-      normalizedVerticalGap: _nullableDouble(raw, 'normalizedVerticalGap'),
+      kneeAngle: _nullableDouble(raw, 'kneeAngle'),
       normalizedHipDrop: _nullableDouble(raw, 'normalizedHipDrop'),
+      kneeAngularVelocity: _nullableDouble(raw, 'kneeAngularVelocity'),
+      hipVerticalVelocity: _nullableDouble(raw, 'hipVerticalVelocity'),
       state: _state(_string(raw, 'state')),
       latestRejectReason: latestRejectReason as String?,
       analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
@@ -453,10 +457,13 @@ final class MethodChannelSquatDetector implements SquatDetector {
       'noPoseDetected' => SquatQualityWarning.noPoseDetected,
       'hipUnavailable' => SquatQualityWarning.hipUnavailable,
       'kneeUnavailable' => SquatQualityWarning.kneeUnavailable,
+      'ankleUnavailable' => SquatQualityWarning.ankleUnavailable,
       'moveFartherBack' => SquatQualityWarning.moveFartherBack,
       'moveCloser' => SquatQualityWarning.moveCloser,
       'lowLightOrConfidence' => SquatQualityWarning.lowLightOrConfidence,
       'holdStillToCalibrate' => SquatQualityWarning.holdStillToCalibrate,
+      'squatDeeper' => SquatQualityWarning.squatDeeper,
+      'tooDeep' => SquatQualityWarning.tooDeep,
       'cameraUnavailable' => SquatQualityWarning.cameraUnavailable,
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
@@ -464,13 +471,15 @@ final class MethodChannelSquatDetector implements SquatDetector {
     };
   }
 
-  SquatTrackingStatus _trackingStatus(dynamic value) {
+  SquatPoseTrackingStatus _trackingStatus(String value) {
     return switch (value) {
-      'noPose' => SquatTrackingStatus.noPose,
-      'hipUnavailable' => SquatTrackingStatus.hipUnavailable,
-      'kneeUnavailable' => SquatTrackingStatus.kneeUnavailable,
-      'confidenceInsufficient' => SquatTrackingStatus.confidenceInsufficient,
-      'valid' => SquatTrackingStatus.valid,
+      'noPose' => SquatPoseTrackingStatus.noPose,
+      'hipUnavailable' => SquatPoseTrackingStatus.hipUnavailable,
+      'kneeUnavailable' => SquatPoseTrackingStatus.kneeUnavailable,
+      'ankleUnavailable' => SquatPoseTrackingStatus.ankleUnavailable,
+      'confidenceInsufficient' =>
+        SquatPoseTrackingStatus.confidenceInsufficient,
+      'valid' => SquatPoseTrackingStatus.valid,
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       ),

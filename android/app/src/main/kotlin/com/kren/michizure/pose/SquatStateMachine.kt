@@ -4,10 +4,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Temporal squat detector based only on same-side hip/knee vertical geometry.
- *
- * Calibration establishes the standing hip-to-knee gap. Every later frame is
- * expressed as gapRatio and hipDrop relative to that stable baseline.
+ * A temporal detector whose production decisions use only knee angle and
+ * calibrated normalized hip drop. Velocity values are diagnostic only.
  */
 class SquatStateMachine(
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
@@ -20,20 +18,28 @@ class SquatStateMachine(
         private set
 
     private var previousTimestampMs: Long? = null
+    private var previousKnee: Double? = null
+    private var previousHipY: Double? = null
     private var invalidSinceMs: Long? = null
+
     private var calibrationStartedMs: Long? = null
+    private var calibrationSide: PoseSide? = null
     private val calibrationHipYs = mutableListOf<Double>()
-    private val calibrationGaps = mutableListOf<Double>()
+    private val calibrationLegLengths = mutableListOf<Double>()
+    private val calibrationKnees = mutableListOf<Double>()
     private var standingHipY = 0.0
-    private var standingGap = 0.0
+    private var standingLegLength = 1.0
+    private var standingKneeAngle = 180.0
+
     private var cycleStartedMs: Long? = null
     private var stateEnteredMs: Long? = null
     private var descendingCandidateSinceMs: Long? = null
     private var bottomCandidateSinceMs: Long? = null
     private var ascendingCandidateSinceMs: Long? = null
     private var standingCandidateSinceMs: Long? = null
-    private var lastRepAtMs: Long = Long.MIN_VALUE
-    private var minimumGapRatio = 1.0
+    private var lastRepAtMs = Long.MIN_VALUE
+    private var minimumKnee = 180.0
+    private var maximumKnee = 0.0
     private var maximumHipDrop = 0.0
     private var cycleFrames = 0
     private var validCycleFrames = 0
@@ -51,6 +57,8 @@ class SquatStateMachine(
         repSequence = 0
         rejectedAttempts = 0
         previousTimestampMs = null
+        previousKnee = null
+        previousHipY = null
         invalidSinceMs = null
         resetCalibration()
         clearCycle()
@@ -61,7 +69,6 @@ class SquatStateMachine(
     private fun processInvalid(result: PoseFeatureResult.Invalid): SquatDetectorUpdate {
         if (cycleStartedMs != null) cycleFrames += 1
         val started = invalidSinceMs ?: result.timestampMs.also { invalidSinceMs = it }
-        previousTimestampMs = null
         latestRejectReason = result.rejectReason
         if (result.timestampMs - started > config.invalidTrackingGraceMs) {
             rejectActiveCycle("poseLost")
@@ -70,8 +77,10 @@ class SquatStateMachine(
         lastDiagnostics =
             diagnostics(
                 quality = result.quality,
-                gapRatio = null,
+                knee = null,
                 hipDrop = null,
+                kneeVelocity = null,
+                hipVelocity = null,
             )
         return update(result.warning)
     }
@@ -83,9 +92,11 @@ class SquatStateMachine(
             latestRejectReason = "duplicateFrame"
             lastDiagnostics =
                 diagnostics(
-                    quality = result.quality,
-                    gapRatio = normalizedGap(sample),
-                    hipDrop = normalizedHipDrop(sample),
+                    result.quality,
+                    sample.kneeAngleDeg,
+                    normalizedHipDrop(sample),
+                    null,
+                    null,
                 )
             return update()
         }
@@ -95,16 +106,33 @@ class SquatStateMachine(
             rejectActiveCycle("frameGap")
             resetToCalibrating()
         }
-        previousTimestampMs = sample.timestampMs
         invalidSinceMs = null
 
-        val gapRatio = normalizedGap(sample)
-        val hipDrop = normalizedHipDrop(sample)
+        val elapsedSeconds =
+            previousTimestampMs?.let { (sample.timestampMs - it) / 1_000.0 }
+        val kneeVelocity =
+            if (previousKnee == null || elapsedSeconds == null || elapsedSeconds <= 0) {
+                0.0
+            } else {
+                (sample.kneeAngleDeg - requireNotNull(previousKnee)) / elapsedSeconds
+            }
+        val hipVelocity =
+            if (previousHipY == null || elapsedSeconds == null || elapsedSeconds <= 0) {
+                0.0
+            } else {
+                ((sample.hipY - requireNotNull(previousHipY)) /
+                    max(sample.legLength, EPSILON)) / elapsedSeconds
+            }
+        previousTimestampMs = sample.timestampMs
+        previousKnee = sample.kneeAngleDeg
+        previousHipY = sample.hipY
+
         if (cycleStartedMs != null) {
             cycleFrames += 1
             validCycleFrames += 1
-            if (gapRatio != null) minimumGapRatio = min(minimumGapRatio, gapRatio)
-            if (hipDrop != null) maximumHipDrop = max(maximumHipDrop, hipDrop)
+            minimumKnee = min(minimumKnee, sample.kneeAngleDeg)
+            maximumKnee = max(maximumKnee, sample.kneeAngleDeg)
+            maximumHipDrop = max(maximumHipDrop, normalizedHipDrop(sample) ?: 0.0)
         }
 
         val update =
@@ -117,34 +145,37 @@ class SquatStateMachine(
             }
         lastDiagnostics =
             diagnostics(
-                quality = result.quality,
-                gapRatio = normalizedGap(sample),
-                hipDrop = normalizedHipDrop(sample),
+                result.quality,
+                sample.kneeAngleDeg,
+                normalizedHipDrop(sample),
+                kneeVelocity,
+                hipVelocity,
             )
         return update.copy(diagnostics = lastDiagnostics)
     }
 
     private fun calibrate(sample: PoseFeatureSample): SquatDetectorUpdate {
-        val gap = sample.kneeY - sample.hipY
-        if (!gap.isFinite() || gap < config.minimumCalibrationGapRatio) {
+        if (calibrationSide != null && calibrationSide != sample.selectedSide) {
             resetCalibration()
-            latestRejectReason = "calibrationGapTooSmall"
+        }
+        calibrationSide = sample.selectedSide
+        if (sample.kneeAngleDeg < config.standingKneeDeg) {
+            resetCalibration()
+            latestRejectReason = "notStandingForCalibration"
             return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
         }
-        val started = calibrationStartedMs ?: sample.timestampMs.also {
-            calibrationStartedMs = it
-        }
+        val started =
+            calibrationStartedMs ?: sample.timestampMs.also { calibrationStartedMs = it }
         calibrationHipYs += sample.hipY
-        calibrationGaps += gap
-        val gapMedian = median(calibrationGaps)
+        calibrationLegLengths += sample.legLength
+        calibrationKnees += sample.kneeAngleDeg
+        val legMedian = median(calibrationLegLengths)
         val hipDrift =
             (calibrationHipYs.maxOrNull()!! - calibrationHipYs.minOrNull()!!) /
-                max(gapMedian, EPSILON)
-        val gapDrift =
-            (calibrationGaps.maxOrNull()!! - calibrationGaps.minOrNull()!!) /
-                max(gapMedian, EPSILON)
+                max(legMedian, EPSILON)
+        val kneeDrift = calibrationKnees.maxOrNull()!! - calibrationKnees.minOrNull()!!
         if (hipDrift > config.calibrationMaximumHipDriftRatio ||
-            gapDrift > config.calibrationMaximumGapDriftRatio
+            kneeDrift > config.calibrationMaximumKneeDriftDeg
         ) {
             resetCalibration()
             latestRejectReason = "calibrationMotion"
@@ -152,7 +183,8 @@ class SquatStateMachine(
         }
         if (sample.timestampMs - started >= config.calibrationStableMs) {
             standingHipY = median(calibrationHipYs)
-            standingGap = gapMedian
+            standingLegLength = legMedian
+            standingKneeAngle = median(calibrationKnees)
             latestRejectReason = null
             transition(SquatState.STANDING, sample.timestampMs)
             return update()
@@ -162,11 +194,14 @@ class SquatStateMachine(
 
     private fun fromStanding(sample: PoseFeatureSample): SquatDetectorUpdate {
         if (elapsedSinceLastRep(sample.timestampMs) < config.refractoryMs) return update()
-        val gapRatio = normalizedGap(sample) ?: return update()
-        val hipDrop = normalizedHipDrop(sample) ?: return update()
+        val descendingThreshold =
+            min(
+                config.descendingKneeDeg,
+                standingKneeAngle - config.descendingKneeBaselineDeltaDeg,
+            )
         val descending =
-            gapRatio <= config.descendingGapRatio &&
-                hipDrop >= config.descendingHipDropRatio
+            sample.kneeAngleDeg <= descendingThreshold &&
+                (normalizedHipDrop(sample) ?: 0.0) >= config.descendingHipDropRatio
         if (!descending) {
             descendingCandidateSinceMs = null
             return update()
@@ -176,34 +211,33 @@ class SquatStateMachine(
                 descendingCandidateSinceMs = it
             }
         if (sample.timestampMs - candidate < config.descendingStableMs) return update()
-
         cycleStartedMs = candidate
         cycleFrames = 2
         validCycleFrames = 2
-        minimumGapRatio = gapRatio
-        maximumHipDrop = hipDrop
+        minimumKnee = sample.kneeAngleDeg
+        maximumKnee = standingKneeAngle
+        maximumHipDrop = normalizedHipDrop(sample) ?: 0.0
         latestRejectReason = null
         transition(SquatState.DESCENDING, sample.timestampMs)
         return update()
     }
 
     private fun fromDescending(sample: PoseFeatureSample): SquatDetectorUpdate {
-        if (cycleTimedOut(sample.timestampMs)) {
-            rejectActiveCycle("repTooSlow")
-            resetToCalibrating()
-            return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
-        }
+        if (cycleTimedOut(sample.timestampMs)) return timeout(sample.timestampMs)
         if (isStanding(sample)) {
             rejectActiveCycle("shallowSquat")
             transition(SquatState.STANDING, sample.timestampMs)
             clearCycle()
             return update()
         }
-        if (!isBottom(sample) ||
-            elapsedInState(sample.timestampMs) < config.minimumDescendingMs
-        ) {
+        val hipDrop = normalizedHipDrop(sample) ?: 0.0
+        if (isTooDeep(sample, hipDrop)) return rejectTooDeep()
+        val deepEnough =
+            sample.kneeAngleDeg <= config.bottomKneeDeg &&
+                hipDrop >= config.bottomHipDropRatio
+        if (!deepEnough || elapsedInState(sample.timestampMs) < config.minimumDescendingMs) {
             bottomCandidateSinceMs = null
-            return update()
+            return update(PoseQualityWarning.SQUAT_DEEPER)
         }
         val candidate =
             bottomCandidateSinceMs ?: sample.timestampMs.also {
@@ -216,17 +250,13 @@ class SquatStateMachine(
     }
 
     private fun fromBottom(sample: PoseFeatureSample): SquatDetectorUpdate {
-        if (cycleTimedOut(sample.timestampMs)) {
-            rejectActiveCycle("repTooSlow")
-            resetToCalibrating()
-            return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
-        }
-        val gapRatio = normalizedGap(sample) ?: return update()
-        val hipDrop = normalizedHipDrop(sample) ?: return update()
-        val leavingBottom =
-            gapRatio >= config.bottomExitGapRatio &&
-                hipDrop <= config.bottomExitHipDropRatio
-        if (!leavingBottom) {
+        if (cycleTimedOut(sample.timestampMs)) return timeout(sample.timestampMs)
+        val hipDrop = normalizedHipDrop(sample) ?: 0.0
+        if (isTooDeep(sample, hipDrop)) return rejectTooDeep()
+        val ascending =
+            sample.kneeAngleDeg >= config.bottomExitKneeDeg &&
+                hipDrop <= config.bottomExitMaximumHipDropRatio
+        if (!ascending) {
             ascendingCandidateSinceMs = null
             return update()
         }
@@ -241,23 +271,11 @@ class SquatStateMachine(
     }
 
     private fun fromAscending(sample: PoseFeatureSample): SquatDetectorUpdate {
-        if (cycleTimedOut(sample.timestampMs)) {
-            rejectActiveCycle("repTooSlow")
-            resetToCalibrating()
-            return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
-        }
-        if (isBottom(sample)) {
-            val candidate =
-                bottomCandidateSinceMs ?: sample.timestampMs.also {
-                    bottomCandidateSinceMs = it
-                }
-            if (sample.timestampMs - candidate >= config.bottomStableMs) {
-                transition(SquatState.BOTTOM, sample.timestampMs)
-            }
-            standingCandidateSinceMs = null
+        if (cycleTimedOut(sample.timestampMs)) return timeout(sample.timestampMs)
+        if (sample.kneeAngleDeg <= config.bottomKneeDeg) {
+            transition(SquatState.BOTTOM, sample.timestampMs)
             return update()
         }
-        bottomCandidateSinceMs = null
         if (!isStanding(sample)) {
             standingCandidateSinceMs = null
             return update()
@@ -268,16 +286,15 @@ class SquatStateMachine(
             }
         if (sample.timestampMs - candidate < config.standingStableMs) return update()
 
-        val started = requireNotNull(cycleStartedMs)
-        val totalDuration = sample.timestampMs - started
+        val totalDuration = sample.timestampMs - requireNotNull(cycleStartedMs)
         val ascendingDuration = sample.timestampMs - requireNotNull(stateEnteredMs)
         val validRatio =
             if (cycleFrames == 0) 0.0 else validCycleFrames.toDouble() / cycleFrames
         val validRep =
             totalDuration in config.minimumRepDurationMs..config.maximumRepDurationMs &&
                 ascendingDuration >= config.minimumAscendingMs &&
-                1.0 - minimumGapRatio >= config.minimumGapCompressionRatio &&
-                maximumHipDrop >= config.minimumHipDropRatio &&
+                maximumKnee - minimumKnee >= config.minimumRangeOfMotionDeg &&
+                maximumHipDrop >= config.minimumRepHipDropRatio &&
                 validRatio >= config.minimumValidFrameRatio &&
                 elapsedSinceLastRep(sample.timestampMs) >= config.refractoryMs
         transition(SquatState.STANDING, sample.timestampMs)
@@ -298,28 +315,32 @@ class SquatStateMachine(
         return update(repCompleted = true)
     }
 
-    private fun isStanding(sample: PoseFeatureSample): Boolean {
-        val gapRatio = normalizedGap(sample) ?: return false
-        val hipDrop = normalizedHipDrop(sample) ?: return false
-        return gapRatio >= config.standingGapRatio &&
-            hipDrop <= config.standingMaximumHipDropRatio
+    private fun timeout(timestampMs: Long): SquatDetectorUpdate {
+        rejectActiveCycle("repTooSlow")
+        resetToCalibrating()
+        return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
     }
 
-    private fun isBottom(sample: PoseFeatureSample): Boolean {
-        val gapRatio = normalizedGap(sample) ?: return false
-        val hipDrop = normalizedHipDrop(sample) ?: return false
-        return gapRatio <= config.bottomGapRatio &&
-            hipDrop >= config.bottomHipDropRatio
+    private fun rejectTooDeep(): SquatDetectorUpdate {
+        rejectActiveCycle("tooDeep")
+        resetToCalibrating()
+        return update(PoseQualityWarning.TOO_DEEP)
     }
 
-    private fun normalizedGap(sample: PoseFeatureSample): Double? {
-        if (standingGap <= EPSILON || state == SquatState.CALIBRATING) return null
-        return (sample.kneeY - sample.hipY) / standingGap
-    }
+    private fun isTooDeep(sample: PoseFeatureSample, hipDrop: Double): Boolean =
+        sample.kneeAngleDeg <= config.tooDeepKneeDeg &&
+            hipDrop >= config.tooDeepHipDropRatio
+
+    private fun isStanding(sample: PoseFeatureSample): Boolean =
+        sample.kneeAngleDeg >=
+            max(
+                config.standingKneeDeg,
+                standingKneeAngle - config.standingKneeBaselineToleranceDeg,
+            )
 
     private fun normalizedHipDrop(sample: PoseFeatureSample): Double? {
-        if (standingGap <= EPSILON || state == SquatState.CALIBRATING) return null
-        return (sample.hipY - standingHipY) / standingGap
+        if (standingLegLength <= EPSILON || state == SquatState.CALIBRATING) return null
+        return (sample.hipY - standingHipY) / standingLegLength
     }
 
     private fun elapsedInState(timestampMs: Long): Long =
@@ -331,16 +352,11 @@ class SquatStateMachine(
     private fun elapsedSinceLastRep(timestampMs: Long): Long =
         if (lastRepAtMs == Long.MIN_VALUE) Long.MAX_VALUE else timestampMs - lastRepAtMs
 
-    private fun transition(
-        next: SquatState,
-        timestampMs: Long,
-    ) {
+    private fun transition(next: SquatState, timestampMs: Long) {
         state = next
         stateEnteredMs = timestampMs
         if (next != SquatState.STANDING) descendingCandidateSinceMs = null
-        if (next != SquatState.DESCENDING && next != SquatState.ASCENDING) {
-            bottomCandidateSinceMs = null
-        }
+        if (next != SquatState.DESCENDING) bottomCandidateSinceMs = null
         if (next != SquatState.BOTTOM) ascendingCandidateSinceMs = null
         if (next != SquatState.ASCENDING) standingCandidateSinceMs = null
     }
@@ -357,13 +373,17 @@ class SquatStateMachine(
         stateEnteredMs = null
         resetCalibration()
         clearCycle()
+        previousKnee = null
+        previousHipY = null
         previousTimestampMs = null
     }
 
     private fun resetCalibration() {
         calibrationStartedMs = null
+        calibrationSide = null
         calibrationHipYs.clear()
-        calibrationGaps.clear()
+        calibrationLegLengths.clear()
+        calibrationKnees.clear()
     }
 
     private fun clearCycle() {
@@ -372,7 +392,8 @@ class SquatStateMachine(
         bottomCandidateSinceMs = null
         ascendingCandidateSinceMs = null
         standingCandidateSinceMs = null
-        minimumGapRatio = 1.0
+        minimumKnee = 180.0
+        maximumKnee = 0.0
         maximumHipDrop = 0.0
         cycleFrames = 0
         validCycleFrames = 0
@@ -380,11 +401,12 @@ class SquatStateMachine(
 
     private fun diagnostics(
         quality: PoseQualityMetrics,
-        gapRatio: Double?,
+        knee: Double?,
         hipDrop: Double?,
+        kneeVelocity: Double?,
+        hipVelocity: Double?,
     ) = SquatFrameDiagnostics(
         poseDetected = quality.poseDetected,
-        trackingStatus = quality.trackingStatus,
         selectedSide = quality.selectedSide,
         leftHipConfidence = quality.leftHipConfidence,
         leftKneeConfidence = quality.leftKneeConfidence,
@@ -392,10 +414,13 @@ class SquatStateMachine(
         rightHipConfidence = quality.rightHipConfidence,
         rightKneeConfidence = quality.rightKneeConfidence,
         rightAnkleConfidence = quality.rightAnkleConfidence,
-        normalizedVerticalGap = gapRatio,
+        kneeAngleDeg = knee,
         normalizedHipDrop = hipDrop,
+        kneeAngularVelocity = kneeVelocity,
+        hipVerticalVelocity = hipVelocity,
         latestRejectReason = latestRejectReason,
         rejectedAttempts = rejectedAttempts,
+        trackingStatus = quality.trackingStatus,
     )
 
     private fun update(
@@ -412,7 +437,6 @@ class SquatStateMachine(
     private fun emptyDiagnostics() =
         SquatFrameDiagnostics(
             poseDetected = false,
-            trackingStatus = PoseTrackingStatus.NO_POSE,
             selectedSide = null,
             leftHipConfidence = null,
             leftKneeConfidence = null,
@@ -420,10 +444,13 @@ class SquatStateMachine(
             rightHipConfidence = null,
             rightKneeConfidence = null,
             rightAnkleConfidence = null,
-            normalizedVerticalGap = null,
+            kneeAngleDeg = null,
             normalizedHipDrop = null,
+            kneeAngularVelocity = null,
+            hipVerticalVelocity = null,
             latestRejectReason = null,
             rejectedAttempts = 0,
+            trackingStatus = PoseTrackingStatus.NO_POSE,
         )
 
     private fun median(values: Collection<Double>): Double {

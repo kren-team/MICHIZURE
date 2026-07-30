@@ -4,39 +4,40 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.drawable.ColorDrawable
 import android.view.View
-import android.view.ViewOutlineProvider
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.camera.view.PreviewView
 import androidx.camera.view.transform.CoordinateTransform
 import androidx.camera.view.transform.OutputTransform
 import kotlin.math.max
 
-internal data class SquatGuideFrame(
+data class SquatGuideFrame(
+    val timestampMs: Long,
     val sourceTransform: OutputTransform,
     val hip: PosePoint?,
     val knee: PosePoint?,
+    val ankle: PosePoint?,
     val trackingStatus: PoseTrackingStatus,
     val state: SquatState,
-    val timestampMs: Long,
 )
 
 internal data class SquatGuideDrawing(
-    val hipX: Float?,
-    val hipY: Float?,
-    val kneeX: Float?,
-    val kneeY: Float?,
+    val hip: PointF?,
+    val knee: PointF?,
+    val ankle: PointF?,
     val trackingStatus: PoseTrackingStatus,
     val state: SquatState,
 )
 
 /**
- * One native coordinate space for the PreviewView and its guide overlay.
+ * Owns the camera preview and guide in one native coordinate system.
  *
- * PreviewView must use COMPATIBLE mode because CameraX documents that
- * getOutputTransform() may not respect the View matrix in PERFORMANCE mode.
+ * COMPATIBLE mode is required because PreviewView.getOutputTransform() does
+ * not include every View transform when PERFORMANCE mode uses SurfaceView.
  */
 class SquatCameraContainer(
     context: Context,
@@ -48,24 +49,13 @@ class SquatCameraContainer(
             scaleType = PreviewView.ScaleType.FIT_CENTER
             background = ColorDrawable(Color.BLACK)
         }
-    internal val guideOverlayView = SquatGuideOverlayView(context, config)
+    internal val guideOverlayView = SquatGuideOverlayView(context)
     private var lastGuideTimestampMs = Long.MIN_VALUE
 
     init {
         background = ColorDrawable(Color.BLACK)
         clipChildren = true
         clipToPadding = true
-        val radius = CORNER_RADIUS_DP * resources.displayMetrics.density
-        outlineProvider =
-            object : ViewOutlineProvider() {
-                override fun getOutline(
-                    view: View,
-                    outline: android.graphics.Outline,
-                ) {
-                    outline.setRoundRect(0, 0, view.width, view.height, radius)
-                }
-            }
-        clipToOutline = true
         addView(previewView, matchParentLayoutParams())
         addView(guideOverlayView, matchParentLayoutParams())
     }
@@ -81,35 +71,30 @@ class SquatCameraContainer(
         lastGuideTimestampMs = frame.timestampMs
         post {
             val targetTransform = previewView.outputTransform ?: return@post
-            val coordinates =
-                floatArrayOf(
-                    frame.hip?.x?.toFloat() ?: Float.NaN,
-                    frame.hip?.y?.toFloat() ?: Float.NaN,
-                    frame.knee?.x?.toFloat() ?: Float.NaN,
-                    frame.knee?.y?.toFloat() ?: Float.NaN,
-                )
-            val validIndices =
-                buildList {
-                    if (coordinates[0].isFinite() && coordinates[1].isFinite()) add(0)
-                    if (coordinates[2].isFinite() && coordinates[3].isFinite()) add(2)
+            val sourcePoints = listOf(frame.hip, frame.knee, frame.ankle)
+            val compact = mutableListOf<Float>()
+            val indexes = mutableListOf<Int>()
+            sourcePoints.forEachIndexed { index, point ->
+                if (point != null && point.x.isFinite() && point.y.isFinite()) {
+                    indexes += index
+                    compact += point.x.toFloat()
+                    compact += point.y.toFloat()
                 }
-            if (validIndices.isNotEmpty()) {
-                val compact =
-                    validIndices.flatMap { index ->
-                        listOf(coordinates[index], coordinates[index + 1])
-                    }.toFloatArray()
-                CoordinateTransform(frame.sourceTransform, targetTransform).mapPoints(compact)
-                validIndices.forEachIndexed { compactIndex, destinationIndex ->
-                    coordinates[destinationIndex] = compact[compactIndex * 2]
-                    coordinates[destinationIndex + 1] = compact[compactIndex * 2 + 1]
+            }
+            val mapped = arrayOfNulls<PointF>(sourcePoints.size)
+            if (compact.isNotEmpty()) {
+                val values = compact.toFloatArray()
+                CoordinateTransform(frame.sourceTransform, targetTransform).mapPoints(values)
+                indexes.forEachIndexed { compactIndex, destinationIndex ->
+                    mapped[destinationIndex] =
+                        PointF(values[compactIndex * 2], values[compactIndex * 2 + 1])
                 }
             }
             guideOverlayView.update(
                 SquatGuideDrawing(
-                    hipX = coordinates[0].takeIf(Float::isFinite),
-                    hipY = coordinates[1].takeIf(Float::isFinite),
-                    kneeX = coordinates[2].takeIf(Float::isFinite),
-                    kneeY = coordinates[3].takeIf(Float::isFinite),
+                    hip = mapped[0],
+                    knee = mapped[1],
+                    ankle = mapped[2],
                     trackingStatus = frame.trackingStatus,
                     state = frame.state,
                 ),
@@ -123,107 +108,106 @@ class SquatCameraContainer(
     }
 
     private fun matchParentLayoutParams() =
-        LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-
-    private companion object {
-        const val CORNER_RADIUS_DP = 20f
-    }
+        LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
 }
 
-internal class SquatGuideOverlayView(
-    context: Context,
-    private val config: SquatDetectorConfig = SquatDetectorConfig(),
-) : View(context) {
-    private val density = resources.displayMetrics.density
+internal class SquatGuideOverlayView(context: Context) : View(context) {
     private val guidePaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 2f * density
             color = Color.argb(210, 255, 255, 255)
-        }
-    private val bandFillPaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
-    private val bandStrokePaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 2f * density
+            strokeWidth = dp(2f)
+        }
+    private val detectedPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(88, 214, 141)
+            style = Paint.Style.STROKE
+            strokeWidth = dp(4f)
+        }
+    private val missingPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(255, 183, 77)
+            style = Paint.Style.STROKE
+            strokeWidth = dp(3f)
         }
     private val textPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 14f * density
             color = Color.WHITE
-            setShadowLayer(3f * density, 0f, density, Color.BLACK)
+            textSize = dp(14f)
+            setShadowLayer(dp(3f), 0f, dp(1f), Color.BLACK)
         }
     private var drawing: SquatGuideDrawing? = null
 
-    fun update(value: SquatGuideDrawing?) {
-        drawing = value
+    fun update(next: SquatGuideDrawing?) {
+        drawing = next
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val horizontalInset = width * GUIDE_HORIZONTAL_INSET_RATIO
-        val verticalInset = height * GUIDE_VERTICAL_INSET_RATIO
-        val guide =
-            RectF(
-                horizontalInset,
-                verticalInset,
-                width - horizontalInset,
-                height - verticalInset,
-            )
-        canvas.drawRoundRect(guide, 24f * density, 24f * density, guidePaint)
+        val inset = dp(18f)
+        val top = height * 0.08f
+        val bottom = height * 0.94f
+        val path =
+            Path().apply {
+                moveTo(inset + dp(26f), top)
+                lineTo(inset, top)
+                lineTo(inset, top + dp(26f))
+                moveTo(width - inset - dp(26f), top)
+                lineTo(width - inset, top)
+                lineTo(width - inset, top + dp(26f))
+                moveTo(inset, bottom - dp(26f))
+                lineTo(inset, bottom)
+                lineTo(inset + dp(26f), bottom)
+                moveTo(width - inset - dp(26f), bottom)
+                lineTo(width - inset, bottom)
+                lineTo(width - inset, bottom - dp(26f))
+            }
+        canvas.drawPath(path, guidePaint)
 
         val current = drawing
-        val color =
-            when {
-                current == null ||
-                    current.trackingStatus != PoseTrackingStatus.VALID -> Color.rgb(244, 67, 54)
-                current.state == SquatState.BOTTOM -> Color.rgb(255, 167, 38)
-                current.state == SquatState.STANDING -> Color.rgb(102, 187, 106)
-                else -> Color.rgb(41, 182, 246)
+        if (current == null) {
+            canvas.drawText("胸の下から足首まで映してください", inset, top + dp(30f), textPaint)
+            return
+        }
+        val pointPaint =
+            if (current.trackingStatus == PoseTrackingStatus.VALID) {
+                detectedPaint
+            } else {
+                missingPaint
             }
-        bandFillPaint.color = Color.argb(58, Color.red(color), Color.green(color), Color.blue(color))
-        bandStrokePaint.color = color
-        current?.hipY?.let { drawBand(canvas, "HIP", it, color) }
-        current?.kneeY?.let { drawBand(canvas, "KNEE", it, color) }
-
-        val statusText =
-            when (current?.trackingStatus) {
-                PoseTrackingStatus.NO_POSE, null -> "POSE: NOT DETECTED"
-                PoseTrackingStatus.HIP_UNAVAILABLE -> "POSE: HIP MISSING"
-                PoseTrackingStatus.KNEE_UNAVAILABLE -> "POSE: KNEE MISSING"
-                PoseTrackingStatus.CONFIDENCE_INSUFFICIENT -> "POSE: LOW CONFIDENCE"
-                PoseTrackingStatus.VALID -> "POSE: ${current.state.wireValue.uppercase()}"
+        listOfNotNull(current.hip, current.knee, current.ankle).forEach { point ->
+            canvas.drawCircle(point.x, point.y, dp(7f), pointPaint)
+        }
+        current.hip?.let { hip ->
+            current.knee?.let { knee -> canvas.drawLine(hip.x, hip.y, knee.x, knee.y, pointPaint) }
+        }
+        current.knee?.let { knee ->
+            current.ankle?.let { ankle ->
+                canvas.drawLine(knee.x, knee.y, ankle.x, ankle.y, pointPaint)
             }
-        textPaint.color = color
-        canvas.drawText(statusText, horizontalInset, max(textPaint.textSize, verticalInset - 8f), textPaint)
+        }
+        canvas.drawText(
+            "${current.trackingStatus.displayLabel} / ${current.state.wireValue}",
+            inset,
+            max(top + dp(30f), dp(24f)),
+            textPaint,
+        )
     }
 
-    private fun drawBand(
-        canvas: Canvas,
-        label: String,
-        centerY: Float,
-        color: Int,
-    ) {
-        val tolerance = height * config.overlayBandToleranceRatio.toFloat()
-        val rect =
-            RectF(
-                width * GUIDE_HORIZONTAL_INSET_RATIO,
-                centerY - tolerance,
-                width * (1f - GUIDE_HORIZONTAL_INSET_RATIO),
-                centerY + tolerance,
-            )
-        canvas.drawRoundRect(rect, tolerance / 2, tolerance / 2, bandFillPaint)
-        canvas.drawRoundRect(rect, tolerance / 2, tolerance / 2, bandStrokePaint)
-        textPaint.color = color
-        canvas.drawText(label, rect.left + 8f * density, centerY + textPaint.textSize / 3, textPaint)
-    }
-
-    private companion object {
-        const val GUIDE_HORIZONTAL_INSET_RATIO = 0.10f
-        const val GUIDE_VERTICAL_INSET_RATIO = 0.08f
-    }
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
+
+private val PoseTrackingStatus.displayLabel: String
+    get() =
+        when (this) {
+            PoseTrackingStatus.NO_POSE -> "人物なし"
+            PoseTrackingStatus.HIP_UNAVAILABLE -> "腰なし"
+            PoseTrackingStatus.KNEE_UNAVAILABLE -> "膝なし"
+            PoseTrackingStatus.ANKLE_UNAVAILABLE -> "足首なし"
+            PoseTrackingStatus.CONFIDENCE_INSUFFICIENT -> "信頼度不足"
+            PoseTrackingStatus.VALID -> "検出"
+        }

@@ -278,9 +278,12 @@ final class _SquatControls extends StatelessWidget {
           const AspectRatio(
             key: Key('pose-preview'),
             aspectRatio: 3 / 4,
-            child: AndroidView(
-              key: Key('native-squat-camera-container'),
-              viewType: MethodChannelSquatDetector.previewViewType,
+            child: ClipRRect(
+              borderRadius: BorderRadius.all(Radius.circular(20)),
+              child: AndroidView(
+                key: Key('native-squat-camera-container'),
+                viewType: MethodChannelSquatDetector.previewViewType,
+              ),
             ),
           ),
         const SizedBox(height: 8),
@@ -294,8 +297,8 @@ final class _SquatControls extends StatelessWidget {
             ),
           ),
         const Text(
-          'みぞおちから膝下まで映してください。'
-          '少し横向きになると判定しやすくなります。',
+          '胸の下から足首まで映してください。'
+          'カメラに対して斜め30〜45度または横向きになると判定しやすくなります。',
           textAlign: TextAlign.center,
         ),
         Semantics(
@@ -353,14 +356,17 @@ String _stateLabel(SquatDetectorState state) {
 
 String _qualityMessage(SquatQualityWarning? warning) {
   return switch (warning) {
-    null => '腰と膝を認識しました。',
-    SquatQualityWarning.noPoseDetected => '人物を検出できません。みぞおちから膝下まで映してください。',
-    SquatQualityWarning.hipUnavailable => '腰を認識できません。みぞおちが映る位置へ調整してください。',
-    SquatQualityWarning.kneeUnavailable => '膝を認識できません。膝下まで映る位置へ調整してください。',
+    null => '腰・膝・足首を認識しました。',
+    SquatQualityWarning.noPoseDetected => '人物を認識できません。',
+    SquatQualityWarning.hipUnavailable => '腰を認識できません。',
+    SquatQualityWarning.kneeUnavailable => '膝を認識できません。',
+    SquatQualityWarning.ankleUnavailable => '足首を認識できません。',
     SquatQualityWarning.moveFartherBack => 'カメラから少し離れてください。',
     SquatQualityWarning.moveCloser => 'カメラへ少し近づいてください。',
-    SquatQualityWarning.lowLightOrConfidence => '明るい場所で腰と膝が見えるように調整してください。',
-    SquatQualityWarning.holdStillToCalibrate => '腰と膝を映し、立った姿勢で少し静止してください。',
+    SquatQualityWarning.lowLightOrConfidence => '明るい場所で腰・膝・足首を映してください。',
+    SquatQualityWarning.holdStillToCalibrate => '立った姿勢で少し静止してください。',
+    SquatQualityWarning.squatDeeper => 'もう少し深くしゃがんでください。',
+    SquatQualityWarning.tooDeep => '深くしゃがみすぎています。立った姿勢へ戻ってください。',
     SquatQualityWarning.cameraUnavailable => 'カメラを利用できません。',
   };
 }
@@ -384,8 +390,8 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
             children: [
               const Text('Debug detector diagnostics'),
               Text('Delegate: ${diagnostics.delegate?.name ?? 'initializing'}'),
-              Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
               Text('Tracking: ${diagnostics.trackingStatus.name}'),
+              Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
               Text(
                 'Selected side: ${diagnostics.selectedSide?.name ?? 'none'}',
               ),
@@ -399,10 +405,7 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
                 '${_metric(diagnostics.rightKneeConfidence)} / '
                 '${_metric(diagnostics.rightAnkleConfidence)}',
               ),
-              Text(
-                'Hip/knee gap ratio: '
-                '${_metric(diagnostics.normalizedVerticalGap, digits: 3)}',
-              ),
+              Text('Knee angle: ${_metric(diagnostics.kneeAngle, digits: 1)}°'),
               Text(
                 'Hip drop: ${_metric(diagnostics.normalizedHipDrop, digits: 3)}',
               ),
