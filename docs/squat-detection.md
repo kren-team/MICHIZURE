@@ -49,12 +49,12 @@ frame、bitmap、landmark全列はPlatform Channelへ流さない。Kotlinから
 | Backpressure | `STRATEGY_KEEP_ONLY_LATEST` |
 | Queue | 実質1、古いframeをdrop |
 | Lifecycle | Squat画面のnative lifecycle ownerへbind |
-| Preview | PlatformView / native PreviewView |
+| Preview | portrait 3:4 PlatformView / native FrameLayout（PreviewView + guide） |
 | Analyzer thread | single dedicated executor |
 
-Analyzerは重いBitmap copy前にGPU 15 FPS / CPU 10 FPSへthrottleし、1 frame推論中に次frameをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`し、MPImageとBitmapはasync callbackまでpending 1件だけ保持する。
+Previewは24〜30 FPSをrequestする。Analyzerは重いBitmap copy前にGPU 12 FPS / CPU 8 FPSへthrottleし、1 frame推論中に次frameをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`し、MPImageとBitmapはasync callbackまでpending 1件だけ保持する。
 
-腰から足首までが十分なpixel数を占める撮影ガイドを表示し、少し横向きの姿勢を案内する。高解像度化よりlatest frameの低遅延を優先する。MediaPipe公式model cardはfull-body cropを推奨しhead非表示をout-of-scopeとしているため、「顔なし・下半身だけ」の成立率は実camera manual gateで必ず測定し、未測定の性能を達成済みとしない。
+Native `FrameLayout`の同一boundsへ`PreviewView`と`SquatGuideOverlayView`を重ねる。`COMPATIBLE` / `FIT_CENTER`とCameraX transform APIで座標を合わせ、FlutterはAndroidViewを診断更新ごとに再生成しない。胸の下から足首までが十分なpixel数を占める撮影ガイドを表示し、カメラへ斜め30〜45度または横向きを案内する。高解像度化よりlatest frameの低遅延を優先する。
 
 ## 4. MediaPipe構成
 
@@ -120,7 +120,7 @@ legLength = distance(hip, knee) + distance(knee, ankle)
 hipDropRatio = (currentHipY - standingHipY) / legLength
 ```
 
-camera距離に依存するpixel値ではなくratioにする。hipDropだけでcountせず、knee angle、膝角速度、腰の上下速度とAND条件にする。
+camera距離に依存するpixel値ではなくratioにする。Productionの状態遷移はknee angleとhipDropのAND条件にする。膝角速度と腰の上下速度はdebug診断だけに残し、低い解析FPSやfilter遅延で正常動作を拒否するauthorityにはしない。
 
 ### 6.3 Angular velocity
 
@@ -142,7 +142,7 @@ timestampは同一pipelineの`SystemClock.elapsedRealtimeNanos()`から単調増
 
 左右それぞれのhip / knee / ankle x/yへOne-Euro Filterを適用してからfeatureを計算する。初期値は`minCutoff=1.0`、`beta=0.02`、`derivativeCutoff=1.0`で、固定FPSを仮定せずtimestamp差を使う。左右は独立filterとし、side切替で別脚の履歴を混ぜない。pose loss、逆順timestamp、500ms超gap、session終了ではresetする。
 
-FSM側でmedian / EMAを重ねず、時間条件とhysteresisをdebounce authorityにする。設定値は`SquatDetectorConfig mediapipe-lite-lower-body-v3`へ集約する。
+FSM側でmedian / EMAを重ねず、時間条件とhysteresisをdebounce authorityにする。設定値は`SquatDetectorConfig mediapipe-lite-knee-angle-hip-drop-v4`へ集約する。
 
 ## 8. Quality gate
 
@@ -167,7 +167,7 @@ quality warning:
 - `holdStillToCalibrate`
 - `cameraUnavailable`
 
-`numPoses=1`であるため、複数人が写ると対象が切り替わり得る。撮影範囲には1人だけ入り、腰から足首までを映すことを必須ガイドにする。
+`numPoses=1`であるため、複数人が写ると対象が切り替わり得る。撮影範囲には1人だけ入り、胸の下から足首までを映すことを必須ガイドにする。
 
 tracking invalidが250ms以内ならFSMをfreezeし、復帰時にvelocity historyをresetする。250msを超えたら進行中repを破棄して`CALIBRATING`へ戻す。
 
@@ -198,10 +198,10 @@ calibration条件:
 stateDiagram-v2
     [*] --> CALIBRATING
     CALIBRATING --> STANDING: stable standing 1,000ms
-    STANDING --> DESCENDING: knee < min(150°, baseline-12°) AND knee velocity < -15°/s AND hip moving down
+    STANDING --> DESCENDING: knee <= min(150°, baseline-12°) AND hipDrop >= 0.06 stable 100ms
     DESCENDING --> STANDING: shallow return / timeout
-    DESCENDING --> BOTTOM: knee <= 108° AND hipDrop >= 0.12
-    BOTTOM --> ASCENDING: knee >= 118° AND knee/hip moving up
+    DESCENDING --> BOTTOM: knee <= 105° AND hipDrop >= 0.18 stable 150ms
+    BOTTOM --> ASCENDING: knee >= 120° AND hipDrop <= 0.17 stable 100ms
     BOTTOM --> CALIBRATING: tracking lost / timeout
     ASCENDING --> BOTTOM: returns deep before standing
     ASCENDING --> STANDING: knee >= max(155°, baseline-12°) stable 250ms
@@ -214,16 +214,16 @@ stateDiagram-v2
 | Transition | Condition |
 |---|---|
 | standing enter | knee `>= max(155°, baseline-12°)`, stable 250ms |
-| standing exit | knee `< min(150°, baseline-12°)`, knee velocity `<-15°/s`, normalized hip velocity `>0.02/s` |
-| bottom enter | knee `<=108°`, hip drop `>=0.12`, minimum 100ms |
-| bottom exit | knee `>=118°`, knee velocity `>15°/s`, normalized hip velocity `<-0.02/s` |
+| standing exit | knee `<= min(150°, baseline-12°)`, hip drop `>=0.06`、stable 100ms |
+| bottom enter | knee `<=105°`, hip drop `>=0.18`、stable 150ms |
+| bottom exit | knee `>=120°`, hip drop `<=0.17`、stable 100ms |
 | full rep duration | 800〜6,000ms |
 | descending minimum | 200ms |
 | ascending minimum | 200ms |
-| range of motion | knee angle change `>=45°` |
+| range of motion | knee angle change `>=50°` |
 | refractory | count後500ms |
 
-閾値間のgapがヒステリシスである。例: bottomは108°以下で入り、118°以上になるまで出ない。境界付近のjitterでstateが往復しない。
+閾値間のgapがヒステリシスである。例: bottomは105°以下で入り、120°以上になるまで出ない。knee 55°以下かつhip drop 0.20以上は過深動作としてrejectし、立位calibrationからやり直す。
 
 これらは初期値であり、合成テスト、複数体格・撮影角度の実機testからversioned configとして調整する。ユーザー別に無制限な自動学習はMVPで行わない。
 
@@ -234,7 +234,7 @@ ASCENDINGからSTANDINGへ戻る時点で、次をすべて満たせばlocal rep
 - このcycleがSTANDINGから開始
 - DESCENDINGとBOTTOMを順に通過
 - minimum bottom depthを満たす
-- range of motion >= 45°
+- range of motion >= 50°
 - total duration 800〜6,000ms
 - descending / ascending各200ms以上
 - tracking invalidの連続が250ms以下
@@ -453,7 +453,7 @@ Productionで精度不足が確認された場合、まずon-deviceの個人cali
 - CameraX `1.6.1`のfront優先 / rear fallback、`Preview` + `ImageAnalysis`、480×640近傍、`STRATEGY_KEEP_ONLY_LATEST`を採用した。
 - MediaPipe Tasks Vision `1.0.0`と公式Pose Landmarker Lite bundleを使用する。
 - analyzerは専用single executor、事前FPS gate、pending 1件を使い、skip、result、error、stopの全経路でImageProxy / MPImageをreleaseする。
-- `SquatDetectorConfig.VERSION = mediapipe-lite-lower-body-v3`にthresholdとOne-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
+- `SquatDetectorConfig.VERSION = mediapipe-lite-knee-angle-hip-drop-v4`にthresholdとOne-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
 - `squat_control/v1`、`squat_events/v1`、`pose_preview/v1`を実装した。Dart adapterはtype別field allowlistを検証し、画像・landmarkに相当するextra fieldを拒否する。
 - session IDは18 random bytesのhex、repはnativeのmonotonic sequenceを使用し、Firestore event IDはPhase 8の`${uid}_${squatSessionId}_${sequence}`へ変換する。
 - route離脱、ユーザー終了、terminal Debtではnative sessionを停止する。background / foregroundはCameraXのActivity lifecycle bindingへ従う。

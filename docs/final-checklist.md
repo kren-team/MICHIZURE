@@ -67,10 +67,11 @@
 
 - [ ] Bで対象負債を明示選択
 - [ ] `webcam0`をfrontへ割り当ててCamera previewを確認
-- [ ] 腰〜足首guide、lower-body quality warning
+- [ ] 胸の下〜足首guide、斜め30〜45度または横向きの案内
+- [ ] PreviewとNative guideが同じportrait 3:4 bounds内
 - [ ] debug diagnosticsでpose / side / confidence / feature / reject reasonを確認
 - [ ] delegateがGPUまたはCPU fallbackとして1回だけ確定
-- [ ] diagnosticsが5 FPS以下、analysisがGPU 15 FPS / CPU 10 FPS近傍
+- [ ] diagnosticsが4 FPS以下、analysisがGPU 12 FPS / CPU 8 FPS近傍
 - [ ] 直立calibration
 - [ ] 正常1 squatを1回だけcount
 - [ ] 浅い屈伸をreject

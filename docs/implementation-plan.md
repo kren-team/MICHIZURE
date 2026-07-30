@@ -691,7 +691,7 @@ CameraX + on-device pose model + Kotlin状態機械でスクワットを検出�
 ### 実装結果（Phase 9）
 
 - Phase 9当初のML Kit経路は実Camera最終確認後に[ADR 0005](adr/0005-mediapipe-pose-landmarker.md)で置換した。現在はCameraX 1.6.1 `Preview` / `ImageAnalysis`とMediaPipe Tasks Vision 1.0.0 / Pose Landmarker Lite `LIVE_STREAM`をKotlinへ隔離している。
-- GPU 15 FPS / CPU fallback 10 FPS、pending 1件、`STRATEGY_KEEP_ONLY_LATEST`とし、One-Euro Filter後のconfidence、leg length scale、左右side、knee angle、normalized hip drop、knee / hip velocityを`SquatDetectorConfig mediapipe-lite-lower-body-v3`で評価する。
+- Previewは24〜30 FPS、解析はGPU 12 FPS / CPU fallback 8 FPS、pending 1件、`STRATEGY_KEEP_ONLY_LATEST`とする。One-Euro Filter後の同一側hip/knee/ankleからknee angleとnormalized hip dropを求め、`SquatDetectorConfig mediapipe-lite-knee-angle-hip-drop-v4`の時間条件で評価する。速度はdebug診断だけに使用する。
 - calibrationを通った`STANDING → DESCENDING → BOTTOM → ASCENDING → STANDING`だけを1 repとし、depth、ROM、phase時間、valid frame率、refractoryで二重countを防ぐ。
 - versioned MethodChannel / EventChannel / PlatformViewを追加し、frameとlandmarkをDartへ渡さないstrict payloadにした。
 - Flutter `SquatSessionController`が明示Debtをsession中固定し、native sequenceをPhase 8のContribution / Outboxへ1 repずつ渡す。

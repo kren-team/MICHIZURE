@@ -32,7 +32,8 @@ Phase 0〜11の計画実装は完了した。新しいPhase 12は定義しない
 - running Task / active Lockのprocess kill復元
 - 可能ならOS reboot後のDevice Owner / lock復元
 - 実カメラで浅い屈伸reject、二重countなし、local latency p50 / p95 / max
-- host webcamで顔を外した腰〜足首入力のpose成立率、左右hip/knee/ankle confidenceを記録
+- host webcamで顔を外した胸の下〜足首入力のpose成立率、左右hip/knee/ankle confidenceを記録
+- Native Preview / guideのportrait 3:4 bounds一致、GPU 12 FPS / CPU 8 FPS近傍、正常3回=3・浅い3回=0・過深動作=0を記録
 - logcatにアプリ固有のfatal、SecurityException、camera / service leakがない
 
 環境上実施できない項目は成功とみなさず、デモ前のNo-Go項目として残す。
