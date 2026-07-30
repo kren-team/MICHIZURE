@@ -433,15 +433,16 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 1. Bでactive Debt詳細から「この負債を返済する」を開く。
 2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
 3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
-4. Preview、黒背景、角丸、native guideが同じ3:4領域に収まり、映像下の白い空白やguideだけのずれがないことを確認する。
-5. host webcamを使う場合は、みぞおちから膝下までをframeへ入れ、少し横向きで1秒以上直立する。
-6. 「姿勢判定を準備しています」の後、debug diagnosticsでdelegate、analysis FPS、drop / busy数、`no pose / hip missing / knee missing / confidence / valid`、選択side、hip/knee confidence、gap ratio、hip drop、reject reason、inference / pipeline p50・p95を確認する。
-7. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
-8. 正常スクワット3回がexactly 3 reps、浅い屈伸3回が0 repsであることを確認する。
-9. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
-10. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
+4. host webcamを使う場合は胸の下から足首までをframeへ入れ、斜め30〜45度または横向きで1秒以上直立する。
+5. 「姿勢判定を準備しています」の後、debug diagnosticsでdelegate、analysis FPS、drop / busy数、`Pose detected`、選択side、hip/knee/ankle confidence、knee angle、hip drop、velocity、reject reason、inference / pipeline p50・p95を確認する。
+6. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
+7. 浅い屈伸はcountされず、正常1 squatがexactly 1 repであることを確認する。
+8. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
+9. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
 
-Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。公式model cardはfull-body cropを推奨するため、みぞおち〜膝下の部分画角でのpose成立率も当日manual gateに含める。
+Camera画面では胸の下から足首までをportrait 3:4 guide内へ入れ、カメラへ斜め30〜45度または横向きになる。debug buildではHomeの「Squat Lab」からFirebase / Debtを使わずCamera→Pose→FSMだけを確認できる。Labのaccepted countはProduction Contributionではない。
+
+Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。manual gateではPreview/guideのbounds一致、GPU 12 FPSまたはCPU 8 FPS近傍、正常3回=3、浅い3回=0、過深動作=0を記録する。
 
 camera permissionを再試験する場合はDevice Ownerやapp dataを消去せず、permission flagsだけを操作する。
 
