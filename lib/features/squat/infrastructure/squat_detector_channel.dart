@@ -132,6 +132,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'squatSessionId',
         'detectorType',
         'detectorVersion',
+        'delegate',
       },
       'calibrating' => {
         ..._baseEventFields,
@@ -162,6 +163,39 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'analysisLatencyMs',
       },
       'detectorError' => {..._baseEventFields, 'squatSessionId', 'code'},
+      'diagnostics' => {
+        ..._baseEventFields,
+        'squatSessionId',
+        'poseDetected',
+        'selectedSide',
+        'leftHipConfidence',
+        'leftKneeConfidence',
+        'leftAnkleConfidence',
+        'rightHipConfidence',
+        'rightKneeConfidence',
+        'rightAnkleConfidence',
+        'kneeAngle',
+        'normalizedHipDrop',
+        'kneeAngularVelocity',
+        'hipVerticalVelocity',
+        'state',
+        'latestRejectReason',
+        'analysisLatencyMs',
+        'acceptedReps',
+        'rejectedAttempts',
+        'delegate',
+        'sampleCount',
+        'actualAnalysisFps',
+        'droppedBeforePreprocessing',
+        'rejectedAsBusy',
+        'resultCount',
+        'noPoseCount',
+        'inferenceP50Ms',
+        'inferenceP95Ms',
+        'nativePipelineP50Ms',
+        'nativePipelineP95Ms',
+        'diagnosticEventFps',
+      },
       _ => const <String>{},
     };
     if (allowed.isEmpty || raw.keys.any((key) => !allowed.contains(key))) {
@@ -196,10 +230,73 @@ final class MethodChannelSquatDetector implements SquatDetector {
         squatSessionId: _sessionId(raw),
         code: _string(raw, 'code'),
       ),
+      'diagnostics' => _diagnosticsEvent(raw, eventId, occurredAt),
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       ),
     };
+  }
+
+  SquatDetectorDiagnostics _diagnosticsEvent(
+    Map<dynamic, dynamic> raw,
+    String eventId,
+    DateTime occurredAt,
+  ) {
+    final poseDetected = raw['poseDetected'];
+    final latestRejectReason = raw['latestRejectReason'];
+    if (poseDetected is! bool ||
+        (latestRejectReason != null &&
+            (latestRejectReason is! String ||
+                latestRejectReason.isEmpty ||
+                latestRejectReason.length > 64))) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return SquatDetectorDiagnostics(
+      eventId: eventId,
+      occurredAt: occurredAt,
+      squatSessionId: _sessionId(raw),
+      poseDetected: poseDetected,
+      selectedSide: switch (raw['selectedSide']) {
+        null => null,
+        'left' => SquatPoseSide.left,
+        'right' => SquatPoseSide.right,
+        _ => throw const SquatDetectorFailure(
+          SquatDetectorFailureReason.malformedEvent,
+        ),
+      },
+      leftHipConfidence: _nullableDouble(raw, 'leftHipConfidence'),
+      leftKneeConfidence: _nullableDouble(raw, 'leftKneeConfidence'),
+      leftAnkleConfidence: _nullableDouble(raw, 'leftAnkleConfidence'),
+      rightHipConfidence: _nullableDouble(raw, 'rightHipConfidence'),
+      rightKneeConfidence: _nullableDouble(raw, 'rightKneeConfidence'),
+      rightAnkleConfidence: _nullableDouble(raw, 'rightAnkleConfidence'),
+      kneeAngle: _nullableDouble(raw, 'kneeAngle'),
+      normalizedHipDrop: _nullableDouble(raw, 'normalizedHipDrop'),
+      kneeAngularVelocity: _nullableDouble(raw, 'kneeAngularVelocity'),
+      hipVerticalVelocity: _nullableDouble(raw, 'hipVerticalVelocity'),
+      state: _state(_string(raw, 'state')),
+      latestRejectReason: latestRejectReason as String?,
+      analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
+      acceptedReps: _nonNegativeInt(raw, 'acceptedReps'),
+      rejectedAttempts: _nonNegativeInt(raw, 'rejectedAttempts'),
+      delegate: _delegate(raw['delegate']),
+      sampleCount: _nonNegativeInt(raw, 'sampleCount'),
+      actualAnalysisFps: _nonNegativeDouble(raw, 'actualAnalysisFps'),
+      droppedBeforePreprocessing: _nonNegativeInt(
+        raw,
+        'droppedBeforePreprocessing',
+      ),
+      rejectedAsBusy: _nonNegativeInt(raw, 'rejectedAsBusy'),
+      resultCount: _nonNegativeInt(raw, 'resultCount'),
+      noPoseCount: _nonNegativeInt(raw, 'noPoseCount'),
+      inferenceP50Ms: _nullableNonNegativeInt(raw, 'inferenceP50Ms'),
+      inferenceP95Ms: _nullableNonNegativeInt(raw, 'inferenceP95Ms'),
+      nativePipelineP50Ms: _nullableNonNegativeInt(raw, 'nativePipelineP50Ms'),
+      nativePipelineP95Ms: _nullableNonNegativeInt(raw, 'nativePipelineP95Ms'),
+      diagnosticEventFps: _nonNegativeDouble(raw, 'diagnosticEventFps'),
+    );
   }
 
   SquatDetectorReady _readyEvent(
@@ -207,7 +304,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
     String eventId,
     DateTime occurredAt,
   ) {
-    if (raw['detectorType'] != 'mlkit') {
+    if (raw['detectorType'] != 'mediapipe') {
       throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       );
@@ -217,6 +314,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       occurredAt: occurredAt,
       squatSessionId: _sessionId(raw),
       detectorVersion: _detectorVersion(raw),
+      delegate: _delegate(raw['delegate']),
     );
   }
 
@@ -228,7 +326,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
     final sessionId = _sessionId(raw);
     final sequence = _positiveInt(raw, 'sequence');
     if (sequence > 999999999 ||
-        raw['detectorType'] != 'mlkit' ||
+        raw['detectorType'] != 'mediapipe' ||
         eventId != '${sessionId}_$sequence') {
       throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
@@ -296,6 +394,48 @@ final class MethodChannelSquatDetector implements SquatDetector {
     return value;
   }
 
+  int? _nullableNonNegativeInt(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) return null;
+    if (value is! int || value < 0) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value;
+  }
+
+  double _nonNegativeDouble(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value is! num || !value.isFinite || value < 0) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value.toDouble();
+  }
+
+  SquatInferenceDelegate _delegate(Object? value) {
+    return switch (value) {
+      'gpu' => SquatInferenceDelegate.gpu,
+      'cpu' => SquatInferenceDelegate.cpu,
+      _ => throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      ),
+    };
+  }
+
+  double? _nullableDouble(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) return null;
+    if (value is! num || !value.isFinite) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value.toDouble();
+  }
+
   SquatDetectorState _state(String value) {
     return switch (value) {
       'calibrating' => SquatDetectorState.calibrating,
@@ -312,7 +452,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
   SquatQualityWarning? _quality(dynamic value) {
     return switch (value) {
       null => null,
-      'showFullBody' => SquatQualityWarning.showFullBody,
+      'showLowerBody' || 'showFullBody' => SquatQualityWarning.showLowerBody,
       'moveFartherBack' => SquatQualityWarning.moveFartherBack,
       'moveCloser' => SquatQualityWarning.moveCloser,
       'lowLightOrConfidence' => SquatQualityWarning.lowLightOrConfidence,

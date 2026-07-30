@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -287,22 +288,13 @@ final class _SquatControls extends StatelessWidget {
                 ),
                 IgnorePointer(
                   child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: DecoratedBox(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 44,
+                      vertical: 36,
+                    ),
+                    child: CustomPaint(
                       key: const Key('camera-body-guide'),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.8),
-                          width: 2,
-                        ),
-                        borderRadius: BorderRadius.circular(120),
-                      ),
-                      child: const Center(
-                        child: VerticalDivider(
-                          color: Colors.white54,
-                          thickness: 1,
-                        ),
-                      ),
+                      painter: const _LowerBodyGuidePainter(),
                     ),
                   ),
                 ),
@@ -310,7 +302,19 @@ final class _SquatControls extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        const Text('枠の中に頭から足先まで入る位置で、正面を向いてください。', textAlign: TextAlign.center),
+        if (!state.detectorReady)
+          const Card(
+            key: Key('pose-model-loading'),
+            child: ListTile(
+              leading: CircularProgressIndicator(),
+              title: Text('姿勢判定を準備しています'),
+              subtitle: Text('カメラ映像は端末内だけで処理します。'),
+            ),
+          ),
+        const Text(
+          '腰から足首まで映してください。少し横向きになると判定しやすくなります。',
+          textAlign: TextAlign.center,
+        ),
         Semantics(
           liveRegion: true,
           child: Text(
@@ -330,6 +334,11 @@ final class _SquatControls extends StatelessWidget {
         ),
         if (state.lastAnalysisLatencyMs case final latency?)
           Text('端末内判定 ${latency}ms', key: const Key('squat-latency')),
+        if (kDebugMode)
+          if (state.diagnostics case final diagnostics?)
+            _CollapsibleDiagnostics(diagnostics: diagnostics)
+          else if (showNativePreview)
+            const _LiveSquatDiagnosticsPanel(),
         if (state.failure case final failure?)
           Text(
             _detectorFailureMessage(failure.reason),
@@ -361,15 +370,166 @@ String _stateLabel(SquatDetectorState state) {
 
 String _qualityMessage(SquatQualityWarning? warning) {
   return switch (warning) {
-    null => '全身を認識しています。',
-    SquatQualityWarning.showFullBody => '全身が映る位置に移動してください。',
+    null => '下半身を認識しています。',
+    SquatQualityWarning.showLowerBody => '腰から足首まで映る位置に移動してください。',
     SquatQualityWarning.moveFartherBack => 'カメラから少し離れてください。',
     SquatQualityWarning.moveCloser => 'カメラへ少し近づいてください。',
-    SquatQualityWarning.lowLightOrConfidence => '明るい場所で全身を映してください。',
+    SquatQualityWarning.lowLightOrConfidence => '明るい場所で腰・膝・足首を映してください。',
     SquatQualityWarning.holdStillToCalibrate => '立った姿勢で少し静止してください。',
     SquatQualityWarning.cameraUnavailable => 'カメラを利用できません。',
   };
 }
+
+final class _LowerBodyGuidePainter extends CustomPainter {
+  const _LowerBodyGuidePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final guide = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, size.height * 0.12, size.width, size.height * 0.80),
+      const Radius.circular(28),
+    );
+    canvas.drawRRect(guide, paint);
+    final secondary = Paint()
+      ..color = Colors.white54
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(size.width / 2, size.height * 0.12),
+      Offset(size.width / 2, size.height * 0.92),
+      secondary,
+    );
+    canvas.drawLine(
+      Offset(0, size.height * 0.35),
+      Offset(size.width, size.height * 0.35),
+      secondary,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LowerBodyGuidePainter oldDelegate) => false;
+}
+
+final class _SquatDiagnosticsCard extends StatelessWidget {
+  const _SquatDiagnosticsCard({required this.diagnostics});
+
+  final SquatDetectorDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('squat-debug-diagnostics'),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: DefaultTextStyle.merge(
+          style: Theme.of(context).textTheme.bodySmall,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Debug detector diagnostics'),
+              Text('Delegate: ${diagnostics.delegate?.name ?? 'initializing'}'),
+              Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
+              Text(
+                'Selected side: ${diagnostics.selectedSide?.name ?? 'none'}',
+              ),
+              Text(
+                'Left H/K/A: ${_metric(diagnostics.leftHipConfidence)} / '
+                '${_metric(diagnostics.leftKneeConfidence)} / '
+                '${_metric(diagnostics.leftAnkleConfidence)}',
+              ),
+              Text(
+                'Right H/K/A: ${_metric(diagnostics.rightHipConfidence)} / '
+                '${_metric(diagnostics.rightKneeConfidence)} / '
+                '${_metric(diagnostics.rightAnkleConfidence)}',
+              ),
+              Text('Knee angle: ${_metric(diagnostics.kneeAngle, digits: 1)}°'),
+              Text(
+                'Hip drop: ${_metric(diagnostics.normalizedHipDrop, digits: 3)}',
+              ),
+              Text(
+                'Knee velocity: '
+                '${_metric(diagnostics.kneeAngularVelocity, digits: 1)}°/s',
+              ),
+              Text(
+                'Hip velocity: '
+                '${_metric(diagnostics.hipVerticalVelocity, digits: 3)}/s',
+              ),
+              Text('State: ${diagnostics.state.name}'),
+              Text(
+                'Latest reject: ${diagnostics.latestRejectReason ?? 'none'}',
+              ),
+              Text(
+                'Accepted / rejected: '
+                '${diagnostics.acceptedReps} / ${diagnostics.rejectedAttempts}',
+              ),
+              Text('Inference latency: ${diagnostics.analysisLatencyMs}ms'),
+              Text(
+                'Analysis FPS: '
+                '${diagnostics.actualAnalysisFps.toStringAsFixed(1)}',
+              ),
+              Text(
+                'Inference p50 / p95: '
+                '${diagnostics.inferenceP50Ms ?? '-'} / '
+                '${diagnostics.inferenceP95Ms ?? '-'} ms',
+              ),
+              Text(
+                'Pipeline p50 / p95: '
+                '${diagnostics.nativePipelineP50Ms ?? '-'} / '
+                '${diagnostics.nativePipelineP95Ms ?? '-'} ms',
+              ),
+              Text(
+                'Dropped / busy: '
+                '${diagnostics.droppedBeforePreprocessing} / '
+                '${diagnostics.rejectedAsBusy}',
+              ),
+              Text(
+                'Results / no pose: '
+                '${diagnostics.resultCount} / ${diagnostics.noPoseCount}',
+              ),
+              Text(
+                'Diagnostic events: '
+                '${diagnostics.diagnosticEventFps.toStringAsFixed(1)} FPS',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+final class _LiveSquatDiagnosticsPanel extends ConsumerWidget {
+  const _LiveSquatDiagnosticsPanel();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final diagnostics = ref.watch(squatDiagnosticsProvider);
+    if (diagnostics == null) return const SizedBox.shrink();
+    return _CollapsibleDiagnostics(diagnostics: diagnostics);
+  }
+}
+
+final class _CollapsibleDiagnostics extends StatelessWidget {
+  const _CollapsibleDiagnostics({required this.diagnostics});
+
+  final SquatDetectorDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      key: const Key('squat-debug-diagnostics-panel'),
+      title: const Text('判定診断（Debug）'),
+      initiallyExpanded: false,
+      children: [_SquatDiagnosticsCard(diagnostics: diagnostics)],
+    );
+  }
+}
+
+String _metric(double? value, {int digits = 2}) =>
+    value?.toStringAsFixed(digits) ?? '-';
 
 String _detectorFailureMessage(SquatDetectorFailureReason reason) {
   return switch (reason) {

@@ -3,6 +3,7 @@ package com.kren.michizure.enforcement
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
@@ -63,32 +64,86 @@ interface PackageCatalog {
     fun listLockableApps(): List<CatalogApp>
 }
 
+data class LaunchableApp(
+    val packageName: String,
+    val label: String,
+)
+
+fun interface LaunchableAppDiscovery {
+    fun discover(): List<LaunchableApp>
+}
+
+fun interface ProtectedPackageResolver {
+    fun resolve(): Map<String, PackageProtectionReason>
+}
+
 class AndroidPackageCatalog(
-    private val context: Context,
+    private val discovery: LaunchableAppDiscovery,
+    private val protectedPackageResolver: ProtectedPackageResolver,
     private val filter: PackageCandidateFilter = PackageCandidateFilter(),
 ) : PackageCatalog {
-    private val packageManager: PackageManager
-        get() = context.packageManager
+    constructor(
+        context: Context,
+        filter: PackageCandidateFilter = PackageCandidateFilter(),
+    ) : this(
+        discovery = LauncherAppsDiscovery(context),
+        protectedPackageResolver = AndroidProtectedPackageResolver(context),
+        filter = filter,
+    )
 
     override fun listLockableApps(): List<CatalogApp> {
-        val protectedPackages = findProtectedPackages()
-        val launcherIntent =
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val protectedPackages = protectedPackageResolver.resolve()
         val candidates =
-            queryIntentActivities(launcherIntent).mapNotNull { resolveInfo ->
-                val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
-                val packageName = activityInfo.packageName ?: return@mapNotNull null
+            discovery.discover().map { app ->
                 PackageCandidate(
-                    packageName = packageName,
-                    label = resolveInfo.loadLabel(packageManager).toString(),
+                    packageName = app.packageName,
+                    label = app.label,
                     isLaunchable = true,
-                    protectionReason = protectedPackages[packageName],
+                    protectionReason = protectedPackages[app.packageName],
                 )
             }
         return filter.filter(candidates)
     }
+}
 
-    private fun findProtectedPackages(): Map<String, PackageProtectionReason> {
+/**
+ * Lists the activities the current Android user can launch from a Launcher.
+ *
+ * LauncherApps is the platform's launcher-facing catalog and does not require
+ * QUERY_ALL_PACKAGES. Package removal can race this call, so stale activities
+ * are skipped independently instead of failing the entire catalog.
+ */
+class LauncherAppsDiscovery(context: Context) : LaunchableAppDiscovery {
+    private val launcherApps =
+        requireNotNull(context.getSystemService(LauncherApps::class.java)) {
+            "LauncherApps is unavailable."
+        }
+
+    override fun discover(): List<LaunchableApp> {
+        val user = android.os.Process.myUserHandle()
+        return launcherApps
+            .getActivityList(null, user)
+            .mapNotNull { activity ->
+                runCatching {
+                    if (!launcherApps.isActivityEnabled(activity.componentName, user)) {
+                        return@runCatching null
+                    }
+                    LaunchableApp(
+                        packageName = activity.componentName.packageName,
+                        label = activity.label?.toString().orEmpty(),
+                    )
+                }.getOrNull()
+            }
+    }
+}
+
+class AndroidProtectedPackageResolver(
+    private val context: Context,
+) : ProtectedPackageResolver {
+    private val packageManager: PackageManager
+        get() = context.packageManager
+
+    override fun resolve(): Map<String, PackageProtectionReason> {
         val protected = linkedMapOf<String, PackageProtectionReason>()
         protected[context.packageName] = PackageProtectionReason.SELF
 

@@ -42,7 +42,7 @@ Phase 5のTask GuardはUsageEvents履歴をKotlin process内だけで短時間�
 
 Phase 6はFirestoreでTask failureとsame-ID Debtが確定した後、Task開始時のnative package snapshotからDebt ID別obligationを作る。package一覧、DPMの失敗package名、owned suspensionはlocal DataStoreだけに保存し、Platform Channelは件数とtyped codeだけを返す。offline中はPhase 5 outboxを保持するが、cloud確定前にはlockしないため、network断中の即時強制は今回の要件選択では保証しない。
 
-Phase 9はCameraXの`ImageProxy`をML Kit callback完了時にcloseし、landmarkから得た角度・状態もsession memoryだけに保持する。Native→Dart契約はquality、FSM state、stable rep identity、latencyだけをfield allowlistで受け付け、frame、bitmap、landmark、skeleton座標の追加fieldを拒否する。Firestoreへ渡るのはPhase 8で定義済みの1 rep Contributionだけである。
+CameraXの`ImageProxy`はRGBA Bitmapへのcopy完了直後にcloseし、MediaPipe用`MPImage` / Bitmapはresult・error・stopの各pathでreleaseする。landmark、One-Euro Filter state、角度、FSM stateはsession memoryだけに保持する。Native→Dart契約はquality、FSM state、stable rep identity、集約latencyだけをfield allowlistで受け付け、frame、bitmap、landmark、skeleton座標の追加fieldを拒否する。Firestoreへ渡るのはPhase 8で定義済みの1 rep Contributionだけである。
 
 Phase 10のdevice-protected boot snapshotにはactive lock obligationのstable ID、Task ID、選択済みpackage snapshot、絶対/elapsed期限、boot count、MICHIZURE-owned suspensionだけを保存する。全installed-app inventory、UsageEvents、Task本文、Auth情報、Camera / pose dataは複製しない。Recoveryは既存Rules対象のowner pointer、Task、Debtだけをserver sourceで読み、Rulesやwrite権限を広げない。Authの一時network failureではlogoutせず、恒久invalid credentialだけをtyped codeでsign outする。logoutはlock stateの削除理由にしない。
 
@@ -112,7 +112,7 @@ Contribution Eventへ保存するのはuid、Debt配下のevent identity、1 rep
 
 ## 7. Camera privacy controls
 
-- CameraX `ImageProxy` はML Kit callback完了時に必ずcloseする。
+- CameraX `ImageProxy` はMediaPipe投入前のRGBA copy完了時に必ずcloseし、`MPImage`はasync callback完了までだけ保持する。
 - screenshot、recording、frame file、thumbnailを実装しない。
 - raw landmark配列をFirestore、analytics、crash reportへ送らない。
 - OpenAI API、Cloud Storage、custom endpointへの画像network pathを作らない。
@@ -123,11 +123,11 @@ Contribution Eventへ保存するのはuid、Debt配下のevent identity、1 rep
 ## 8. Installed app privacy
 
 - package inventoryはPlay policy上もsensitive dataとして扱う。
-- debug source set（将来のdemo flavor）の `QUERY_ALL_PACKAGES` で得た結果をnetworkへ送らない。
+- `LauncherApps`から得たlaunchable app catalogをnetworkへ送らない。debug / releaseとも`QUERY_ALL_PACKAGES`は宣言しない。
 - FirestoreのDebtにはpackage名やカテゴリを持たせない。
 - local DataStoreはapp sandboxに置き、Phase 3で`android:allowBackup="false"`としてcloud / device backup対象外にする。
 - ログは件数と結果codeだけにし、package名を出す場合はローカルdebug buildに限定する。
-- Production Play配布前にbroad package visibilityの許可可能性を審査し、不可なら選択UIをscoped visibilityへ縮退する。
+- Production Play配布でもscoped launcher visibilityを維持する。将来broad visibilityが必要になった場合だけ、用途とPlay policyを別途審査する。
 
 ## 9. Secret / configuration policy
 

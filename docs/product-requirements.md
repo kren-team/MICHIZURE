@@ -71,9 +71,9 @@ MICHIZUREは、個人の集中タスク失敗をグループの共同スクワ�
 
 ### 3.6 スクワット判定
 
-- Production実装はCameraX + ML Kit Pose Detectionのbase SDK / stream modeを使用する。
+- Production実装はCameraX + MediaPipe Pose Landmarker Liteの`LIVE_STREAM`を使用する。
 - カメラ画像・映像は保存、ログ出力、Firestore送信、外部API送信をしない。
-- 33ランドマークのうち肩・股関節・膝・足首を中心に利用し、角度、信頼度、速度、時間、ヒステリシスを持つ状態機械で1repを確定する。
+- 33ランドマークのうち片側の股関節・膝・足首を必須入力とし、膝角度、正規化した腰の沈み、速度、信頼度、時間、ヒステリシスを持つ状態機械で1repを確定する。顔・肩は必須にしない。
 - debug buildに限り、UI操作または合成ランドマーク列を供給する `FakeSquatDetector` をDIできる。
 - debug detector由来のContributionはメタデータで識別し、Production buildにはFake実装を含めない。
 
@@ -85,7 +85,7 @@ MICHIZUREは、個人の集中タスク失敗をグループの共同スクワ�
 |---|---|---|
 | Android applicationId | `com.kren.michizure` | Firebase登録前なら変更可。変更時はADR |
 | デモAPI level | API 35のGoogle APIs / Google Play対応Emulatorを基準 | 実装時のCI対応状況で固定 |
-| Android minSdk | 23 | ML Kit / FlutterFireの現行下限 |
+| Android minSdk | 24 | MediaPipe Tasks Vision 1.0.0のAAR manifest要件 |
 | hard enforcement対応 | API 29以上、Device Owner端末 | API 23〜28はUIを起動可能でもMVP保証外 |
 | lock期間 | failureから30分 | debug flavorはデモ用に短縮可 |
 | Debt単価 | failure時メンバー1人あたり10rep | 変更は新規Taskにだけ適用 |
@@ -173,17 +173,17 @@ Firebaseと公衆インターネットにはMVPのSLAがないため、これら
 ## 10. Productionへ進む条件
 
 - コンシューマー版かAndroid Enterprise版かを事業判断する。
-- DPC承認、managed provisioning、Play policy、`QUERY_ALL_PACKAGES`、Foreground Service申告を審査する。
+- DPC承認、managed provisioning、scoped package visibility、Foreground Service申告を審査する。現構成では`QUERY_ALL_PACKAGES`を使用しない。
 - trusted backendでTask failure、Debt生成、Contribution検証、時刻を権威化する。
 - App Check Play Integrityを強制し、debug providerを完全分離する。
 - abuse、監査、削除要求、データ保持期間、サポート導線を整備する。
-- ML Kit Pose Detection betaの更新・破壊的変更を吸収するcompatibility testを持つ。
+- MediaPipe Tasks Visionと同梱Pose Landmarker Lite modelを固定し、SDK / model更新時はadapter、精度、latency、APK sizeを再検証する。
 
 ## 11. 公式仕様
 
 - [DevicePolicyManager.setPackagesSuspended](https://developer.android.com/reference/android/app/admin/DevicePolicyManager#setPackagesSuspended(android.content.ComponentName,%20java.lang.String%5B%5D,%20boolean))
 - [UsageStatsManager](https://developer.android.com/reference/android/app/usage/UsageStatsManager)
 - [UsageEvents.Event](https://developer.android.com/reference/android/app/usage/UsageEvents.Event)
-- [ML Kit Pose Detection for Android](https://developers.google.com/ml-kit/vision/pose-detection/android)
+- [MediaPipe Pose Landmarker for Android](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker/android)
 - [Cloud Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions)
 - [Firebase pricing plans](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans)

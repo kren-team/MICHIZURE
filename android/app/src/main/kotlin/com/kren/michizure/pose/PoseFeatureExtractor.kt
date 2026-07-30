@@ -2,7 +2,6 @@ package com.kren.michizure.pose
 
 import kotlin.math.acos
 import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.min
 
 class PoseFeatureExtractor(
@@ -11,38 +10,79 @@ class PoseFeatureExtractor(
     private var selectedSide: PoseSide? = null
     private var selectedAtMs: Long = Long.MIN_VALUE
 
-    fun extract(frame: PoseLandmarkFrame): PoseFeatureResult {
-        if (frame.imageWidth <= 0 || frame.imageHeight <= 0) {
-            return invalid(frame, PoseQualityWarning.SHOW_FULL_BODY)
+    fun extract(pose: LowerBodyPose): PoseFeatureResult {
+        val baseQuality = quality(pose, selectedSide = null)
+        if (pose.imageWidth <= 0 || pose.imageHeight <= 0) {
+            return invalid(
+                pose,
+                PoseQualityWarning.SHOW_LOWER_BODY,
+                baseQuality,
+                "invalidFrameSize",
+            )
         }
-        val left = frame.left?.let { measure(it, PoseSide.LEFT) }
-        val right = frame.right?.let { measure(it, PoseSide.RIGHT) }
-        val validLeft = left?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
-        val validRight = right?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
-        if (validLeft == null && validRight == null) {
-            return invalid(frame, PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE)
+        if (!pose.poseDetected) {
+            return invalid(
+                pose,
+                PoseQualityWarning.SHOW_LOWER_BODY,
+                baseQuality,
+                "poseNotDetected",
+            )
         }
 
-        val selected = selectSide(validLeft, validRight, frame.timestampMs)
-        val subjectHeightRatio =
-            selected.subjectHeight / frame.imageHeight.toDouble()
-        if (subjectHeightRatio < config.minimumSubjectHeightRatio) {
-            return invalid(frame, PoseQualityWarning.MOVE_CLOSER)
+        val left = pose.left?.let { measure(it, PoseSide.LEFT) }
+        val right = pose.right?.let { measure(it, PoseSide.RIGHT) }
+        if (left == null && right == null) {
+            return invalid(
+                pose,
+                PoseQualityWarning.SHOW_LOWER_BODY,
+                baseQuality,
+                "lowerBodyLandmarkMissing",
+            )
         }
-        if (subjectHeightRatio > config.maximumSubjectHeightRatio) {
-            return invalid(frame, PoseQualityWarning.MOVE_FARTHER_BACK)
+        val validLeft =
+            left?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
+        val validRight =
+            right?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
+        if (validLeft == null && validRight == null) {
+            return invalid(
+                pose,
+                PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
+                baseQuality,
+                "lowerBodyConfidenceLow",
+            )
+        }
+
+        val selected = selectSide(validLeft, validRight, pose.timestampMs)
+        val quality = quality(pose, selected.side)
+        val legLengthRatio = selected.legLength / pose.imageHeight.toDouble()
+        if (legLengthRatio < config.minimumLegLengthRatio) {
+            return invalid(
+                pose,
+                PoseQualityWarning.MOVE_CLOSER,
+                quality,
+                "lowerBodyTooSmall",
+            )
+        }
+        if (legLengthRatio > config.maximumLegLengthRatio) {
+            return invalid(
+                pose,
+                PoseQualityWarning.MOVE_FARTHER_BACK,
+                quality,
+                "lowerBodyTooClose",
+            )
         }
 
         return PoseFeatureResult.Valid(
-            PoseFeatureSample(
-                timestampMs = frame.timestampMs,
-                kneeAngleDeg = selected.kneeAngle,
-                hipAngleDeg = selected.hipAngle,
-                hipY = selected.hipY / frame.imageHeight,
-                legLength = selected.legLength / frame.imageHeight,
-                confidence = selected.confidence,
-                selectedSide = selected.side,
-            ),
+            sample =
+                PoseFeatureSample(
+                    timestampMs = pose.timestampMs,
+                    kneeAngleDeg = selected.kneeAngle,
+                    hipY = selected.hipY / pose.imageHeight,
+                    legLength = legLengthRatio,
+                    confidence = selected.confidence,
+                    selectedSide = selected.side,
+                ),
+            quality = quality,
         )
     }
 
@@ -57,32 +97,30 @@ class PoseFeatureExtractor(
         timestampMs: Long,
     ): SideMeasurement {
         if (left != null && right != null) {
-            if (selectedSide == PoseSide.LEFT &&
+            val sticky =
+                when (selectedSide) {
+                    PoseSide.LEFT -> left
+                    PoseSide.RIGHT -> right
+                    null -> null
+                }
+            if (sticky != null &&
                 timestampMs - selectedAtMs <= config.sideStickinessMs
             ) {
-                return left
+                return sticky
             }
-            if (selectedSide == PoseSide.RIGHT &&
-                timestampMs - selectedAtMs <= config.sideStickinessMs
-            ) {
-                return right
-            }
-            if (kotlin.math.abs(left.confidence - right.confidence) < 0.10) {
-                selectedSide = PoseSide.BOTH
+            val stronger =
+                when {
+                    left.confidence >= right.confidence +
+                        config.sideSwitchConfidenceMargin -> left
+                    right.confidence >= left.confidence +
+                        config.sideSwitchConfidenceMargin -> right
+                    selectedSide == PoseSide.RIGHT -> right
+                    else -> left
+                }
+            if (selectedSide != stronger.side) {
+                selectedSide = stronger.side
                 selectedAtMs = timestampMs
-                return SideMeasurement(
-                    kneeAngle = (left.kneeAngle + right.kneeAngle) / 2,
-                    hipAngle = (left.hipAngle + right.hipAngle) / 2,
-                    hipY = (left.hipY + right.hipY) / 2,
-                    legLength = (left.legLength + right.legLength) / 2,
-                    subjectHeight = (left.subjectHeight + right.subjectHeight) / 2,
-                    confidence = min(left.confidence, right.confidence),
-                    side = PoseSide.BOTH,
-                )
             }
-            val stronger = if (left.confidence >= right.confidence) left else right
-            selectedSide = stronger.side
-            selectedAtMs = timestampMs
             return stronger
         }
         val only = left ?: requireNotNull(right)
@@ -94,36 +132,41 @@ class PoseFeatureExtractor(
     }
 
     private fun measure(
-        landmarks: BodySideLandmarks,
-        poseSide: PoseSide,
+        landmarks: LowerBodySide,
+        side: PoseSide,
     ): SideMeasurement? {
-        val confidence =
-            min(
-                min(landmarks.shoulder.confidence, landmarks.hip.confidence),
-                min(landmarks.knee.confidence, landmarks.ankle.confidence),
-            )
-        val kneeAngle =
-            angle(landmarks.hip, landmarks.knee, landmarks.ankle) ?: return null
-        val hipAngle =
-            angle(landmarks.shoulder, landmarks.hip, landmarks.knee) ?: return null
-        val thigh = distance(landmarks.hip, landmarks.knee)
-        val shin = distance(landmarks.knee, landmarks.ankle)
-        val legLength = thigh + shin
-        if (legLength <= 1e-6) return null
-        val subjectHeight =
-            max(landmarks.shoulder.y, landmarks.ankle.y) -
-                min(landmarks.shoulder.y, landmarks.ankle.y)
-        if (subjectHeight <= 1e-6) return null
+        val hip = landmarks.hip ?: return null
+        val knee = landmarks.knee ?: return null
+        val ankle = landmarks.ankle ?: return null
+        if (!hip.isUsable() || !knee.isUsable() || !ankle.isUsable()) return null
+        val confidence = min(hip.confidence, min(knee.confidence, ankle.confidence))
+        val kneeAngle = angle(hip, knee, ankle) ?: return null
+        val legLength = distance(hip, knee) + distance(knee, ankle)
+        if (!kneeAngle.isFinite() || !legLength.isFinite() || legLength <= 1e-6) {
+            return null
+        }
         return SideMeasurement(
             kneeAngle = kneeAngle,
-            hipAngle = hipAngle,
-            hipY = landmarks.hip.y,
+            hipY = hip.y,
             legLength = legLength,
-            subjectHeight = subjectHeight,
             confidence = confidence,
-            side = poseSide,
+            side = side,
         )
     }
+
+    private fun quality(
+        pose: LowerBodyPose,
+        selectedSide: PoseSide?,
+    ) = PoseQualityMetrics(
+        poseDetected = pose.poseDetected,
+        leftHipConfidence = pose.left?.hip?.confidence,
+        leftKneeConfidence = pose.left?.knee?.confidence,
+        leftAnkleConfidence = pose.left?.ankle?.confidence,
+        rightHipConfidence = pose.right?.hip?.confidence,
+        rightKneeConfidence = pose.right?.knee?.confidence,
+        rightAnkleConfidence = pose.right?.ankle?.confidence,
+        selectedSide = selectedSide,
+    )
 
     private fun angle(a: PosePoint, b: PosePoint, c: PosePoint): Double? {
         val ux = a.x - b.x
@@ -140,17 +183,25 @@ class PoseFeatureExtractor(
     private fun distance(a: PosePoint, b: PosePoint): Double =
         hypot(a.x - b.x, a.y - b.y)
 
+    private fun PosePoint.isUsable(): Boolean =
+        x.isFinite() && y.isFinite() && confidence.isFinite()
+
     private fun invalid(
-        frame: PoseLandmarkFrame,
+        pose: LowerBodyPose,
         warning: PoseQualityWarning,
-    ) = PoseFeatureResult.Invalid(frame.timestampMs, warning)
+        quality: PoseQualityMetrics,
+        reason: String,
+    ) = PoseFeatureResult.Invalid(
+        timestampMs = pose.timestampMs,
+        warning = warning,
+        quality = quality,
+        rejectReason = reason,
+    )
 
     private data class SideMeasurement(
         val kneeAngle: Double,
-        val hipAngle: Double,
         val hipY: Double,
         val legLength: Double,
-        val subjectHeight: Double,
         val confidence: Double,
         val side: PoseSide,
     )

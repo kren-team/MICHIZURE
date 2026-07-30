@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
+import 'package:michizure/features/enforcement/domain/device_capabilities.dart';
 import 'package:michizure/features/enforcement/application/device_setup_controller.dart';
 import 'package:michizure/features/enforcement/domain/enforcement_failure.dart';
 
@@ -25,6 +26,7 @@ void main() {
       expect(state.capabilities.isManagedDemoReady, isTrue);
       expect(state.apps, hasLength(3));
       expect(state.selectedPackageNames, {'social.app'});
+      expect(state.savedApps.map((app) => app.label), ['Social']);
     },
   );
 
@@ -52,6 +54,20 @@ void main() {
           .selectedPackageNames,
       isEmpty,
     );
+  });
+
+  test('scoped launcher visibility does not block managed demo readiness', () {
+    const capabilities = DeviceCapabilities(
+      isDeviceOwner: true,
+      hasUsageAccess: true,
+      hasNotificationPermission: true,
+      packageVisibility: PackageVisibility.scoped,
+      isUserUnlocked: true,
+      supportsHardEnforcement: true,
+      sdkInt: 36,
+    );
+
+    expect(capabilities.isManagedDemoReady, isTrue);
   });
 
   test('save is single-flight and restores persisted selection', () async {

@@ -398,8 +398,7 @@ class DeviceControlMethodHandler(
                     DeviceControlContract.ERROR_USAGE_ACCESS_MISSING
                 capabilities["hasNotificationPermission"] != true ->
                     DeviceControlContract.ERROR_NOTIFICATION_PERMISSION_MISSING
-                capabilities["hasBroadPackageVisibility"] != true ||
-                    capabilities["isUserUnlocked"] != true ||
+                capabilities["isUserUnlocked"] != true ||
                     Build.VERSION.SDK_INT < 29 ->
                     DeviceControlContract.ERROR_NATIVE_UNAVAILABLE
                 else -> null

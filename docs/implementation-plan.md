@@ -285,7 +285,7 @@ android/app/src/debug/AndroidManifest.xml
 
 - Device Owner emulatorで全capability green
 - 通常emulatorでcrashせずsetup blocked
-- Demo SNSを選択・再起動復元
+- MICHIZURE Demo Targetを選択・再起動復元
 - MICHIZURE、launcher、dialer等を選択不可
 - package名がFirestore / production logへ出ない
 
@@ -423,7 +423,7 @@ android/app/src/androidTest/
 
 ### 完了条件
 
-- Demo SNSを開くと1秒以内を目標にfailure
+- MICHIZURE Demo Targetを開くと1秒以内を目標にfailure
 - screen off / keyguardでfailureしない
 - Home / Settings / foreign appはfailure
 - Usage Access revokeはcapability failure
@@ -500,7 +500,7 @@ lib/features/enforcement/presentation/lock_status/
 
 ### 完了条件
 
-- Firestore failure確定後にDemo SNS suspend
+- Firestore failure確定後にMICHIZURE Demo Target suspend
 - Debt A/Bが同packageでもAだけ完済時は維持
 - 全obligation解決でrelease
 - deadline offline release
@@ -617,7 +617,7 @@ integration_test/debt_realtime_test.dart
 
 ### 実装結果（Phase 8）
 
-- `ContributionRequest`はML Kit由来の1 repだけを受け付け、`${uid}_${squatSessionId}_${sequence}`をstable event IDとする。
+- `ContributionRequest`はProduction native detector由来の1 repだけを受け付け、`${uid}_${squatSessionId}_${sequence}`をstable event IDとする。Firestoreのlegacy `detectorType=mlkit`はRules互換のため維持し、実engineはversionで識別する。
 - Firestore transactionはDebt、本人summary、immutable eventを全read後にatomic更新し、duplicate eventを成功済みno-opとして返す。
 - 最後の1 repだけが`active → completed`と`closedAt`を確定し、後続eventはterminal拒否となる。
 - 端末Outboxは未確定eventを`SharedPreferencesAsync`のAndroid DataStoreへ保存し、ack後だけ削除する。再起動時と2秒retryで順序再送する。
@@ -686,12 +686,12 @@ integration_test/debt_contribution_test.dart
 
 ### 目的
 
-CameraX + ML Kit + Kotlin状態機械でスクワットを検出し、Phase 8のrep eventへ接続する。
+CameraX + on-device pose model + Kotlin状態機械でスクワットを検出し、Phase 8のrep eventへ接続する。
 
 ### 実装結果（Phase 9）
 
-- CameraX 1.6.1 `Preview` / `ImageAnalysis`とML Kit base 18.0.0-beta5 `STREAM_MODE`をKotlinへ隔離した。
-- confidence、全身scale、左右side、knee / hip angle、normalized hip drop、velocity、median + EMAを`SquatDetectorConfig squat-v1`で評価する。
+- Phase 9当初のML Kit経路は実Camera最終確認後に[ADR 0005](adr/0005-mediapipe-pose-landmarker.md)で置換した。現在はCameraX 1.6.1 `Preview` / `ImageAnalysis`とMediaPipe Tasks Vision 1.0.0 / Pose Landmarker Lite `LIVE_STREAM`をKotlinへ隔離している。
+- GPU 15 FPS / CPU fallback 10 FPS、pending 1件、`STRATEGY_KEEP_ONLY_LATEST`とし、One-Euro Filter後のconfidence、leg length scale、左右side、knee angle、normalized hip drop、knee / hip velocityを`SquatDetectorConfig mediapipe-lite-lower-body-v3`で評価する。
 - calibrationを通った`STANDING → DESCENDING → BOTTOM → ASCENDING → STANDING`だけを1 repとし、depth、ROM、phase時間、valid frame率、refractoryで二重countを防ぐ。
 - versioned MethodChannel / EventChannel / PlatformViewを追加し、frameとlandmarkをDartへ渡さないstrict payloadにした。
 - Flutter `SquatSessionController`が明示Debtをsession中固定し、native sequenceをPhase 8のContribution / Outboxへ1 repずつ渡す。
@@ -723,8 +723,8 @@ lib/features/squat/
 ### Native Kotlin
 
 - CameraX Preview / ImageAnalysis
-- ML Kit base / STREAM_MODE
-- quality、feature、smoothing、FSM
+- MediaPipe Lite / `LIVE_STREAM` / GPU→CPU fallback
+- quality、One-Euro Filter、feature、calibration、FSM
 - EventChannel、PlatformView
 - synthetic source / Fakeをdebug source setへ隔離
 
@@ -749,7 +749,7 @@ lib/features/squat/
 
 1. `feat: pose sourceとfeature抽出を追加`
 2. `feat: スクワット状態機械を実装`
-3. `feat: CameraXとML Kitを統合`
+3. `feat: CameraXと端末内pose modelを統合`
 4. `feat: squat UIとContribution連携を追加`
 5. `test: synthetic poseとlatencyを検証`
 
@@ -859,7 +859,7 @@ README.md
 ### Native Kotlin
 
 - Kotlin / permission / channel変更なし
-- production CameraX + ML Kitと既存latency timestampsを維持
+- production CameraX + MediaPipe Liteとmonotonic latency timestampsを維持
 
 ### 完了条件
 

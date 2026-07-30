@@ -27,7 +27,7 @@ flowchart LR
         InfraB["Repositories / Firebase SDK"]
         BridgeB["Platform Channel Adapters"]
         Camera["CameraX"]
-        Pose["ML Kit Pose Detection"]
+        Pose["MediaPipe Pose Landmarker Lite"]
         FSM["Squat State Machine"]
     end
 
@@ -60,10 +60,10 @@ flowchart LR
 | Navigation | `go_router` | 認証・group・running taskのredirectを宣言的に扱う |
 | Auth | Firebase Authentication（email/password） | SparkでMVP規模を満たす |
 | Realtime DB | Cloud Firestore | listener、transaction、offline cache |
-| Android native | Kotlin | DPC、UsageStats、CameraX、ML Kitの公式API |
+| Android native | Kotlin | DPC、UsageStats、CameraX、MediaPipeの公式API |
 | Flutter ↔ Kotlin | MethodChannel + EventChannel + PlatformView | command、イベントstream、camera previewを役割分離 |
 | Camera | CameraX Preview + ImageAnalysis | lifecycle統合、backpressure |
-| Pose | ML Kit Pose Detection base SDK / STREAM_MODE | 端末内・低遅延。画像送信不要 |
+| Pose | MediaPipe Pose Landmarker Lite / LIVE_STREAM | 端末内・GPU優先 / CPU fallback。画像送信不要 |
 | ローカル復元 | Kotlin DataStore（Phase 6はcredential-protected、Phase 10でdevice-protected最小snapshotを追加） | Flutter UI不在でもlockを復元 |
 | テストbackend | Firebase Local Emulator Suite | Auth / Firestore / Rulesを無料・決定的に検証 |
 
@@ -77,7 +77,7 @@ flowchart TD
     Application["Application<br/>Use cases, orchestration, UI-independent state"]
     Domain["Domain<br/>Entities, value objects, repository ports, state machines"]
     Infrastructure["Infrastructure<br/>Firestore/Auth adapters, platform adapters, local adapters"]
-    Native["Android Native<br/>DPC, UsageStats, CameraX, ML Kit, DataStore"]
+    Native["Android Native<br/>DPC, UsageStats, CameraX, MediaPipe, DataStore"]
 
     Presentation --> Application
     Application --> Domain
@@ -213,15 +213,15 @@ Firestore開始が失敗した場合はGuardを開始しない。failure後のFi
 sequenceDiagram
     actor Member
     participant CameraX
-    participant MLKit
+    participant MediaPipe
     participant FSM
     participant Flutter
     participant Firestore
     participant Peers as Group listeners
 
     Member->>Flutter: Debtを選択して開始
-    CameraX->>MLKit: latest ImageProxy
-    MLKit->>FSM: pose landmarks
+    CameraX->>MediaPipe: throttled latest RGBA frame
+    MediaPipe->>FSM: LowerBodyPose + One-Euro filtered features
     FSM->>FSM: STANDING→...→STANDING
     FSM-->>Flutter: repCompleted(sessionId, sequence)
     Flutter->>Firestore: idempotent transaction
@@ -275,7 +275,7 @@ Coordinator自体とContribution deliveryはsingle-flightであり、listener、
 - sideloadしたdebug APK
 - fresh Android EmulatorをDevice Owner化
 - Usage Accessをadbまたは設定画面で許可
-- `QUERY_ALL_PACKAGES` はdebug/demo flavorだけで使用
+- launchable app catalogは`LauncherApps`とscoped `<queries>`で取得し、debug / releaseとも`QUERY_ALL_PACKAGES`を使用しない
 - foreground service `systemExempted` はDevice Owner要件を満たす構成
 - Firebase Emulator Suiteを第一選択、Sparkのlive projectをbackup
 - App CheckはEmulatorでは無効、live debugでは登録済みdebug token
@@ -305,7 +305,7 @@ AccessibilityServiceを封印の抜け道として採用しない。Digital Well
 | 任意アプリの強制封印 | Device Ownerなら可 | 不可 | MVPのみhard enforcement |
 | lock task mode | Device Ownerなら可 | screen pinningのみ | 今回の主方式には不適 |
 | 再起動後の封印 | local obligation + DPM reconcile | hard lock自体不可 | MVP可 |
-| 端末内pose判定 | 可 | 可 | ML Kit beta更新リスク |
+| 端末内pose判定 | 可 | 可 | MediaPipe / GPU delegate端末差 |
 | 複数ユーザー同期 | 可 | 可 | network依存 |
 | Sparkでbackend | 可 | 可 | 不正防止とquotaに制約 |
 

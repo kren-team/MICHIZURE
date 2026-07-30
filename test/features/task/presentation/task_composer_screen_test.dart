@@ -51,13 +51,22 @@ void main() {
     final device = FakeDeviceControlRepository();
     await _pumpComposer(tester, tasks: tasks, device: device);
 
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('task-start-button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     final start = tester.widget<FilledButton>(
       find.byKey(const Key('task-start-button')),
     );
     expect(start.onPressed, isNull);
     expect(find.text('セットアップが必要です'), findsOneWidget);
-    expect(find.text('封印対象アプリ: 0件'), findsOneWidget);
+    expect(find.text('0件選択済み'), findsOneWidget);
     expect(find.byKey(const Key('task-device-setup-button')), findsOneWidget);
+    expect(
+      find.byKey(const Key('task-app-selection-route-button')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('renders a safe typed failure without an SDK message', (
@@ -104,6 +113,11 @@ Future<GoRouter> _pumpComposer(
       GoRoute(
         path: '/device-setup',
         builder: (context, state) => const Scaffold(body: Text('Setup')),
+      ),
+      GoRoute(
+        path: '/device-setup/apps',
+        builder: (context, state) =>
+            const Scaffold(body: Text('App Selection')),
       ),
     ],
   );

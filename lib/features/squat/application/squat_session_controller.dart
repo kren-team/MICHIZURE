@@ -13,6 +13,21 @@ final squatSessionControllerProvider =
       SquatSessionController.new,
     );
 
+final squatDiagnosticsProvider =
+    NotifierProvider<SquatDiagnosticsController, SquatDetectorDiagnostics?>(
+      SquatDiagnosticsController.new,
+    );
+
+final class SquatDiagnosticsController
+    extends Notifier<SquatDetectorDiagnostics?> {
+  @override
+  SquatDetectorDiagnostics? build() => null;
+
+  void update(SquatDetectorDiagnostics value) => state = value;
+
+  void clear() => state = null;
+}
+
 enum SquatSessionStatus {
   idle,
   requestingPermission,
@@ -29,11 +44,14 @@ final class SquatSessionState {
     required this.detectedReps,
     required this.lastSequence,
     required this.maximumLocalReps,
+    this.detectorReady = false,
     this.squatSessionId,
     this.debtId,
     this.qualityWarning,
     this.failure,
     this.lastAnalysisLatencyMs,
+    this.diagnostics,
+    this.detectorDelegate,
   });
 
   const SquatSessionState.initial()
@@ -43,11 +61,14 @@ final class SquatSessionState {
       detectedReps = 0,
       lastSequence = 0,
       maximumLocalReps = 0,
+      detectorReady = false,
       squatSessionId = null,
       debtId = null,
       qualityWarning = null,
       failure = null,
-      lastAnalysisLatencyMs = null;
+      lastAnalysisLatencyMs = null,
+      diagnostics = null,
+      detectorDelegate = null;
 
   final SquatSessionStatus status;
   final CameraPermissionState permission;
@@ -55,11 +76,14 @@ final class SquatSessionState {
   final int detectedReps;
   final int lastSequence;
   final int maximumLocalReps;
+  final bool detectorReady;
   final String? squatSessionId;
   final String? debtId;
   final SquatQualityWarning? qualityWarning;
   final SquatDetectorFailure? failure;
   final int? lastAnalysisLatencyMs;
+  final SquatDetectorDiagnostics? diagnostics;
+  final SquatInferenceDelegate? detectorDelegate;
 
   bool get isRunning => status == SquatSessionStatus.running;
 
@@ -70,11 +94,14 @@ final class SquatSessionState {
     int? detectedReps,
     int? lastSequence,
     int? maximumLocalReps,
+    bool? detectorReady,
     String? squatSessionId,
     String? debtId,
     SquatQualityWarning? qualityWarning,
     SquatDetectorFailure? failure,
     int? lastAnalysisLatencyMs,
+    SquatDetectorDiagnostics? diagnostics,
+    SquatInferenceDelegate? detectorDelegate,
     bool clearSession = false,
     bool clearWarning = false,
     bool clearFailure = false,
@@ -86,6 +113,7 @@ final class SquatSessionState {
       detectedReps: detectedReps ?? this.detectedReps,
       lastSequence: lastSequence ?? this.lastSequence,
       maximumLocalReps: maximumLocalReps ?? this.maximumLocalReps,
+      detectorReady: clearSession ? false : detectorReady ?? this.detectorReady,
       squatSessionId: clearSession
           ? null
           : squatSessionId ?? this.squatSessionId,
@@ -96,6 +124,10 @@ final class SquatSessionState {
       failure: clearFailure ? null : failure ?? this.failure,
       lastAnalysisLatencyMs:
           lastAnalysisLatencyMs ?? this.lastAnalysisLatencyMs,
+      diagnostics: clearSession ? null : diagnostics ?? this.diagnostics,
+      detectorDelegate: clearSession
+          ? null
+          : detectorDelegate ?? this.detectorDelegate,
     );
   }
 }
@@ -191,6 +223,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
     _commandInFlight = true;
     _stopRequested = false;
     final sessionId = ref.read(squatSessionIdGeneratorProvider).generate();
+    ref.read(squatDiagnosticsProvider.notifier).clear();
     state = state.copyWith(
       status: SquatSessionStatus.starting,
       squatSessionId: sessionId,
@@ -199,6 +232,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
       detectedReps: 0,
       lastSequence: 0,
       maximumLocalReps: remainingReps,
+      detectorReady: false,
       clearWarning: true,
       clearFailure: true,
     );
@@ -248,6 +282,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
         _activeSessionId = null;
         _stopRequested = false;
         _processedRepEvents.clear();
+        ref.read(squatDiagnosticsProvider.notifier).clear();
         state = state.copyWith(
           status: SquatSessionStatus.idle,
           clearSession: true,
@@ -277,7 +312,11 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
     switch (event) {
       case SquatDetectorReady():
         if (event.squatSessionId != sessionId) return;
-        state = state.copyWith(clearFailure: true);
+        state = state.copyWith(
+          detectorReady: true,
+          detectorDelegate: event.delegate,
+          clearFailure: true,
+        );
       case SquatStateChanged():
         if (event.squatSessionId != sessionId) return;
         state = state.copyWith(
@@ -313,6 +352,9 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
         if (reason == SquatDetectorFailureReason.cameraUnavailable) {
           unawaited(stop());
         }
+      case SquatDetectorDiagnostics():
+        if (event.squatSessionId != sessionId) return;
+        ref.read(squatDiagnosticsProvider.notifier).update(event);
     }
   }
 

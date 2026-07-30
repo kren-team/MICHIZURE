@@ -54,12 +54,12 @@ Firebase Emulator Suiteは本番性能の代替ではないが、デモのintern
 現在のdebug source set（Phase 3）
   Firebase demo project
   cleartextをdebug applicationだけで許可
-  QUERY_ALL_PACKAGES
+  LauncherApps + scoped launcher queries
 
 現在のPhase 11 debug
-  productionと同じCameraX / ML Kit / FSM
+  productionと同じCameraX / MediaPipe Lite / One-Euro / FSM
   任意Debt・Contribution・failure・unlock commandなし
-  debug-only broad package visibilityとFirebase Emulator接続
+  scoped package visibilityとFirebase Emulator接続
 
 release
   live config injected
@@ -78,7 +78,7 @@ preinstalled appはAVD imageごとにpackage名・suspend可否が違うため�
 tools/demo-target/
   applicationId: com.kren.michizure.demotarget
   one Activity
-  label: MICHIZURE Demo SNS
+  label: MICHIZURE Demo Target
   no permission / no data
 ```
 
@@ -94,9 +94,18 @@ tools/demo-target/
 - MICHIZUREをDevice Ownerにする前にアプリを起動しない
 - Phase 11以降はdemo targetをinstall
 - animation scaleを通常または固定値に揃える
-- host webcamを使う場合はBだけcamera mapping
+- host webcamを使う場合はCamera確認用AVDのfrontへ`webcam0`をmapping
 
 Device Ownerは通常の既存個人端末へ後付けする手順ではない。失敗したAVDはpolicyを継ぎ足さずfresh AVDへ戻す。
+
+host webcamをfront cameraへ割り当てる場合、既存AVDをwipeせず停止してから次で起動する。`<AVD_NAME>`は`emulator -list-avds`の既存名を使う。
+
+```bash
+"$ANDROID_HOME/emulator/emulator" -webcam-list
+"$ANDROID_HOME/emulator/emulator" @<AVD_NAME> \
+  -camera-front webcam0 \
+  -no-snapshot-load
+```
 
 ## 6. APK installとDevice Owner provisioning
 
@@ -267,7 +276,7 @@ Group:
 name: MICHIZURE Demo Team
 memberCount: 2
 Debt after failure: 20 reps
-lock target: MICHIZURE Demo SNS
+lock target: MICHIZURE Demo Target
 ```
 
 ## 10. Main demo script
@@ -360,11 +369,11 @@ firebase emulators:exec \
 
 ### Scene 2: Task failure
 
-1. AでDemo SNSをlock targetに選択。
+1. AでApp Selectionを開き、MICHIZURE Demo Targetをlock targetに選択して明示的に保存する。
 2. Aで「勉強する / 5分」を開始。
 3. Foreground Service notificationとcountdownを示す。
-4. AでHomeからDemo SNSを開く。
-5. 600ms前後でfailure、Demo SNS Activityが停止 / 起動不可になる。
+4. AでHomeからMICHIZURE Demo Targetを開く。
+5. 600ms前後でfailure、MICHIZURE Demo Target Activityが停止 / 起動不可になる。
 6. Aへfailure resultと20 reps Debtを表示。
 7. BのGroup dashboardへ1秒以内にDebtが現れる。
 
@@ -373,12 +382,12 @@ firebase emulators:exec \
 1. BでDebtを選択。
 2. Phase 8画面で選択中のDebt ID、残回数、pending / confirmedを示す。
 3. camera setupで「画像は保存・送信しない」を示す。
-4. 当日のcameraが安定ならreal CameraX + ML Kit。
+4. 当日のcameraが安定ならreal CameraX + MediaPipe Lite。
 5. cameraが不安定なら実カメラScenario Cを未達として記録し、数値fixtureのinstrumentation結果をML精度の代用として説明しない。
 6. repごとにBのconfirmed count、Aのremainingが更新される。
 7. 20 repsでDebt completed。
 
-`integration_test/debt_contribution_test.dart`では3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。Production UIのrep生成はCameraX + ML Kitだけを使用する。
+`integration_test/debt_contribution_test.dart`では3 clientのatomic Contribution、realtime summary、Outbox復元を検証する。Production UIのrep生成はCameraX + MediaPipe Liteだけを使用する。
 
 ## 10. Phase 10 Recovery smoke
 
@@ -424,12 +433,14 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 1. Bでactive Debt詳細から「この負債を返済する」を開く。
 2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
 3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
-4. host webcamを使う場合は全身がframeへ入る距離で1秒以上直立する。
-5. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
-6. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
-7. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
+4. host webcamを使う場合は腰から足首までをframeへ入れ、少し横向きで1秒以上直立する。
+5. 「姿勢判定を準備しています」の後、debug diagnosticsでdelegate、analysis FPS、drop / busy数、`Pose detected`、選択side、hip/knee/ankle confidence、knee angle、hip drop、velocity、reject reason、inference / pipeline p50・p95を確認する。
+6. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
+7. 浅い屈伸はcountされず、正常1 squatがexactly 1 repであることを確認する。
+8. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
+9. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
 
-Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/ML Kit精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。
+Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。公式model cardはfull-body cropを推奨するため、lower-bodyだけのpose成立率も当日manual gateに含める。
 
 camera permissionを再試験する場合はDevice Ownerやapp dataを消去せず、permission flagsだけを操作する。
 
@@ -443,7 +454,7 @@ adb -s emulator-5554 shell pm clear-permission-flags \
 ### Scene 4: Unlock
 
 1. Aのlock statusでDebt completed / effective lock empty。
-2. Demo SNSを再度開き、起動できることを示す。
+2. MICHIZURE Demo Targetを再度開き、起動できることを示す。
 3. B側でもcompletedを確認。
 
 ## 11. Camera確認順
@@ -461,7 +472,13 @@ adb -s emulator-5554 shell pm clear-permission-flags \
 
 - power button相当でscreen off → failureしない、timer継続
 - screen onでMICHIZUREへ復帰 → running
-- Home / Demo SNS → failure
+- Home / MICHIZURE Demo Target → failure
+
+封印対象アプリからLauncherへ戻る操作はEmulator右側toolbarのHome button、または次を使う。MICHIZURE本体へ特殊なHome操作を追加しない。
+
+```bash
+adb -s emulator-5554 shell input keyevent KEYCODE_HOME
+```
 
 permission dialogとincoming callは自動test結果を提示し、当日の本番flowへ無理に入れない。
 
@@ -517,7 +534,7 @@ Device Owner:
 - AVD device IDs確認
 - Firebase Emulator ports空き
 - camera source確認
-- Demo SNS installed / selectable
+- MICHIZURE Demo Target installed / selectable
 - A/B battery / screen orientation
 - notification permission
 - terminal font / zoom
@@ -529,7 +546,7 @@ Device Owner:
 - Usage Accessなし: setup gateでTaskを開始しない。
 - camera不安定: synthetic sourceへ切替え、MLデモではなく状態機械 / realtime flowと説明。
 - Firestore offline: Aはlocal lockを維持、BへのDebt反映はreconnect後。
-- partial suspension: protected packageではなくdeterministic Demo SNSを使う。
+- partial suspension: protected packageではなくdeterministic MICHIZURE Demo Targetを使う。
 - completion後unlock遅延: Aのlistener / reconciler診断を表示し手動reconcile、原因を隠さない。
 
 ## 17. 公式資料

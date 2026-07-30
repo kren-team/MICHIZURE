@@ -75,6 +75,23 @@ void main() {
     );
   });
 
+  test('parses MediaPipe readiness and delegate', () {
+    final detector = MethodChannelSquatDetector(methodChannel: channel);
+    final event = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'detectorReady',
+      'eventId': 'session-12345678_ready_1',
+      'occurredAtEpochMs': 1_000,
+      'squatSessionId': 'session-12345678',
+      'detectorType': 'mediapipe',
+      'detectorVersion': 'mediapipe-lite-v1',
+      'delegate': 'gpu',
+    });
+
+    expect(event, isA<SquatDetectorReady>());
+    expect((event as SquatDetectorReady).delegate, SquatInferenceDelegate.gpu);
+  });
+
   test(
     'parses a minimal rep event and rejects private or malformed fields',
     () {
@@ -86,7 +103,7 @@ void main() {
         'occurredAtEpochMs': 1_000,
         'squatSessionId': 'session-12345678',
         'sequence': 1,
-        'detectorType': 'mlkit',
+        'detectorType': 'mediapipe',
         'detectorVersion': 'squat-v1',
         'frameObservedElapsedMs': 500,
         'uiEmittedElapsedMs': 550,
@@ -106,7 +123,7 @@ void main() {
             'occurredAtEpochMs': 1_000,
             'squatSessionId': 'session-12345678',
             'sequence': 1,
-            'detectorType': 'mlkit',
+            'detectorType': 'mediapipe',
             'detectorVersion': 'squat-v1',
             'frameObservedElapsedMs': 500,
             'uiEmittedElapsedMs': 550,
@@ -133,7 +150,7 @@ void main() {
             'occurredAtEpochMs': 1_000,
             'squatSessionId': 'session-12345678',
             'sequence': 1,
-            'detectorType': 'mlkit',
+            'detectorType': 'mediapipe',
             'detectorVersion': 'squat-v1',
             'frameObservedElapsedMs': 500,
             'uiEmittedElapsedMs': 550,
@@ -145,6 +162,93 @@ void main() {
       }
     },
   );
+
+  test('parses lower-body diagnostics and rejects coordinate payloads', () {
+    final detector = MethodChannelSquatDetector(methodChannel: channel);
+    final event = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'diagnostics',
+      'eventId': 'session-12345678_diagnostics_1000',
+      'occurredAtEpochMs': 1_000,
+      'squatSessionId': 'session-12345678',
+      'poseDetected': true,
+      'selectedSide': 'left',
+      'leftHipConfidence': 0.90,
+      'leftKneeConfidence': 0.91,
+      'leftAnkleConfidence': 0.88,
+      'rightHipConfidence': null,
+      'rightKneeConfidence': null,
+      'rightAnkleConfidence': null,
+      'kneeAngle': 120.0,
+      'normalizedHipDrop': 0.13,
+      'kneeAngularVelocity': -21.0,
+      'hipVerticalVelocity': 0.12,
+      'state': 'descending',
+      'latestRejectReason': null,
+      'analysisLatencyMs': 80,
+      'acceptedReps': 1,
+      'rejectedAttempts': 0,
+      'delegate': 'cpu',
+      'sampleCount': 20,
+      'actualAnalysisFps': 10.0,
+      'droppedBeforePreprocessing': 12,
+      'rejectedAsBusy': 2,
+      'resultCount': 20,
+      'noPoseCount': 3,
+      'inferenceP50Ms': 45,
+      'inferenceP95Ms': 80,
+      'nativePipelineP50Ms': 55,
+      'nativePipelineP95Ms': 95,
+      'diagnosticEventFps': 5.0,
+    });
+
+    expect(event, isA<SquatDetectorDiagnostics>());
+    final diagnostics = event as SquatDetectorDiagnostics;
+    expect(diagnostics.selectedSide, SquatPoseSide.left);
+    expect(diagnostics.leftKneeConfidence, 0.91);
+    expect(diagnostics.kneeAngle, 120);
+
+    expect(
+      () => detector.parseEvent({
+        'contractVersion': 1,
+        'type': 'diagnostics',
+        'eventId': 'session-12345678_diagnostics_1000',
+        'occurredAtEpochMs': 1_000,
+        'squatSessionId': 'session-12345678',
+        'poseDetected': true,
+        'selectedSide': 'left',
+        'leftHipConfidence': 0.90,
+        'leftKneeConfidence': 0.91,
+        'leftAnkleConfidence': 0.88,
+        'rightHipConfidence': null,
+        'rightKneeConfidence': null,
+        'rightAnkleConfidence': null,
+        'kneeAngle': 120.0,
+        'normalizedHipDrop': 0.13,
+        'kneeAngularVelocity': -21.0,
+        'hipVerticalVelocity': 0.12,
+        'state': 'descending',
+        'latestRejectReason': null,
+        'analysisLatencyMs': 80,
+        'acceptedReps': 1,
+        'rejectedAttempts': 0,
+        'delegate': 'cpu',
+        'sampleCount': 20,
+        'actualAnalysisFps': 10.0,
+        'droppedBeforePreprocessing': 12,
+        'rejectedAsBusy': 2,
+        'resultCount': 20,
+        'noPoseCount': 3,
+        'inferenceP50Ms': 45,
+        'inferenceP95Ms': 80,
+        'nativePipelineP50Ms': 55,
+        'nativePipelineP95Ms': 95,
+        'diagnosticEventFps': 5.0,
+        'landmarks': <Object>[],
+      }),
+      throwsA(isA<SquatDetectorFailure>()),
+    );
+  });
 }
 
 void _handle(

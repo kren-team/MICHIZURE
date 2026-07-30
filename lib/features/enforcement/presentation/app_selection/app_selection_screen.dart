@@ -16,17 +16,69 @@ final class AppSelectionScreen extends ConsumerWidget {
       body: setup.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => Center(
-          child: Text(
-            enforcementFailureMessage(error),
-            key: const Key('app-selection-load-error'),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  enforcementFailureMessage(error),
+                  key: const Key('app-selection-load-error'),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  key: const Key('app-selection-retry-button'),
+                  onPressed: () => ref
+                      .read(deviceSetupControllerProvider.notifier)
+                      .refresh(),
+                  child: const Text('再試行'),
+                ),
+              ],
+            ),
           ),
         ),
         data: (state) {
           if (state.apps.isEmpty) {
-            return const Center(child: Text('選択できるアプリが見つかりません。'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.apps_outage, size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Launcherから起動できるアプリが見つかりません。',
+                      key: Key('app-selection-empty'),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('対象アプリをインストールした後、一覧を再読み込みしてください。'),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      key: const Key('app-selection-empty-retry-button'),
+                      onPressed: () => ref
+                          .read(deviceSetupControllerProvider.notifier)
+                          .refresh(),
+                      child: const Text('一覧を再読み込み'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
           return Column(
             children: [
+              if (!state.capabilities.isDeviceOwner)
+                const Material(
+                  color: Colors.amberAccent,
+                  child: ListTile(
+                    leading: Icon(Icons.warning_amber),
+                    title: Text('管理端末の準備が必要です'),
+                    subtitle: Text('アプリは選択できますが、封印の実行にはDevice Owner設定が必要です。'),
+                  ),
+                ),
               Material(
                 color: Theme.of(context).colorScheme.surfaceContainerLow,
                 child: ListTile(
@@ -95,16 +147,25 @@ final class AppSelectionScreen extends ConsumerWidget {
                                 .save();
                             if (saved && context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('封印対象を保存しました')),
+                                const SnackBar(content: Text('選択を保存しました')),
                               );
                             }
                           },
                     child: state.isSaving
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text('保存しています…'),
+                            ],
                           )
-                        : Text('${state.selectedPackageNames.length}件を保存'),
+                        : const Text('選択を保存'),
                   ),
                 ),
               ),

@@ -31,6 +31,14 @@ final class DeviceSetupState {
   bool get hasUnsavedChanges =>
       !_setEquals(selectedPackageNames, savedPackageNames);
 
+  List<LockableApp> get savedApps => apps
+      .where((app) => savedPackageNames.contains(app.packageName))
+      .toList(growable: false);
+
+  List<LockableApp> get selectedApps => apps
+      .where((app) => selectedPackageNames.contains(app.packageName))
+      .toList(growable: false);
+
   DeviceSetupState copyWith({
     Set<String>? selectedPackageNames,
     Set<String>? savedPackageNames,

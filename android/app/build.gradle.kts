@@ -16,11 +16,16 @@ android {
 
     defaultConfig {
         applicationId = "com.kren.michizure"
-        minSdk = flutter.minSdkVersion
+        // MediaPipe Tasks Vision 1.0.0 requires API 24.
+        minSdk = maxOf(flutter.minSdkVersion, 24)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    androidResources {
+        noCompress += "task"
     }
 }
 
@@ -30,7 +35,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
-    implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
+    implementation("com.google.mediapipe:tasks-vision:1.0.0")
 
     testImplementation("junit:junit:4.13.2")
     // Keep aligned with Flutter's integration_test AndroidX Test baseline.

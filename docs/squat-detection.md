@@ -2,7 +2,7 @@
 
 ## 1. 結論
 
-CameraX `Preview` + `ImageAnalysis`、ML Kit Pose Detection base SDKの`STREAM_MODE`、Kotlinの決定的な状態機械を使用する。
+CameraX `Preview` + `ImageAnalysis`、MediaPipe Pose Landmarker Liteの`LIVE_STREAM`、One-Euro Filter、Kotlinの決定的な状態機械を使用する。SDK移行の判断とartifact metadataは[ADR 0005](adr/0005-mediapipe-pose-landmarker.md)をauthorityとする。
 
 ```text
 STANDING
@@ -13,27 +13,27 @@ STANDING
   = 1 accepted local rep candidate
 ```
 
-ML Kitは33ランドマークを返すが、スクワットという意味やrep数は返さない。膝・股関節角度、hip drop、速度、信頼度、安定時間、ヒステリシスからアプリが判定する。
+MediaPipeは33ランドマークを返すが、スクワットという意味やrep数は返さない。膝角度、hip drop、速度、信頼度、安定時間、ヒステリシスからアプリが判定する。
 
-OpenAI APIは使用しない。端末内ML Kitで必要なランドマークとリアルタイム性能が得られ、外部送信はprivacy、latency、cost要件に反する。
+OpenAI APIは使用しない。MediaPipe Lite modelをassetへ同梱して完全に端末内で推論し、runtime downloadや画像外部送信を行わない。
 
 ## 2. Processing pipeline
 
 ```mermaid
 flowchart LR
     Camera["CameraX Preview + ImageAnalysis"]
-    Frame["Latest YUV ImageProxy"]
-    ML["ML Kit Pose Detector<br/>STREAM_MODE"]
+    Frame["Throttled latest RGBA ImageProxy"]
+    ML["MediaPipe Pose Landmarker Lite<br/>LIVE_STREAM"]
     Quality["Landmark Quality Gate"]
+    Filter["One-Euro Filter"]
     Feature["Angle / velocity / hip-drop features"]
-    Smooth["Median + EMA smoothing"]
     FSM["Squat FSM"]
     Event["repCompleted event"]
     Flutter["Flutter UI / Contribution use case"]
     Firestore["Firestore transaction"]
 
-    Camera --> Frame --> ML --> Quality --> Feature --> Smooth --> FSM --> Event --> Flutter --> Firestore
-    ML -. close in completion .-> Frame
+    Camera --> Frame --> ML --> Quality --> Filter --> Feature --> FSM --> Event --> Flutter --> Firestore
+    Frame -. close after Bitmap copy .-> Camera
 ```
 
 frame、bitmap、landmark全列はPlatform Channelへ流さない。KotlinからDartへ送るのは低頻度のquality/state/rep eventだけ。
@@ -44,7 +44,7 @@ frame、bitmap、landmark全列はPlatform Channelへ流さない。Kotlinから
 |---|---|
 | Camera | front camera preferred、rear fallback |
 | Orientation | portrait |
-| Image format | `YUV_420_888` |
+| Image format | `RGBA_8888` |
 | Analysis resolution | 480×640前後をrequest、deviceの選択結果を許容 |
 | Backpressure | `STRATEGY_KEEP_ONLY_LATEST` |
 | Queue | 実質1、古いframeをdrop |
@@ -52,44 +52,48 @@ frame、bitmap、landmark全列はPlatform Channelへ流さない。Kotlinから
 | Preview | PlatformView / native PreviewView |
 | Analyzer thread | single dedicated executor |
 
-Analyzerは1 frame処理中に次frameをML Kitへ重複投入しない。success / failure / completionのすべてのpathで`ImageProxy.close()`する。
+Analyzerは重いBitmap copy前にGPU 15 FPS / CPU 10 FPSへthrottleし、1 frame推論中に次frameをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`し、MPImageとBitmapはasync callbackまでpending 1件だけ保持する。
 
-ML Kit公式推奨に従い、被写体が少なくとも約256×256 pixelsを占め、全身と顔がframe内に入る撮影ガイドを表示する。高解像度化よりlatest frameの低遅延を優先する。
+腰から足首までが十分なpixel数を占める撮影ガイドを表示し、少し横向きの姿勢を案内する。高解像度化よりlatest frameの低遅延を優先する。MediaPipe公式model cardはfull-body cropを推奨しhead非表示をout-of-scopeとしているため、「顔なし・下半身だけ」の成立率は実camera manual gateで必ず測定し、未測定の性能を達成済みとしない。
 
-## 4. ML Kit構成
+## 4. MediaPipe構成
 
-- base `pose-detection` SDK
-- `PoseDetectorOptions.STREAM_MODE`
-- bundled model
-- 1人だけを対象
-- `inFrameLikelihood`をconfidenceとして利用
-- x/yを主に使い、experimentalなzはMVPの必須判定に使わない
+- `com.google.mediapipe:tasks-vision:1.0.0`
+- `pose_landmarker_lite.task`をuncompressed assetとして同梱
+- `RunningMode.LIVE_STREAM`
+- `numPoses=1`
+- `outputSegmentationMasks=false`
+- GPU delegate優先、初期化失敗時はCPUへ1回だけfallback
+- normalized x/y、`visibility`、`presence`をadapterで必要な6 landmarksへ縮約
+- world landmarkはMVPの必須判定へ使わない
 
-accurate SDKは座標精度が必要な場合の比較対象だが、MVPのp95 500msとEmulator動作を優先してbaseを採用する。beta APIのためdependency updateごとにcompatibility testを実行する。
+LandmarkerはCamera sessionごとに1 instanceだけ生成する。初期化と`detectAsync`は同じ専用single threadで行い、frameごとにCoroutineやLandmarkerを作らない。
 
 ## 5. Landmark
 
-片側featureに必要:
-
-- shoulder
-- hip
-- knee
-- ankle
-
-左右それぞれについてqualityを計算する。
+Pose SDK adapterはSDK固有型を次のmodel-independent表現へ縮約する。
 
 ```text
-sideConfidence =
-  min(shoulder, hip, knee, ankle inFrameLikelihood)
+LowerBodyPose
+  left:  hip / knee / ankle
+  right: hip / knee / ankle
+  confidence / timestamp / frame size
+```
+
+片側featureに必要なのはhip / knee / ankleだけで、顔・肩・腕は必須にしない。左右それぞれについてqualityを計算する。
+
+```text
+landmarkConfidence = min(visibility, presence)
+sideConfidence = min(hip, knee, ankle landmarkConfidence)
 ```
 
 使用side:
 
-1. 左右両方がthreshold以上なら両側featureのconfidence-weighted median
+1. 左右両方がthreshold以上ならconfidenceが高い側
 2. 片側だけならその側
 3. 両側とも不足ならtracking invalid
 
-正面に近い場合は両側のmedian、斜め・側面はconfidenceが高い側を使う。左右の一方だけに急に切り替わらないよう、current sideへ0.5秒程度のstickinessを持たせる。
+左右の一方だけに急に切り替わらないよう、current sideへ500msのstickinessとconfidence差0.10のswitch marginを持たせる。
 
 ## 6. Feature
 
@@ -104,7 +108,6 @@ angle = acos(clamp(dot(u,v) / (|u||v|), -1, 1)) × 180 / π
 ```
 
 - knee angle: `hip - knee - ankle`
-- hip angle: `shoulder - hip - knee`
 
 直立に近いほど180°、屈曲するほど小さくなる。zero-length vectorはinvalid。
 
@@ -117,31 +120,29 @@ legLength = distance(hip, knee) + distance(knee, ankle)
 hipDropRatio = (currentHipY - standingHipY) / legLength
 ```
 
-camera距離に依存するpixel値ではなくratioにする。hipDropだけでcountせず、knee / hip angleとAND条件にする。
+camera距離に依存するpixel値ではなくratioにする。hipDropだけでcountせず、knee angle、膝角速度、腰の上下速度とAND条件にする。
 
 ### 6.3 Angular velocity
 
 ```text
 kneeVelocity = (kneeAngleNow - kneeAnglePrevious) / deltaSeconds
+hipVelocity = ((hipYNow - hipYPrevious) / legLength) / deltaSeconds
 ```
 
 - negative: descending
 - positive: ascending
 
-timestampはCameraX frameのmonotonic timestampを使い、wall clockを使わない。極端なframe gapではvelocityを無効化する。
+timestampは同一pipelineの`SystemClock.elapsedRealtimeNanos()`から単調増加msを作り、wall clockや未確認のCameraX timestamp timebaseと混在させない。極端なframe gapではvelocityを無効化する。
 
 ### 6.4 Range of motion
 
-1 rep中の `maxKneeAngle - minKneeAngle` を保持する。最低50°を初期値とし、浅い上下動を除外する。
+1 rep中の `maxKneeAngle - minKneeAngle` を保持する。最低45°を初期値とし、浅い上下動を除外する。
 
 ## 7. Smoothing
 
-raw landmarkに対して過剰な遅延を生まない2段階処理:
+左右それぞれのhip / knee / ankle x/yへOne-Euro Filterを適用してからfeatureを計算する。初期値は`minCutoff=1.0`、`beta=0.02`、`derivativeCutoff=1.0`で、固定FPSを仮定せずtimestamp差を使う。左右は独立filterとし、side切替で別脚の履歴を混ぜない。pose loss、逆順timestamp、500ms超gap、session終了ではresetする。
 
-1. 直近5 valid sampleのmedianでspikeを除去
-2. angle / hipDropへEMA、初期 `alpha = 0.35`
-
-state transitionの時間条件もdebounceになるため、重いKalman filterはMVPで導入しない。設定値は`SquatDetectorConfig v1`として一箇所に集約し、magic numberを散在させない。
+FSM側でmedian / EMAを重ねず、時間条件とhysteresisをdebounce authorityにする。設定値は`SquatDetectorConfig mediapipe-lite-lower-body-v3`へ集約する。
 
 ## 8. Quality gate
 
@@ -150,8 +151,9 @@ state transitionの時間条件もdebounceになるため、重いKalman filter�
 | Check | Threshold |
 |---|---:|
 | essential landmark likelihood | `>= 0.65` |
-| valid side | shoulder/hip/knee/ankleすべてvalid |
-| torso / body size | subject guideの最小pixel比 |
+| valid side | 左右いずれかのhip/knee/ankleすべてvalid |
+| leg size | `(hip-knee + knee-ankle) / frame height >= 0.22` |
+| side stickiness | `500ms`、switch confidence margin `0.10` |
 | frame gap | `<= 250ms` |
 | invalid tracking grace | `<= 250ms` |
 | calibration stable time | `>= 1,000ms` |
@@ -160,13 +162,12 @@ quality warning:
 
 - `moveFartherBack`
 - `moveCloser`
-- `showFullBody`
+- `showLowerBody`
 - `lowLightOrConfidence`
-- `onlyOnePerson`
 - `holdStillToCalibrate`
 - `cameraUnavailable`
 
-ML Kitは1人だけを返す。複数人が写ると最もconfidenceの高い人へ切り替わり得るため、「1人で全身を映す」を必須ガイドにする。
+`numPoses=1`であるため、複数人が写ると対象が切り替わり得る。撮影範囲には1人だけ入り、腰から足首までを映すことを必須ガイドにする。
 
 tracking invalidが250ms以内ならFSMをfreezeし、復帰時にvelocity historyをresetする。250msを超えたら進行中repを破棄して`CALIBRATING`へ戻す。
 
@@ -176,15 +177,15 @@ tracking invalidが250ms以内ならFSMをfreezeし、復帰時にvelocity histo
 
 calibration条件:
 
-- knee angle >= 160°
-- hip angle >= 150°
+- knee angle >= 155°
 - hip yの分散が小さい
+- knee angleの変動が8°以内
 - quality gate pass
 - 左右side selectionが安定
 
 保存するsession-local baseline:
 
-- standing knee / hip angle median
+- standing knee angle median
 - standing hip y
 - leg length
 - selected side preference
@@ -197,13 +198,13 @@ calibration条件:
 stateDiagram-v2
     [*] --> CALIBRATING
     CALIBRATING --> STANDING: stable standing 1,000ms
-    STANDING --> DESCENDING: knee < 150° AND velocity < -15°/s
+    STANDING --> DESCENDING: knee < min(150°, baseline-12°) AND knee velocity < -15°/s AND hip moving down
     DESCENDING --> STANDING: shallow return / timeout
-    DESCENDING --> BOTTOM: knee <= 105° AND hip <= 120° AND hipDrop >= 0.15
-    BOTTOM --> ASCENDING: knee >= 115° AND velocity > 15°/s
+    DESCENDING --> BOTTOM: knee <= 108° AND hipDrop >= 0.12
+    BOTTOM --> ASCENDING: knee >= 118° AND knee/hip moving up
     BOTTOM --> CALIBRATING: tracking lost / timeout
     ASCENDING --> BOTTOM: returns deep before standing
-    ASCENDING --> STANDING: knee >= 160° AND hip >= 150° stable 250ms
+    ASCENDING --> STANDING: knee >= max(155°, baseline-12°) stable 250ms
     ASCENDING --> CALIBRATING: tracking lost / timeout
     STANDING --> CALIBRATING: tracking invalid > 250ms
 ```
@@ -212,17 +213,17 @@ stateDiagram-v2
 
 | Transition | Condition |
 |---|---|
-| standing enter | knee `>=160`, hip `>=150`, stable 250ms |
-| standing exit | knee `<150`, descending velocity `<-15°/s` |
-| bottom enter | knee `<=105`, hip `<=120`, hip drop `>=0.15`, minimum 100ms |
-| bottom exit | knee `>=115`, ascending velocity `>15°/s` |
+| standing enter | knee `>= max(155°, baseline-12°)`, stable 250ms |
+| standing exit | knee `< min(150°, baseline-12°)`, knee velocity `<-15°/s`, normalized hip velocity `>0.02/s` |
+| bottom enter | knee `<=108°`, hip drop `>=0.12`, minimum 100ms |
+| bottom exit | knee `>=118°`, knee velocity `>15°/s`, normalized hip velocity `<-0.02/s` |
 | full rep duration | 800〜6,000ms |
 | descending minimum | 200ms |
 | ascending minimum | 200ms |
-| range of motion | knee angle change `>=50°` |
+| range of motion | knee angle change `>=45°` |
 | refractory | count後500ms |
 
-閾値間のgapがヒステリシスである。例: bottomは105°以下で入り、115°以上になるまで出ない。境界付近のjitterでstateが往復しない。
+閾値間のgapがヒステリシスである。例: bottomは108°以下で入り、118°以上になるまで出ない。境界付近のjitterでstateが往復しない。
 
 これらは初期値であり、合成テスト、複数体格・撮影角度の実機testからversioned configとして調整する。ユーザー別に無制限な自動学習はMVPで行わない。
 
@@ -233,7 +234,7 @@ ASCENDINGからSTANDINGへ戻る時点で、次をすべて満たせばlocal rep
 - このcycleがSTANDINGから開始
 - DESCENDINGとBOTTOMを順に通過
 - minimum bottom depthを満たす
-- range of motion >= 50°
+- range of motion >= 45°
 - total duration 800〜6,000ms
 - descending / ascending各200ms以上
 - tracking invalidの連続が250ms以下
@@ -254,7 +255,7 @@ ASCENDINGからSTANDINGへ戻る時点で、次をすべて満たせばlocal rep
 | 一瞬の遮蔽 | 250ms grace、velocity reset |
 | 長い遮蔽 | rep破棄、recalibrate |
 | しゃがんだ状態から開始 | stable standing calibration必須 |
-| 椅子へ座る | hip/knee角度だけでは区別困難。tempo/torso/ROMで低減、完全防止はMVP外 |
+| 椅子へ座る | knee angle / hip drop / tempo / ROMで低減。完全防止はMVP外 |
 | カメラに近づく | normalized hip drop、body size gate |
 | 別人へtracking switch | 1人ガイド、body scale/center discontinuityでrep破棄 |
 | 左右side switch | confidence hysteresis / stickiness |
@@ -318,7 +319,7 @@ offline:
 
 | Source | Build | 用途 |
 |---|---|---|
-| `CameraMlKitPoseSource` | debug / release | 本番CameraX + ML Kit |
+| `CameraMediaPipePoseSource` | debug / release | 本番CameraX + MediaPipe Lite |
 | `SyntheticLandmarkPoseSource` | debug / testのみ | production FSMへ決定的landmark列 |
 | `FakeSquatDetector` | debug / testのみ | end-to-endデモでbutton / timer rep |
 
@@ -346,21 +347,20 @@ pre-recorded人動画をappへ組み込む案は、再生→CameraX inputの経�
 
 | Stage | p95 budget |
 |---|---:|
-| Camera delivery / queue | 50ms |
-| ML Kit inference | 250ms |
-| feature + FSM | 20ms |
-| EventChannel + Riverpod UI | 80ms |
+| Camera delivery / throttle | 50ms |
+| MediaPipe inference | 100ms |
+| feature + FSM | 30ms |
+| rep EventChannel + Riverpod UI | 120ms |
 | margin | 100ms |
-| **Total** | **500ms** |
+| **Total** | **400ms** |
 
 Firestore確定は別metric。UIはlocal detected repを500ms以内に表示し、confirmed stateを別表示する。
 
 計測:
 
-- CameraX `ImageInfo.timestamp`
-- ML start/end elapsed
+- analyzer受信、前処理開始、MediaPipe投入 / callbackの`elapsedRealtimeNanos`
 - FSM emit elapsed
-- Dart receive elapsed
+- Dart receiveはNativeとは別clock domainとして記録
 - first rendered frame callback
 
 PIIやlandmarkをmetricへ含めない。Emulatorはhardware acceleration / host負荷に左右されるため、Fake pathだけで性能達成と主張せず、実機またはwebcam pathでも測定する。
@@ -368,11 +368,11 @@ PIIやlandmarkをmetricへ含めない。Emulatorはhardware acceleration / host
 ## 17. Performance controls
 
 - `STRATEGY_KEEP_ONLY_LATEST`
-- in-flight ML requestは1つ
-- base SDK + stream mode
+- in-flight MediaPipe requestは1つ
+- Lite bundle + `LIVE_STREAM`
 - 低めのanalysis resolution
 - overlay renderingをanalysis FPSから間引く
-- bitmap conversionをしない
+- JPEG encode/decodeは行わず、公式sampleと同じRGBA→ARGB Bitmap copyを1回だけ行う
 - landmarkをDartへ送らない
 - analyzer executorをUI threadから分離
 - detectorをSquat画面外でclose
@@ -432,7 +432,7 @@ synthetic feature sequence:
 ## 19. Known limitations
 
 - 2D angleはcamera angleで変化する。
-- ML Kit Pose DetectionはbetaでSLA / backward compatibility保証がない。
+- MediaPipeのGPU delegate可否と実測latencyは端末・driverに依存する。
 - 1人だけを検出する。
 - 椅子への着座等、同じ関節軌跡を完全には区別できない。
 - client内判定は改変appからspoof可能。
@@ -442,21 +442,45 @@ Productionで精度不足が確認された場合、まずon-deviceの個人cali
 
 ## 20. 公式資料
 
-- [ML Kit Pose Detection overview](https://developers.google.com/ml-kit/vision/pose-detection)
-- [ML Kit Pose Detection Android](https://developers.google.com/ml-kit/vision/pose-detection/android)
-- [ML Kit pose classification options](https://developers.google.com/ml-kit/vision/pose-detection/classifying-poses)
+- [MediaPipe Pose Landmarker overview](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker/index)
+- [MediaPipe Pose Landmarker Android](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker/android)
+- [BlazePose GHUM 3D model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20BlazePose%20GHUM%203D.pdf)
 - [CameraX image analysis](https://developer.android.com/media/camera/camerax/analyze)
 - [ImageAnalysis analyzer lifecycle](https://developer.android.com/reference/androidx/camera/core/ImageAnalysis.Analyzer)
 
 ## 21. Phase 9実装結果
 
 - CameraX `1.6.1`のfront優先 / rear fallback、`Preview` + `ImageAnalysis`、480×640近傍、`STRATEGY_KEEP_ONLY_LATEST`を採用した。
-- ML Kit base `pose-detection:18.0.0-beta5`をbundled `STREAM_MODE`で使用する。
-- analyzerは専用single executorと1件だけの`FrameLease`を使い、null image、ML成功、ML失敗、重複投入の全経路で`ImageProxy`を一度だけcloseする。
-- `SquatDetectorConfig.VERSION = squat-v1`に本書のthresholdを集約した。特徴量、median/EMA、calibration、FSMはCamera APIから分離したpure Kotlinである。
+- MediaPipe Tasks Vision `1.0.0`と公式Pose Landmarker Lite bundleを使用する。
+- analyzerは専用single executor、事前FPS gate、pending 1件を使い、skip、result、error、stopの全経路でImageProxy / MPImageをreleaseする。
+- `SquatDetectorConfig.VERSION = mediapipe-lite-lower-body-v3`にthresholdとOne-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
 - `squat_control/v1`、`squat_events/v1`、`pose_preview/v1`を実装した。Dart adapterはtype別field allowlistを検証し、画像・landmarkに相当するextra fieldを拒否する。
 - session IDは18 random bytesのhex、repはnativeのmonotonic sequenceを使用し、Firestore event IDはPhase 8の`${uid}_${squatSessionId}_${sequence}`へ変換する。
 - route離脱、ユーザー終了、terminal Debtではnative sessionを停止する。background / foregroundはCameraXのActivity lifecycle bindingへ従う。
 - debug source setだけに数値の`SyntheticLandmarkPoseSource`を置く。release Kotlin compile graphには含めず、Production UIにfake commandやsource selectorを追加しない。
 
 実カメラ精度とp95は撮影環境に依存するため、Emulatorの合成系列だけで達成を主張しない。Event payloadの`analysisLatencyMs`とnative sessionの直近300 sample p95により、webcamまたは実機で計測する。
+
+## 22. 最終デモ修正: lower-body input
+
+最初のlower-body修正では旧全身quality gateを外したが、実CameraではML Kitのframe投入頻度、平滑化遅延、画面全体のdiagnostics rebuildが残り、実用的にstateが進まなかった。Production pose SDKをMediaPipe Liteへ移し、解析FPSとFlutter event頻度を明示的に分離した。
+
+修正後のdata flow:
+
+```text
+CameraX RGBA ImageAnalysis
+  -> MediaPipe Pose Landmarker Lite
+  -> MediaPipePoseAdapter
+  -> LowerBodyPose (hip / knee / ankleのみ)
+  -> One-Euro Filter
+  -> PoseFeatureExtractor
+  -> SquatStateMachine
+```
+
+- ProductionはMediaPipe Pose Landmarker Liteのみを実行し、ML Kit Pose dependencyは含めない。
+- 公式model cardの制約から、顔なしlower-body frameでのpose成立率はhost webcamまたは物理端末のmanual gateで測る。
+- debug buildだけ、200msに1回以下でpose有無、選択side、左右hip/knee/ankle confidence、knee angle、normalized hip drop、knee/hip velocity、FSM state、reject reason、latency、accepted/rejected countをUIへ送る。
+- debug diagnosticsに画像、frame、landmark座標は含めない。releaseではnative event生成とFlutter cardの双方を無効化する。
+- synthetic testは顔・肩なし、片側のみ、欠損、confidence不足、浅い屈伸、jitter、bounce、pose loss、duplicate frame、1回および10回の正常cycleを検証する。
+
+host webcamのmanual gateではpose detected rate、各lower-body landmark confidence、latency sample数 / p50 / p95 / maxを記録する。測定前はp95 500ms達成やlower-body実Camera精度を完了扱いにしない。

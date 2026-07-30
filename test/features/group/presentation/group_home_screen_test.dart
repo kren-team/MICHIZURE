@@ -40,6 +40,10 @@ void main() {
       find.byKey(const Key('group-member-alice')),
       300,
     );
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('group-member-bob')),
+      300,
+    );
     expect(find.byKey(const Key('group-member-alice')), findsOneWidget);
     expect(find.byKey(const Key('group-member-bob')), findsOneWidget);
     expect(find.text('野々村 奏'), findsOneWidget);
@@ -98,6 +102,24 @@ void main() {
     expect(find.text('現在の負債を確認する'), findsNWidgets(2));
   });
 
+  testWidgets('shows saved app count, labels, and a change route from Home', (
+    tester,
+  ) async {
+    final device = FakeDeviceControlRepository()
+      ..selectedPackageNames = {'social.app', 'video.app'};
+    await _pumpHome(
+      tester,
+      profile: _profile(groupId: 'group-1'),
+      group: _group,
+      members: _members,
+      deviceRepository: device,
+    );
+
+    expect(find.text('2件選択済み'), findsOneWidget);
+    expect(find.text('Social、Video'), findsOneWidget);
+    expect(find.byKey(const Key('home-app-selection-button')), findsOneWidget);
+  });
+
   testWidgets('a non-owner can leave after confirmation', (tester) async {
     final repository = FakeGroupRepository();
     await _pumpHome(
@@ -109,8 +131,10 @@ void main() {
       members: _members,
     );
 
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('group-leave-button')),
+      500,
+    );
     await tester.tap(find.byKey(const Key('group-leave-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('退出'));
@@ -131,8 +155,10 @@ void main() {
       members: _members,
     );
 
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('group-leave-button')),
+      500,
+    );
     await tester.tap(find.byKey(const Key('group-leave-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('退出'));

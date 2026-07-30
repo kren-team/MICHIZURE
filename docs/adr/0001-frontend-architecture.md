@@ -24,7 +24,7 @@ Flutter UI、Firestore stream、Kotlin platform event、再起動復元を短期
 - Repository、Clock、SquatDetector、DeviceControlをテストで差し替えやすい。
 - feature branchのファイル競合を減らせる。
 - Firestore/Kotlinの型がWidgetへ漏れない。
-- fake pose sourceとproduction ML Kitを同じportで扱える。
+- fake pose sourceとproduction on-device pose engineを同じportで扱える。
 
 ### Negative
 

@@ -139,7 +139,7 @@ Outboxはuid、Debt ID、stable event ID、delta 1、最小metadataだけを保�
 
 `SubmitContribution`はuser単位のflushとevent単位のdeliveryをsingle-flightにし、通常ControllerとRecoveryが同時に動いてもRepository呼び出しを共有する。Firestore transactionがDebt、summary、immutable eventを最終authorityとして二重計上を防ぐ。
 
-Camera sessionは自動再開しない。process deathでCameraX / ML Kit resourceはOSとActivity lifecycleにより破棄され、ユーザーがDebtを再選択して新sessionを開始する。native accepted repがDartへ届いた時点でOutboxへ先行保存されるため、保存済みeventだけが再送対象となる。
+Camera sessionは自動再開しない。process deathでCameraX / MediaPipe resourceはOSとActivity lifecycleにより破棄され、ユーザーがDebtを再選択して新sessionを開始する。native accepted repがDartへ届いた時点でOutboxへ先行保存されるため、保存済みeventだけが再送対象となる。
 
 ## 9. Typed statusとUI
 

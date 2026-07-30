@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../enforcement/application/device_setup_controller.dart';
+import '../../enforcement/presentation/selected_apps_summary.dart';
 import '../application/task_command_controller.dart';
 import '../domain/task_session.dart';
 import 'task_failure_message.dart';
@@ -210,7 +211,13 @@ final class _PreflightCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('封印対象アプリ: ${state.savedPackageNames.length}件'),
+                const SizedBox(height: 8),
+                SelectedAppsSummary(
+                  apps: state.apps,
+                  selectedPackageNames: state.savedPackageNames,
+                  manageButtonKey: const Key('task-app-selection-route-button'),
+                  onManage: () => context.go('/device-setup/apps'),
+                ),
                 if (!ready)
                   TextButton(
                     key: const Key('task-device-setup-button'),
