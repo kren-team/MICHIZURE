@@ -2,6 +2,7 @@ package com.kren.michizure.pose
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
@@ -18,6 +19,13 @@ class SquatMethodHandler(
     private var pendingPermissionResult: MethodChannel.Result? = null
     private val permissionPreferences =
         activity.getSharedPreferences(PERMISSION_PREFERENCES, 0)
+    private val debugFixtureDiagnostics by lazy {
+        if (isDebuggable) {
+            DebugPoseFixtureDiagnosticsFactory.create(activity.applicationContext)
+        } else {
+            null
+        }
+    }
 
     override fun onMethodCall(
         call: MethodCall,
@@ -68,6 +76,8 @@ class SquatMethodHandler(
             }
             SquatContract.METHOD_GET_SESSION_STATE ->
                 result.success(manager.statePayload())
+            SquatContract.METHOD_RUN_DEBUG_POSE_FIXTURE ->
+                runDebugPoseFixture(result)
             else -> result.notImplemented()
         }
     }
@@ -92,6 +102,31 @@ class SquatMethodHandler(
             SquatContract.versioned(),
         )
         pendingPermissionResult = null
+        debugFixtureDiagnostics?.close()
+    }
+
+    private fun runDebugPoseFixture(result: MethodChannel.Result) {
+        val diagnostics = debugFixtureDiagnostics
+        if (!isDebuggable || diagnostics == null) {
+            result.notImplemented()
+            return
+        }
+        diagnostics.run { fixture ->
+            activity.runOnUiThread {
+                result.success(
+                    SquatContract.versioned(
+                        mapOf(
+                            "callbackDelivered" to fixture.callbackDelivered,
+                            "poseCount" to fixture.poseCount,
+                            "hipAvailable" to fixture.hipAvailable,
+                            "kneeAvailable" to fixture.kneeAvailable,
+                            "ankleAvailable" to fixture.ankleAvailable,
+                            "errorCode" to fixture.errorCode,
+                        ),
+                    ),
+                )
+            }
+        }
     }
 
     private fun requestPermission(result: MethodChannel.Result) {
@@ -183,6 +218,10 @@ class SquatMethodHandler(
     private fun hasCameraPermission(): Boolean =
         ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
+
+    private val isDebuggable: Boolean
+        get() =
+            activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     private fun stringArgument(
         arguments: Any?,

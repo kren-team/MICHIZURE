@@ -22,6 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class SquatNativeLifecycleTest {
@@ -80,6 +81,32 @@ class SquatNativeLifecycleTest {
     }
 
     @Test
+    fun generatedDebugFixtureProducesCallbackPoseAndLowerBodyLandmarks() {
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        val completed = CountDownLatch(1)
+        val result = AtomicReference<PoseFixtureDiagnosticResult?>()
+        val diagnostics = GeneratedPoseFixtureDiagnostics(context)
+        try {
+            diagnostics.run {
+                result.set(it)
+                completed.countDown()
+            }
+
+            assertTrue(completed.await(8, TimeUnit.SECONDS))
+            val actual = requireNotNull(result.get())
+            assertTrue(actual.callbackDelivered)
+            assertTrue(actual.poseCount >= 1)
+            assertTrue(actual.hipAvailable)
+            assertTrue(actual.kneeAvailable)
+            assertTrue(actual.ankleAvailable)
+            assertEquals(null, actual.errorCode)
+        } finally {
+            diagnostics.close()
+        }
+    }
+
+    @Test
     fun previewLifecycleStartsOnceAndReleasesOnDispose() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context =
@@ -92,7 +119,7 @@ class SquatNativeLifecycleTest {
         instrumentation.runOnMainSync {
             owner.resume()
             manager =
-                SquatSessionManager(owner) { _, _, onReady, _, _ ->
+                SquatSessionManager(owner) { _, _, onReady, _, _, _ ->
                     object : PoseSource {
                         override fun start() {
                             starts += 1
@@ -159,7 +186,7 @@ class SquatNativeLifecycleTest {
             instrumentation.runOnMainSync {
                 owner.resume()
                 manager =
-                    SquatSessionManager(owner) { _, _, _, _, onFailure ->
+                    SquatSessionManager(owner) { _, _, _, _, _, onFailure ->
                         object : PoseSource {
                             override fun start() {
                                 onFailure("cameraUnavailable")
@@ -209,10 +236,19 @@ class SquatNativeLifecycleTest {
             instrumentation.runOnMainSync {
                 owner.resume()
                 manager =
-                    SquatSessionManager(owner) { _, _, onReady, onFrame, _ ->
+                    SquatSessionManager(owner) { _, _, onReady, onStatus, onFrame, _ ->
                         object : PoseSource {
                             override fun start() {
                                 onReady(PoseDelegate.CPU)
+                                onStatus(
+                                    PosePipelineStatusSnapshot(
+                                        status = PosePipelineStatus.VALID,
+                                        metrics =
+                                            PosePipelineMetrics(
+                                                activeDelegate = PoseDelegate.CPU,
+                                            ),
+                                    ),
+                                )
                                 onFrame(
                                     PoseFrameDelivery(
                                         feature =

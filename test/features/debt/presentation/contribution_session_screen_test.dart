@@ -135,6 +135,7 @@ void main() {
               detectorReady: true,
               squatSessionId: 'session-12345678',
               debtId: 'debt-1',
+              pipelineStatus: SquatPosePipelineStatus.ankleUnavailable,
               qualityWarning: SquatQualityWarning.ankleUnavailable,
             ),
             isFromCache: false,
@@ -277,6 +278,17 @@ void main() {
                 detectorReady: true,
                 squatSessionId: 'session-12345678',
                 debtId: 'debt-1',
+                pipelineStatus: switch (entry.key) {
+                  SquatQualityWarning.noPoseDetected =>
+                    SquatPosePipelineStatus.noPose,
+                  SquatQualityWarning.hipUnavailable =>
+                    SquatPosePipelineStatus.hipUnavailable,
+                  SquatQualityWarning.kneeUnavailable =>
+                    SquatPosePipelineStatus.kneeUnavailable,
+                  SquatQualityWarning.ankleUnavailable =>
+                    SquatPosePipelineStatus.ankleUnavailable,
+                  _ => SquatPosePipelineStatus.valid,
+                },
                 qualityWarning: entry.key,
               ),
               isFromCache: false,
@@ -287,6 +299,38 @@ void main() {
       );
       expect(find.text(entry.value), findsOneWidget);
     }
+  });
+
+  testWidgets('callback wait never claims that landmarks were recognized', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ContributionSessionView(
+            debt: _debt(),
+            state: const ContributionControllerState.idle(),
+            squatState: const SquatSessionState(
+              status: SquatSessionStatus.running,
+              permission: CameraPermissionState.granted,
+              detectorState: SquatDetectorState.calibrating,
+              detectedReps: 0,
+              lastSequence: 0,
+              maximumLocalReps: 10,
+              detectorReady: true,
+              squatSessionId: 'session-12345678',
+              debtId: 'debt-1',
+              pipelineStatus: SquatPosePipelineStatus.awaitingResult,
+            ),
+            isFromCache: false,
+            hasPendingWrites: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('姿勢判定の結果を待っています。'), findsOneWidget);
+    expect(find.text('腰・膝・足首を認識しました。'), findsNothing);
   });
 
   testWidgets('shows camera settings after permanent denial', (tester) async {

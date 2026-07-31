@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/app/providers.dart';
+import 'package:michizure/debug/debug_pose_fixture_channel.dart';
 import 'package:michizure/debug/squat_lab_screen.dart';
 import 'package:michizure/features/squat/domain/squat_detector.dart';
 
@@ -22,6 +23,27 @@ void main() {
     expect(find.byKey(const Key('squat-lab-permission')), findsOneWidget);
     expect(find.text('Accepted: 0'), findsOneWidget);
     expect(detector.started, isFalse);
+  });
+
+  testWidgets('known fixture action reports callback pose and landmarks', (
+    tester,
+  ) async {
+    final detector = _FakeLabDetector();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [squatDetectorProvider.overrideWithValue(detector)],
+        child: MaterialApp(
+          home: SquatLabScreen(fixtureGateway: _FakeFixtureGateway()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('squat-lab-run-fixture')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('squat-lab-fixture-result')), findsOneWidget);
+    expect(find.textContaining('true / 1 / true-true-true'), findsOneWidget);
   });
 }
 
@@ -49,4 +71,18 @@ final class _FakeLabDetector implements SquatDetector {
 
   @override
   Future<void> stop({String? squatSessionId}) async {}
+}
+
+final class _FakeFixtureGateway implements DebugPoseFixtureGateway {
+  @override
+  Future<DebugPoseFixtureResult> run() async {
+    return const DebugPoseFixtureResult(
+      callbackDelivered: true,
+      poseCount: 1,
+      hipAvailable: true,
+      kneeAvailable: true,
+      ankleAvailable: true,
+      errorCode: null,
+    );
+  }
 }

@@ -146,6 +146,11 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'state',
         'analysisLatencyMs',
       },
+      'pipelineStatusChanged' => {
+        ..._baseEventFields,
+        'squatSessionId',
+        'status',
+      },
       'qualityWarning' => {
         ..._baseEventFields,
         'squatSessionId',
@@ -167,6 +172,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
         ..._baseEventFields,
         'squatSessionId',
         'poseDetected',
+        'pipelineStatus',
         'trackingStatus',
         'selectedSide',
         'leftHipConfidence',
@@ -186,11 +192,22 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'rejectedAttempts',
         'delegate',
         'sampleCount',
+        'analyzerFrames',
+        'inferenceSubmitted',
+        'resultCallbacks',
+        'resultsWithPose',
+        'resultsWithoutPose',
+        'errorCallbacks',
+        'lastCallbackAgeMs',
+        'activeDelegate',
+        'lastError',
         'actualAnalysisFps',
         'droppedBeforePreprocessing',
         'rejectedAsBusy',
         'resultCount',
         'noPoseCount',
+        'preprocessingP50Ms',
+        'preprocessingP95Ms',
         'inferenceP50Ms',
         'inferenceP95Ms',
         'nativePipelineP50Ms',
@@ -216,6 +233,12 @@ final class MethodChannelSquatDetector implements SquatDetector {
           'analysisLatencyMs',
           fallback: 0,
         ),
+      ),
+      'pipelineStatusChanged' => SquatPipelineStatusChanged(
+        eventId: eventId,
+        occurredAt: occurredAt,
+        squatSessionId: _sessionId(raw),
+        status: _pipelineStatus(_string(raw, 'status')),
       ),
       'qualityWarning' => SquatQualityChanged(
         eventId: eventId,
@@ -260,6 +283,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       squatSessionId: _sessionId(raw),
       poseDetected: poseDetected,
       trackingStatus: _trackingStatus(_string(raw, 'trackingStatus')),
+      pipelineStatus: _pipelineStatus(_string(raw, 'pipelineStatus')),
       selectedSide: switch (raw['selectedSide']) {
         null => null,
         'left' => SquatPoseSide.left,
@@ -285,6 +309,15 @@ final class MethodChannelSquatDetector implements SquatDetector {
       rejectedAttempts: _nonNegativeInt(raw, 'rejectedAttempts'),
       delegate: _delegate(raw['delegate']),
       sampleCount: _nonNegativeInt(raw, 'sampleCount'),
+      analyzerFrames: _nonNegativeInt(raw, 'analyzerFrames'),
+      inferenceSubmitted: _nonNegativeInt(raw, 'inferenceSubmitted'),
+      resultCallbacks: _nonNegativeInt(raw, 'resultCallbacks'),
+      resultsWithPose: _nonNegativeInt(raw, 'resultsWithPose'),
+      resultsWithoutPose: _nonNegativeInt(raw, 'resultsWithoutPose'),
+      errorCallbacks: _nonNegativeInt(raw, 'errorCallbacks'),
+      lastCallbackAgeMs: _nullableNonNegativeInt(raw, 'lastCallbackAgeMs'),
+      activeDelegate: _delegate(raw['activeDelegate']),
+      lastError: _nullableErrorCode(raw['lastError']),
       actualAnalysisFps: _nonNegativeDouble(raw, 'actualAnalysisFps'),
       droppedBeforePreprocessing: _nonNegativeInt(
         raw,
@@ -293,6 +326,8 @@ final class MethodChannelSquatDetector implements SquatDetector {
       rejectedAsBusy: _nonNegativeInt(raw, 'rejectedAsBusy'),
       resultCount: _nonNegativeInt(raw, 'resultCount'),
       noPoseCount: _nonNegativeInt(raw, 'noPoseCount'),
+      preprocessingP50Ms: _nullableNonNegativeInt(raw, 'preprocessingP50Ms'),
+      preprocessingP95Ms: _nullableNonNegativeInt(raw, 'preprocessingP95Ms'),
       inferenceP50Ms: _nullableNonNegativeInt(raw, 'inferenceP50Ms'),
       inferenceP95Ms: _nullableNonNegativeInt(raw, 'inferenceP95Ms'),
       nativePipelineP50Ms: _nullableNonNegativeInt(raw, 'nativePipelineP50Ms'),
@@ -484,6 +519,37 @@ final class MethodChannelSquatDetector implements SquatDetector {
         SquatDetectorFailureReason.malformedEvent,
       ),
     };
+  }
+
+  SquatPosePipelineStatus _pipelineStatus(String value) {
+    return switch (value) {
+      'initializing' => SquatPosePipelineStatus.initializing,
+      'awaitingResult' => SquatPosePipelineStatus.awaitingResult,
+      'noPose' => SquatPosePipelineStatus.noPose,
+      'hipUnavailable' => SquatPosePipelineStatus.hipUnavailable,
+      'kneeUnavailable' => SquatPosePipelineStatus.kneeUnavailable,
+      'ankleUnavailable' => SquatPosePipelineStatus.ankleUnavailable,
+      'confidenceInsufficient' =>
+        SquatPosePipelineStatus.confidenceInsufficient,
+      'valid' => SquatPosePipelineStatus.valid,
+      'failed' => SquatPosePipelineStatus.failed,
+      _ => throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      ),
+    };
+  }
+
+  String? _nullableErrorCode(Object? value) {
+    if (value == null) return null;
+    if (value is! String ||
+        value.isEmpty ||
+        value.length > 64 ||
+        !RegExp(r'^[a-z0-9_]+$').hasMatch(value)) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value;
   }
 
   SquatDetectorFailureReason _failureReason(String code) {

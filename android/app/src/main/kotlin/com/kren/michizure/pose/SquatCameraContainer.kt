@@ -1,12 +1,16 @@
 package com.kren.michizure.pose
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -21,7 +25,7 @@ data class SquatGuideFrame(
     val hip: PosePoint?,
     val knee: PosePoint?,
     val ankle: PosePoint?,
-    val trackingStatus: PoseTrackingStatus,
+    val pipelineStatus: PosePipelineStatus,
     val state: SquatState,
 )
 
@@ -29,7 +33,7 @@ internal data class SquatGuideDrawing(
     val hip: PointF?,
     val knee: PointF?,
     val ankle: PointF?,
-    val trackingStatus: PoseTrackingStatus,
+    val pipelineStatus: PosePipelineStatus,
     val state: SquatState,
 )
 
@@ -95,16 +99,35 @@ class SquatCameraContainer(
                     hip = mapped[0],
                     knee = mapped[1],
                     ankle = mapped[2],
-                    trackingStatus = frame.trackingStatus,
+                    pipelineStatus = frame.pipelineStatus,
                     state = frame.state,
                 ),
             )
         }
     }
 
+    internal fun updatePipelineStatus(snapshot: PosePipelineStatusSnapshot) {
+        post { guideOverlayView.updateStatus(snapshot.status) }
+    }
+
+    internal fun updateDebugThumbnail(bitmap: Bitmap) {
+        if (!isDebuggable) return
+        val nowMs = SystemClock.elapsedRealtime()
+        if (nowMs - lastDebugThumbnailMs < DEBUG_THUMBNAIL_INTERVAL_MS) return
+        lastDebugThumbnailMs = nowMs
+        val thumbnail =
+            Bitmap.createScaledBitmap(
+                bitmap,
+                DEBUG_THUMBNAIL_WIDTH,
+                (bitmap.height * DEBUG_THUMBNAIL_WIDTH / bitmap.width).coerceAtLeast(1),
+                true,
+            )
+        post { guideOverlayView.updateDebugThumbnail(thumbnail) }
+    }
+
     internal fun clearGuide() {
         lastGuideTimestampMs = Long.MIN_VALUE
-        post { guideOverlayView.update(null) }
+        post { guideOverlayView.clear() }
     }
 
     private fun matchParentLayoutParams() =
@@ -112,6 +135,17 @@ class SquatCameraContainer(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         )
+
+    private val isDebuggable: Boolean
+        get() =
+            context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    private var lastDebugThumbnailMs = Long.MIN_VALUE
+
+    private companion object {
+        const val DEBUG_THUMBNAIL_INTERVAL_MS = 1_000L
+        const val DEBUG_THUMBNAIL_WIDTH = 120
+    }
 }
 
 internal class SquatGuideOverlayView(context: Context) : View(context) {
@@ -140,9 +174,31 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             setShadowLayer(dp(3f), 0f, dp(1f), Color.BLACK)
         }
     private var drawing: SquatGuideDrawing? = null
+    private var pipelineStatus = PosePipelineStatus.INITIALIZING
+    private var debugThumbnail: Bitmap? = null
 
     fun update(next: SquatGuideDrawing?) {
         drawing = next
+        if (next != null) pipelineStatus = next.pipelineStatus
+        invalidate()
+    }
+
+    fun updateStatus(next: PosePipelineStatus) {
+        pipelineStatus = next
+        invalidate()
+    }
+
+    fun updateDebugThumbnail(next: Bitmap) {
+        debugThumbnail?.takeIf { !it.isRecycled }?.recycle()
+        debugThumbnail = next
+        invalidate()
+    }
+
+    fun clear() {
+        drawing = null
+        pipelineStatus = PosePipelineStatus.INITIALIZING
+        debugThumbnail?.takeIf { !it.isRecycled }?.recycle()
+        debugThumbnail = null
         invalidate()
     }
 
@@ -170,11 +226,17 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
 
         val current = drawing
         if (current == null) {
-            canvas.drawText("胸の下から足首まで映してください", inset, top + dp(30f), textPaint)
+            canvas.drawText(
+                pipelineStatus.displayLabel,
+                inset,
+                top + dp(30f),
+                textPaint,
+            )
+            drawDebugThumbnail(canvas, inset, top)
             return
         }
         val pointPaint =
-            if (current.trackingStatus == PoseTrackingStatus.VALID) {
+            if (current.pipelineStatus == PosePipelineStatus.VALID) {
                 detectedPaint
             } else {
                 missingPaint
@@ -191,23 +253,53 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             }
         }
         canvas.drawText(
-            "${current.trackingStatus.displayLabel} / ${current.state.wireValue}",
+            "${pipelineStatus.displayLabel} / ${current.state.wireValue}",
             inset,
             max(top + dp(30f), dp(24f)),
             textPaint,
         )
+        drawDebugThumbnail(canvas, inset, top)
+    }
+
+    private fun drawDebugThumbnail(
+        canvas: Canvas,
+        inset: Float,
+        top: Float,
+    ) {
+        debugThumbnail?.takeIf { !it.isRecycled }?.let { thumbnail ->
+            val width = dp(96f)
+            val height = width * thumbnail.height / thumbnail.width
+            val destination =
+                RectF(
+                    this.width - inset - width,
+                    top + dp(10f),
+                    this.width - inset,
+                    top + dp(10f) + height,
+                )
+            canvas.drawBitmap(thumbnail, null, destination, null)
+            canvas.drawRect(destination, guidePaint)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        debugThumbnail?.takeIf { !it.isRecycled }?.recycle()
+        debugThumbnail = null
+        super.onDetachedFromWindow()
     }
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
-private val PoseTrackingStatus.displayLabel: String
+private val PosePipelineStatus.displayLabel: String
     get() =
         when (this) {
-            PoseTrackingStatus.NO_POSE -> "人物なし"
-            PoseTrackingStatus.HIP_UNAVAILABLE -> "腰なし"
-            PoseTrackingStatus.KNEE_UNAVAILABLE -> "膝なし"
-            PoseTrackingStatus.ANKLE_UNAVAILABLE -> "足首なし"
-            PoseTrackingStatus.CONFIDENCE_INSUFFICIENT -> "信頼度不足"
-            PoseTrackingStatus.VALID -> "検出"
+            PosePipelineStatus.INITIALIZING -> "初期化中"
+            PosePipelineStatus.AWAITING_RESULT -> "callback待機"
+            PosePipelineStatus.NO_POSE -> "callbackあり・人物なし"
+            PosePipelineStatus.HIP_UNAVAILABLE -> "腰なし"
+            PosePipelineStatus.KNEE_UNAVAILABLE -> "膝なし"
+            PosePipelineStatus.ANKLE_UNAVAILABLE -> "足首なし"
+            PosePipelineStatus.CONFIDENCE_INSUFFICIENT -> "信頼度不足"
+            PosePipelineStatus.VALID -> "検出"
+            PosePipelineStatus.FAILED -> "推論エラー"
         }
