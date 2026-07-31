@@ -27,7 +27,7 @@ enum SquatPoseTrackingStatus {
   valid,
 }
 
-enum SquatInferenceDelegate { gpu, cpu }
+enum SquatInferenceDelegate { gpu, cpu, host }
 
 enum SquatBottomEvidencePath { kneeOnly, kneeAndHip, hipAndReversal }
 

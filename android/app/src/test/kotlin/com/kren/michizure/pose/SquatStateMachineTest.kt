@@ -370,6 +370,32 @@ class SquatStateMachineTest {
     }
 
     @Test
+    fun acceptedRepClearsAttemptBeforeNextSample() {
+        val detector = calibratedDetector()
+        normalRep(detector, CALIBRATED_AT + 200)
+
+        val next = detector.valid(CALIBRATED_AT + 2_000, 168.0, 0.25)
+
+        assertNull(next.diagnostics.attemptStartTimestampMs)
+        assertNull(next.diagnostics.minimumAttemptKneeAngleDeg)
+        assertNull(next.diagnostics.maximumAttemptHipDropRatio)
+        assertFalse(next.diagnostics.bottomReached)
+    }
+
+    @Test
+    fun bentKneeWithLargeHipDropCannotAcceptReturn() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        detector.valid(start, 145.0, 0.31)
+        detector.valid(start + 400, 132.0, 0.34)
+
+        val notStanding = detector.valid(start + 900, 150.0, 0.40)
+
+        assertFalse(notStanding.repCompleted)
+        assertEquals(0, detector.repSequence)
+    }
+
+    @Test
     fun irregularFiveFpsNormalSquatProducesExactlyOneRep() {
         val detector = calibratedDetector()
         val start = CALIBRATED_AT + 200

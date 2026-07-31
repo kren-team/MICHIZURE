@@ -115,6 +115,7 @@ class CameraMediaPipePoseSource(
                     when (selectedDelegate) {
                         PoseDelegate.GPU -> Delegate.GPU
                         PoseDelegate.CPU -> Delegate.CPU
+                        PoseDelegate.HOST -> error("HOST does not initialize MediaPipe on Android")
                     },
                 )
                 .build()

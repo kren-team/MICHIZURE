@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/providers.dart';
 import '../../squat/application/squat_session_controller.dart';
@@ -147,8 +148,12 @@ final class ContributionSessionView extends StatelessWidget {
         const Card(
           child: ListTile(
             leading: Icon(Icons.privacy_tip_outlined),
-            title: Text('カメラ映像は端末内だけで処理します'),
-            subtitle: Text('画像・動画・姿勢座標は保存せず、外部へ送信しません。'),
+            title: Text(
+              MethodChannelSquatDetector.poseSource == 'host'
+                  ? '解析frameはデモPCだけで処理します'
+                  : 'カメラ映像は端末内だけで処理します',
+            ),
+            subtitle: Text('画像・動画・姿勢座標は保存しません。'),
           ),
         ),
         _SquatControls(
@@ -275,14 +280,17 @@ final class _SquatControls extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (showNativePreview)
-          const AspectRatio(
-            key: Key('pose-preview'),
+          AspectRatio(
+            key: const Key('pose-preview'),
             aspectRatio: 3 / 4,
             child: ClipRRect(
-              borderRadius: BorderRadius.all(Radius.circular(20)),
+              borderRadius: const BorderRadius.all(Radius.circular(20)),
               child: AndroidView(
-                key: Key('native-squat-camera-container'),
+                key: const Key('native-squat-camera-container'),
                 viewType: MethodChannelSquatDetector.previewViewType,
+                creationParams:
+                    MethodChannelSquatDetector.previewCreationParams,
+                creationParamsCodec: StandardMessageCodec(),
               ),
             ),
           ),
@@ -293,7 +301,11 @@ final class _SquatControls extends StatelessWidget {
             child: ListTile(
               leading: CircularProgressIndicator(),
               title: Text('姿勢判定を準備しています'),
-              subtitle: Text('カメラ映像は端末内だけで処理します。'),
+              subtitle: Text(
+                MethodChannelSquatDetector.poseSource == 'host'
+                    ? 'デモPCのPose serverへ接続します。'
+                    : 'カメラ映像は端末内だけで処理します。',
+              ),
             ),
           ),
         const Text(

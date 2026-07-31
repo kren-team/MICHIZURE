@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../app/providers.dart';
 import '../features/squat/domain/squat_detector.dart';
@@ -155,11 +156,14 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           if (_permission == CameraPermissionState.granted)
-            const AspectRatio(
+            AspectRatio(
               aspectRatio: 3 / 4,
               child: AndroidView(
-                key: Key('squat-lab-native-camera'),
+                key: const Key('squat-lab-native-camera'),
                 viewType: MethodChannelSquatDetector.previewViewType,
+                creationParams:
+                    MethodChannelSquatDetector.previewCreationParams,
+                creationParamsCodec: StandardMessageCodec(),
               ),
             )
           else

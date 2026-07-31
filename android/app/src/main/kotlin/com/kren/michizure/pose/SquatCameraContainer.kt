@@ -108,7 +108,14 @@ class SquatCameraContainer(
     }
 
     internal fun updatePipelineStatus(snapshot: PosePipelineStatusSnapshot) {
-        post { guideOverlayView.updateStatus(snapshot.status) }
+        post {
+            guideOverlayView.updateStatus(snapshot.status)
+            guideOverlayView.updateHostResultFps(snapshot.metrics.resultCallbackFps)
+        }
+    }
+
+    internal fun setHostPoseMode(enabled: Boolean) {
+        post { guideOverlayView.setHostPoseMode(enabled) }
     }
 
     internal fun updateDebugThumbnail(bitmap: Bitmap) {
@@ -183,6 +190,9 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     private var drawing: SquatGuideDrawing? = null
     private var pipelineStatus = PosePipelineStatus.INITIALIZING
     private var debugThumbnail: Bitmap? = null
+    private var hostPoseMode = false
+    private var hostResultFps = 0.0
+    private var lastHostMetricsUpdateMs = Long.MIN_VALUE
 
     fun update(next: SquatGuideDrawing?) {
         if (drawing == next) return
@@ -194,6 +204,26 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     fun updateStatus(next: PosePipelineStatus) {
         if (pipelineStatus == next) return
         pipelineStatus = next
+        invalidate()
+    }
+
+    fun setHostPoseMode(enabled: Boolean) {
+        if (hostPoseMode == enabled) return
+        hostPoseMode = enabled
+        invalidate()
+    }
+
+    fun updateHostResultFps(value: Double) {
+        if (!hostPoseMode) return
+        val nowMs = SystemClock.elapsedRealtime()
+        if (lastHostMetricsUpdateMs != Long.MIN_VALUE &&
+            nowMs - lastHostMetricsUpdateMs < HOST_METRICS_INTERVAL_MS
+        ) {
+            return
+        }
+        lastHostMetricsUpdateMs = nowMs
+        if (kotlin.math.abs(hostResultFps - value) < 0.1) return
+        hostResultFps = value
         invalidate()
     }
 
@@ -242,7 +272,7 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
         val current = drawing
         if (current == null) {
             canvas.drawText(
-                pipelineStatus.displayLabel,
+                statusLabel(),
                 inset,
                 top + dp(30f),
                 textPaint,
@@ -268,12 +298,29 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             }
         }
         canvas.drawText(
-            "${pipelineStatus.displayLabel} / ${current.state.wireValue}",
+            "${statusLabel()} / ${current.state.wireValue}",
             inset,
             max(top + dp(30f), dp(24f)),
             textPaint,
         )
+        if (hostPoseMode) {
+            canvas.drawText(
+                "Pose FPS: ${String.format(java.util.Locale.US, "%.1f", hostResultFps)}",
+                inset,
+                max(top + dp(50f), dp(44f)),
+                textPaint,
+            )
+        }
         drawDebugThumbnail(canvas, inset, top)
+    }
+
+    private fun statusLabel(): String {
+        if (!hostPoseMode) return pipelineStatus.displayLabel
+        return when (pipelineStatus) {
+            PosePipelineStatus.INITIALIZING -> "Host Pose: Connecting"
+            PosePipelineStatus.FAILED -> "Host Pose: Disconnected"
+            else -> "Host Pose: Ready"
+        }
     }
 
     private fun drawDebugThumbnail(
@@ -303,6 +350,10 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     }
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
+
+    private companion object {
+        const val HOST_METRICS_INTERVAL_MS = 1_000L
+    }
 }
 
 private val PosePipelineStatus.displayLabel: String

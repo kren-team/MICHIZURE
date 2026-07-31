@@ -59,6 +59,7 @@ class SquatStateMachine(
     private var bottomEvidenceScore = 0
     private var bottomEvidencePath: BottomEvidencePath? = null
     private var bottomReached = false
+    private var clearCycleAfterDiagnostics = false
 
     private var previousState: SquatState? = null
     private var lastTransitionReason: String? = null
@@ -104,6 +105,7 @@ class SquatStateMachine(
         previousHipY = null
         resetCalibration()
         clearCycle(clearAttemptMetrics = true)
+        clearCycleAfterDiagnostics = false
         previousState = null
         lastTransitionReason = null
         latestRejectReason = null
@@ -243,7 +245,12 @@ class SquatStateMachine(
                 hipVelocity = hipVelocity,
                 timestampMs = sample.timestampMs,
             )
-        return detectorUpdate.copy(diagnostics = lastDiagnostics)
+        val completed = detectorUpdate.copy(diagnostics = lastDiagnostics)
+        if (clearCycleAfterDiagnostics) {
+            clearCycle(clearAttemptMetrics = true)
+            clearCycleAfterDiagnostics = false
+        }
+        return completed
     }
 
     private fun calibrate(
@@ -447,7 +454,7 @@ class SquatStateMachine(
         }
         rejectActiveCycle(REJECT_SHALLOW)
         transition(SquatState.STANDING, sample.timestampMs, REJECT_SHALLOW)
-        clearCycle(clearAttemptMetrics = false)
+        clearCycleAfterDiagnostics = true
         return update()
     }
 
@@ -475,7 +482,7 @@ class SquatStateMachine(
                 }
             rejectActiveCycle(reason)
             transition(SquatState.STANDING, sample.timestampMs, reason)
-            clearCycle(clearAttemptMetrics = false)
+            clearCycleAfterDiagnostics = true
             return update()
         }
 
@@ -483,7 +490,7 @@ class SquatStateMachine(
         repSequence += 1
         latestRejectReason = null
         transition(SquatState.STANDING, sample.timestampMs, REP_ACCEPTED)
-        clearCycle(clearAttemptMetrics = false)
+        clearCycleAfterDiagnostics = true
         return update(repCompleted = true)
     }
 
@@ -555,10 +562,13 @@ class SquatStateMachine(
         }
     }
 
-    private fun isStrongReturnStanding(sample: PoseFeatureSample): Boolean =
-        sample.kneeAngleDeg >= thresholds().returnStandingAngle ||
-            (sample.kneeAngleDeg >= config.returnStandingAbsoluteKneeDeg &&
-                sample.kneeAngleDeg - minimumKnee >= config.returnStandingMinimumRecoveryDeg)
+    private fun isStrongReturnStanding(sample: PoseFeatureSample): Boolean {
+        val hipDrop = normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY
+        return hipDrop <= config.returnStandingMaximumHipDropRatio &&
+            (sample.kneeAngleDeg >= thresholds().returnStandingAngle ||
+                (sample.kneeAngleDeg >= config.returnStandingAbsoluteKneeDeg &&
+                    sample.kneeAngleDeg - minimumKnee >= config.returnStandingMinimumRecoveryDeg))
+    }
 
     private fun isReturnStanding(sample: PoseFeatureSample): Boolean {
         val hipDrop = normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY

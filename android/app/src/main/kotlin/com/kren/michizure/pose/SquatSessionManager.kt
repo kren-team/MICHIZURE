@@ -17,27 +17,44 @@ class SquatSessionManager(
     private val runtimeEnvironment: AndroidRuntimeEnvironment =
         AndroidRuntimeEnvironment.current(),
     private val sourceFactory: (
+        PoseSourceMode,
         SquatCameraContainer,
         LifecycleOwner,
         (PoseDelegate) -> Unit,
         (PosePipelineStatusSnapshot) -> Unit,
         (PoseFrameDelivery) -> PoseFrameCompletion,
         (String) -> Unit,
-    ) -> PoseSource = { view, owner, onReady, onStatus, onFrame, onFailure ->
-        CameraMediaPipePoseSource(
-            context = view.context.applicationContext,
-            lifecycleOwner = owner,
-            cameraContainer = view,
-            onReady = onReady,
-            onStatus = onStatus,
-            onFrame = onFrame,
-            onFailure = onFailure,
-        )
+    ) -> PoseSource = { mode, view, owner, onReady, onStatus, onFrame, onFailure ->
+        PoseSourceSelector(
+            hostFactory = {
+                CameraHostPoseSource(
+                    context = view.context.applicationContext,
+                    lifecycleOwner = owner,
+                    cameraContainer = view,
+                    onReady = onReady,
+                    onStatus = onStatus,
+                    onFrame = onFrame,
+                    onFailure = onFailure,
+                )
+            },
+            localFactory = {
+                CameraMediaPipePoseSource(
+                    context = view.context.applicationContext,
+                    lifecycleOwner = owner,
+                    cameraContainer = view,
+                    onReady = onReady,
+                    onStatus = onStatus,
+                    onFrame = onFrame,
+                    onFailure = onFailure,
+                )
+            },
+        ).create(mode)
     },
 ) : AutoCloseable {
     private val detectorConfig = SquatDetectorConfig()
     private var session: NativeSquatSession? = null
     private var previewView: SquatCameraContainer? = null
+    private var sourceMode = PoseSourceMode.ANDROID_LOCAL
     private var source: PoseSource? = null
     private var machine = SquatStateMachine(detectorConfig, runtimeEnvironment.isEmulator)
     private var lastState: SquatState? = null
@@ -58,8 +75,14 @@ class SquatSessionManager(
     private var lastLoggedResetKey: String? = null
 
     @Synchronized
-    fun attachPreview(view: SquatCameraContainer) {
+    fun attachPreview(view: SquatCameraContainer, mode: PoseSourceMode) {
+        if (previewView !== view && source != null) {
+            source?.close()
+            source = null
+        }
         previewView = view
+        sourceMode = mode
+        view.setHostPoseMode(mode == PoseSourceMode.HOST_DEMO)
         view.setDebugThumbnailEnabled(debugThumbnailEnabled)
         startSourceIfReady()
     }
@@ -159,6 +182,7 @@ class SquatSessionManager(
         if (source != null) return
         source =
             sourceFactory(
+                sourceMode,
                 view,
                 lifecycleOwner,
                 ::onDetectorReady,
