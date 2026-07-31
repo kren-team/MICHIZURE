@@ -51,8 +51,8 @@ class SquatSessionManager(
     private val latenciesMs = ArrayDeque<Long>()
     private var delegate: PoseDelegate? = null
     private var debugThumbnailEnabled = false
-    private var lastTraceLogMs = Long.MIN_VALUE
     private var lastPerfLogMs = Long.MIN_VALUE
+    private var lastLoggedTransitionKey: String? = null
     private var lastLoggedRepSequence = 0
     private var lastLoggedRejectKey: String? = null
     private var lastLoggedResetKey: String? = null
@@ -487,10 +487,22 @@ class SquatSessionManager(
 
     private fun logSquatFrame(update: SquatDetectorUpdate, metrics: PosePipelineMetrics) {
         if (!isDebugBuild()) return
-        val now = elapsedMs()
-        val intervalMs = 1_000L / detectorConfig.debugTraceFps
-        if (lastTraceLogMs == Long.MIN_VALUE || now - lastTraceLogMs >= intervalMs) {
-            lastTraceLogMs = now
+        val diagnostics = update.diagnostics
+        val transitionKey =
+            diagnostics.lastTransitionReason?.let {
+                "${update.state.wireValue}:$it:${update.repSequence}"
+            }
+        val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }
+        val rejectKey = reject?.let { "$it:${diagnostics.rejectedAttempts}" }
+        val reset = diagnostics.lastResetReason
+        val resetKey = reset?.let { "$it:${diagnostics.rejectedAttempts}" }
+        val shouldTrace =
+            update.repCompleted ||
+                (transitionKey != null && transitionKey != lastLoggedTransitionKey) ||
+                (rejectKey != null && rejectKey != lastLoggedRejectKey) ||
+                (resetKey != null && resetKey != lastLoggedResetKey)
+        if (shouldTrace) {
+            lastLoggedTransitionKey = transitionKey
             Log.d(SQUAT_TRACE_TAG, SquatDebugTraceFormatter.trace(update, metrics))
         }
         if (update.repCompleted && update.repSequence > lastLoggedRepSequence) {
@@ -509,30 +521,20 @@ class SquatSessionManager(
                 ),
             )
         }
-        val diagnostics = update.diagnostics
-        val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }
-        val rejectKey = reject?.let { "$it:${diagnostics.rejectedAttempts}" }
         if (rejectKey != null && rejectKey != lastLoggedRejectKey) {
             lastLoggedRejectKey = rejectKey
             Log.i(SQUAT_REP_TAG, reject)
         }
-        val reset = diagnostics.lastResetReason
-        val resetKey = reset?.let { "$it:${diagnostics.rejectedAttempts}" }
         if (resetKey != null && resetKey != lastLoggedResetKey) {
             lastLoggedResetKey = resetKey
             Log.i(SQUAT_REP_TAG, reset)
-        }
-        if ((diagnostics.frameDtMs ?: 0) > detectorConfig.velocityResetGapMs &&
-            diagnostics.attemptStartTimestampMs != null
-        ) {
-            Log.i(SQUAT_REP_TAG, "ATTEMPT_PRESERVED_FRAME_GAP")
         }
     }
 
     private fun logPosePerformance(metrics: PosePipelineMetrics) {
         if (!isDebugBuild()) return
         val now = elapsedMs()
-        val intervalMs = 1_000L / detectorConfig.debugTraceFps
+        val intervalMs = POSE_PERF_INTERVAL_MS
         if (lastPerfLogMs != Long.MIN_VALUE && now - lastPerfLogMs < intervalMs) return
         lastPerfLogMs = now
         Log.d(POSE_PERF_TAG, SquatDebugTraceFormatter.performance(metrics))
@@ -543,8 +545,8 @@ class SquatSessionManager(
             ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     private fun resetDebugLogState() {
-        lastTraceLogMs = Long.MIN_VALUE
         lastPerfLogMs = Long.MIN_VALUE
+        lastLoggedTransitionKey = null
         lastLoggedRepSequence = 0
         lastLoggedRejectKey = null
         lastLoggedResetKey = null
@@ -567,6 +569,7 @@ class SquatSessionManager(
     companion object {
         private const val MAX_LATENCY_SAMPLES = 300
         private const val MAX_DIAGNOSTIC_EMIT_SAMPLES = 8
+        private const val POSE_PERF_INTERVAL_MS = 5_000L
         private const val SQUAT_TRACE_TAG = "SquatTrace"
         private const val SQUAT_REP_TAG = "SquatRep"
         private const val POSE_PERF_TAG = "PosePerf"

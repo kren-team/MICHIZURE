@@ -185,12 +185,14 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     private var debugThumbnail: Bitmap? = null
 
     fun update(next: SquatGuideDrawing?) {
+        if (drawing == next) return
         drawing = next
         if (next != null) pipelineStatus = next.pipelineStatus
         invalidate()
     }
 
     fun updateStatus(next: PosePipelineStatus) {
+        if (pipelineStatus == next) return
         pipelineStatus = next
         invalidate()
     }

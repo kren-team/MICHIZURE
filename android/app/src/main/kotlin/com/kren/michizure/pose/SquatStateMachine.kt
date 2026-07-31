@@ -15,6 +15,7 @@ class SquatStateMachine(
     isEmulator: Boolean = false,
 ) {
     private val poseLossResetMs = config.poseLossResetMs(isEmulator)
+    private val returnPoseWaitMs = config.returnPoseWaitMs(isEmulator)
     private val calibrationTimeoutMs = config.calibrationTimeoutMs(isEmulator)
     var state: SquatState = SquatState.CALIBRATING
         private set
@@ -30,6 +31,9 @@ class SquatStateMachine(
 
     private var calibrationStartedMs: Long? = null
     private var calibrationSide: PoseSide? = null
+    private var pendingSide: PoseSide? = null
+    private var pendingSideSamples = 0
+    private var sideMissingSinceMs: Long? = null
     private val calibrationCandidates = ArrayDeque<StandingCandidate>()
     private var calibrationStatus = WAITING_FOR_STANDING
     private var provisionalStandingCandidate: StandingCandidate? = null
@@ -117,7 +121,7 @@ class SquatStateMachine(
             candidateBufferPreserved = hasCalibrationCandidate()
         }
         val lastValid = lastValidTimestampMs
-        if (lastValid != null && result.timestampMs - lastValid > poseLossResetMs) {
+        if (lastValid != null && result.timestampMs - lastValid > activePoseLossTimeoutMs()) {
             rejectActiveCycle(REJECT_POSE_LOST)
             resetToCalibrating(RESET_POSE_LOSS_TIMEOUT)
         } else if (state == SquatState.CALIBRATING) {
@@ -169,8 +173,30 @@ class SquatStateMachine(
         quality: PoseQualityMetrics,
         qualityPath: CalibrationQualityPath,
     ): SquatDetectorUpdate {
+        if (!acceptSelectedSide(sample)) {
+            lastValidTimestampMs = sample.timestampMs
+            previousKnee = null
+            previousHipY = null
+            recordValidPoseTime(sample.timestampMs)
+            latestRejectReason = REJECT_CALIBRATION_SIDE_CHANGED
+            if (state == SquatState.CALIBRATING) {
+                lastCalibrationRejectReason = REJECT_CALIBRATION_SIDE_CHANGED
+                candidateBufferPreserved = hasCalibrationCandidate()
+            }
+            lastDiagnostics =
+                diagnostics(
+                    quality = quality,
+                    filteredKnee = sample.kneeAngleDeg,
+                    rawKnee = sample.rawKneeAngleDeg,
+                    hipDrop = null,
+                    kneeVelocity = null,
+                    hipVelocity = null,
+                    timestampMs = sample.timestampMs,
+                )
+            return update().copy(diagnostics = lastDiagnostics)
+        }
         var validGapMs = lastValidTimestampMs?.let { sample.timestampMs - it }
-        if (validGapMs != null && validGapMs > poseLossResetMs) {
+        if (validGapMs != null && validGapMs > activePoseLossTimeoutMs()) {
             rejectActiveCycle(REJECT_POSE_LOST)
             resetToCalibrating(RESET_POSE_LOSS_TIMEOUT)
             validGapMs = null
@@ -563,6 +589,48 @@ class SquatStateMachine(
         }
     }
 
+    private fun acceptSelectedSide(sample: PoseFeatureSample): Boolean {
+        val selected = calibrationSide
+        if (selected == null) {
+            calibrationSide = sample.selectedSide
+            clearPendingSide()
+            return true
+        }
+        if (selected == sample.selectedSide) {
+            clearPendingSide()
+            return true
+        }
+        if (pendingSide != sample.selectedSide) {
+            pendingSide = sample.selectedSide
+            pendingSideSamples = 1
+            sideMissingSinceMs = sample.timestampMs
+        } else {
+            pendingSideSamples += 1
+        }
+        val missingSince = sideMissingSinceMs ?: sample.timestampMs
+        if (pendingSideSamples < config.sideChangeConfirmationSamples ||
+            sample.timestampMs - missingSince < config.sideMissingGraceMs
+        ) {
+            return false
+        }
+        calibrationSide = sample.selectedSide
+        clearPendingSide()
+        return true
+    }
+
+    private fun clearPendingSide() {
+        pendingSide = null
+        pendingSideSamples = 0
+        sideMissingSinceMs = null
+    }
+
+    private fun activePoseLossTimeoutMs(): Long =
+        when {
+            bottomReached -> returnPoseWaitMs
+            sideMissingSinceMs != null -> max(poseLossResetMs, config.sideMissingGraceMs)
+            else -> poseLossResetMs
+        }
+
     private fun pruneCalibrationWindow(timestampMs: Long) {
         while (calibrationCandidates.isNotEmpty() &&
             timestampMs - calibrationCandidates.first().sample.timestampMs >
@@ -710,6 +778,7 @@ class SquatStateMachine(
     private fun resetCalibration() {
         calibrationStartedMs = null
         calibrationSide = null
+        clearPendingSide()
         calibrationCandidates.clear()
         calibrationStatus = WAITING_FOR_STANDING
         provisionalStandingCandidate = null

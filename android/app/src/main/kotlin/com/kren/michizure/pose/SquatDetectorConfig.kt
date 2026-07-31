@@ -6,7 +6,7 @@ data class SquatDetectorConfig(
     val targetGpuAnalysisFps: Int = 10,
     val targetCpuAnalysisFps: Int = 8,
     val targetEmulatorAnalysisFps: Int = 4,
-    val diagnosticUiFps: Int = 4,
+    val diagnosticUiFps: Int = 1,
     val preferGpuDelegate: Boolean = true,
     val minPoseDetectionConfidence: Float = 0.50f,
     val minPosePresenceConfidence: Float = 0.50f,
@@ -18,9 +18,13 @@ data class SquatDetectorConfig(
     val maximumLegLengthRatio: Double = 1.50,
     val sideStickinessMs: Long = 500,
     val sideSwitchConfidenceMargin: Double = 0.10,
+    val sideMissingGraceMs: Long = 2_000,
+    val sideChangeConfirmationSamples: Int = 2,
     val velocityResetGapMs: Long = 400,
     val emulatorPoseLossResetMs: Long = 4_000,
     val physicalPoseLossResetMs: Long = 2_000,
+    val emulatorReturnPoseWaitMs: Long = 6_000,
+    val physicalReturnPoseWaitMs: Long = 3_000,
     val calibrationWindowMs: Long = 8_000,
     val emulatorCalibrationTimeoutMs: Long = 12_000,
     val physicalCalibrationTimeoutMs: Long = 8_000,
@@ -45,14 +49,14 @@ data class SquatDetectorConfig(
     val descendingKneeMinimumDeg: Double = 135.0,
     val descendingKneeMaximumDeg: Double = 160.0,
     val descendingHipDropRatio: Double = 0.06,
-    val kneeOnlyBendDeltaDeg: Double = 24.0,
-    val kneeAndHipBendDeltaDeg: Double = 16.0,
+    val kneeOnlyBendDeltaDeg: Double = 22.0,
+    val kneeAndHipBendDeltaDeg: Double = 14.0,
     val hipReversalMinimumKneeBendDeltaDeg: Double = 8.0,
     val bottomKneeBaselineDeltaDeg: Double = 24.0,
     val bottomKneeMinimumDeg: Double = 135.0,
     val bottomKneeMaximumDeg: Double = 150.0,
     val mediumHipDropRatio: Double = 0.04,
-    val strongHipDropRatio: Double = 0.08,
+    val strongHipDropRatio: Double = 0.10,
     val kneeStrongEvidenceScore: Int = 3,
     val kneeMediumEvidenceScore: Int = 2,
     val kneeMinimumEvidenceScore: Int = 1,
@@ -91,6 +95,9 @@ data class SquatDetectorConfig(
 
     fun poseLossResetMs(isEmulator: Boolean): Long =
         if (isEmulator) emulatorPoseLossResetMs else physicalPoseLossResetMs
+
+    fun returnPoseWaitMs(isEmulator: Boolean): Long =
+        if (isEmulator) emulatorReturnPoseWaitMs else physicalReturnPoseWaitMs
 
     fun calibrationTimeoutMs(isEmulator: Boolean): Long =
         if (isEmulator) emulatorCalibrationTimeoutMs else physicalCalibrationTimeoutMs
