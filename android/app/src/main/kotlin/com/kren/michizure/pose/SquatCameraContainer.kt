@@ -194,11 +194,6 @@ class SquatCameraContainer(
 
     private var lastDebugThumbnailMs = Long.MIN_VALUE
 
-    override fun onDetachedFromWindow() {
-        releaseHostRenderer()
-        super.onDetachedFromWindow()
-    }
-
     private companion object {
         const val DEBUG_THUMBNAIL_INTERVAL_MS = 1_000L
         const val DEBUG_THUMBNAIL_WIDTH = 120
