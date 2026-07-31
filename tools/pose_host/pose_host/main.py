@@ -126,17 +126,17 @@ class LatestCamera:
         self,
         camera_index: int,
         performance: StreamPerformance,
+        *,
+        capture_factory=None,
+        reopen_after_failures: int = 3,
+        retry_delay_seconds: float = 0.1,
     ) -> None:
-        backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
-        capture = cv2.VideoCapture(camera_index, backend)
-        if not capture.isOpened() and backend != cv2.CAP_ANY:
-            capture.release()
-            capture = cv2.VideoCapture(camera_index)
-        if not capture.isOpened():
-            capture.release()
-            raise CameraOpenError(f"camera {camera_index} could not be opened")
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        self._capture = capture
+        self._camera_index = camera_index
+        self._capture_factory = capture_factory or self._open_capture
+        self._reopen_after_failures = reopen_after_failures
+        self._retry_delay_seconds = retry_delay_seconds
+        self._capture_lock = threading.Lock()
+        self._capture = self._capture_factory()
         self._performance = performance
         self._slot = LatestFrameSlot()
         self._closed = False
@@ -147,27 +147,72 @@ class LatestCamera:
         )
         self._thread.start()
 
+    def _open_capture(self):
+        backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
+        capture = cv2.VideoCapture(self._camera_index, backend)
+        if not capture.isOpened() and backend != cv2.CAP_ANY:
+            capture.release()
+            capture = cv2.VideoCapture(self._camera_index)
+        if not capture.isOpened():
+            capture.release()
+            raise CameraOpenError(f"camera {self._camera_index} could not be opened")
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return capture
+
     def _capture_loop(self) -> None:
+        consecutive_failures = 0
         while True:
             if self._closed:
                 return
-            ok, image = self._capture.read()
+            with self._capture_lock:
+                capture = self._capture
+                ok, image = capture.read() if capture is not None else (False, None)
             if not ok:
-                LOGGER.error("camera frame capture failed")
-                time.sleep(0.1)
+                consecutive_failures += 1
+                if consecutive_failures == 1:
+                    LOGGER.warning("camera frame capture failed; retrying")
+                if consecutive_failures >= self._reopen_after_failures:
+                    self._reopen_capture()
+                    consecutive_failures = 0
+                time.sleep(self._retry_delay_seconds)
                 continue
+            consecutive_failures = 0
             frame = CapturedFrame(time.monotonic_ns() // 1_000_000, image)
             before = self._slot.dropped
             self._slot.put(frame)
             self._performance.capture(dropped=self._slot.dropped > before)
 
+    def _reopen_capture(self) -> None:
+        with self._capture_lock:
+            if self._closed:
+                return
+            previous, self._capture = self._capture, None
+            if previous is not None:
+                previous.release()
+        try:
+            replacement = self._capture_factory()
+        except CameraOpenError as error:
+            LOGGER.error("camera reopen failure: %s", error)
+            return
+        with self._capture_lock:
+            if self._closed:
+                replacement.release()
+            else:
+                self._capture = replacement
+                LOGGER.info("camera reopened after consecutive capture failures")
+
     def take_latest(self, timeout_seconds: float) -> CapturedFrame | None:
         return self._slot.take(timeout_seconds)
 
     def close(self) -> None:
-        self._closed = True
+        with self._capture_lock:
+            if self._closed:
+                return
+            self._closed = True
+            capture, self._capture = self._capture, None
         self._slot.close()
-        self._capture.release()
+        if capture is not None:
+            capture.release()
         self._thread.join(timeout=1.0)
 
 
@@ -250,9 +295,20 @@ class PoseHostServer:
         self._camera_factory = camera_factory or self._open_camera
         self._client_lock = asyncio.Lock()
         self._frame_ids = itertools.count(1)
+        self._camera: CameraSource | None = None
 
     def _open_camera(self) -> CameraSource:
         return LatestCamera(self._config.camera_index, self._performance)
+
+    def start(self) -> CameraSource:
+        if self._camera is None:
+            self._camera = self._camera_factory()
+        return self._camera
+
+    def close(self) -> None:
+        camera, self._camera = self._camera, None
+        if camera is not None:
+            camera.close()
 
     async def handle(self, websocket: ServerConnection) -> None:
         if self._client_lock.locked():
@@ -260,7 +316,7 @@ class PoseHostServer:
             return
         async with self._client_lock:
             try:
-                camera = self._camera_factory()
+                camera = self.start()
             except CameraOpenError as error:
                 LOGGER.error("camera open failure: %s", error)
                 await websocket.close(1011, "camera open failure")
@@ -271,7 +327,6 @@ class PoseHostServer:
             except (ConnectionClosed, ConnectionError):
                 pass
             finally:
-                camera.close()
                 LOGGER.info("client disconnected")
 
     async def _stream(
@@ -369,10 +424,12 @@ async def run(args: argparse.Namespace) -> None:
     inferencer = MediaPipePoseInferencer(args.model)
     server = PoseHostServer(inferencer, config)
     try:
+        server.start()
         async with serve(server.handle, "0.0.0.0", args.port, max_size=1_024):
             LOGGER.info("listening on 0.0.0.0:%d", args.port)
             await asyncio.get_running_loop().create_future()
     finally:
+        server.close()
         inferencer.close()
 
 
