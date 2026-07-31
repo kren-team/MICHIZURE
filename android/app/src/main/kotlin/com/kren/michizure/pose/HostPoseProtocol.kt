@@ -12,7 +12,9 @@ data class HostPosePacket(
     val imageHeight: Int,
     val poseDetected: Boolean,
     val landmarks: List<MediaPipeLandmarkSample>?,
-    val jpeg: ByteArray,
+    val payload: ByteArray,
+    val jpegOffset: Int,
+    val jpegLength: Int,
 )
 
 object HostPoseProtocol {
@@ -63,7 +65,9 @@ object HostPoseProtocol {
             imageHeight = imageHeight,
             poseDetected = poseDetected,
             landmarks = landmarks,
-            jpeg = message.copyOfRange(jpegOffset, message.size),
+            payload = message,
+            jpegOffset = jpegOffset,
+            jpegLength = jpegLength,
         )
     }
 

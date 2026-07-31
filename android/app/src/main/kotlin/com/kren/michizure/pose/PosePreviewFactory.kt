@@ -33,5 +33,6 @@ private class PosePreviewView(
 
     override fun dispose() {
         manager.detachPreview(cameraContainer)
+        cameraContainer.releaseHostRenderer()
     }
 }

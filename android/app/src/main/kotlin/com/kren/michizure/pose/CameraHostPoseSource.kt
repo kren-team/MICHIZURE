@@ -1,15 +1,12 @@
 package com.kren.michizure.pose
 
-import android.graphics.BitmapFactory
 import android.os.SystemClock
 import android.util.Log
 import java.util.ArrayDeque
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -17,7 +14,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 
-/** HOST_DEMO receives already-inferred preview packets and never opens CameraX. */
+/** HOST_DEMO receives Pose and preview packets without opening CameraX. */
 class CameraHostPoseSource(
     private val cameraContainer: SquatCameraContainer,
     private val onReady: (PoseDelegate) -> Unit,
@@ -25,27 +22,36 @@ class CameraHostPoseSource(
     private val onFrame: (PoseFrameDelivery) -> PoseFrameCompletion,
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
 ) : PoseSource {
-    private val decodeExecutor: ExecutorService =
-        Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "pose-host-decode") }
     private val healthExecutor: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "pose-host-health") }
     private val httpClient = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
     private val stats = PosePipelineStats()
     private val resultGate = HostPoseResultGate()
     private val resultProcessor = HostPoseResultProcessor(config)
-    private val pendingPacket = AtomicReference<ByteString?>(null)
-    private val drainScheduled = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val connecting = AtomicBoolean(false)
     private val connected = AtomicBoolean(false)
-    private val performance = HostReceivePerformance()
+    private val performance = HostPerformanceWindow(SystemClock.elapsedRealtime())
+    private val renderListener =
+        object : HostPoseRenderListener {
+            override fun onDecoded(durationMs: Long) = performance.recordDecoded(durationMs)
+
+            override fun onDisplayed(drawDurationMs: Long) =
+                performance.recordDisplayed(drawDurationMs)
+
+            override fun onDroppedBeforeDecode() = performance.recordDroppedBeforeDecode()
+
+            override fun onDroppedBeforeDraw() = performance.recordDroppedBeforeDraw()
+        }
+    @Volatile private var latestPerformance = HostPerformanceSnapshot()
     @Volatile private var socket: WebSocket? = null
     @Volatile private var pipelineStatus = PosePipelineStatus.INITIALIZING
 
     override fun start() {
         if (!started.compareAndSet(false, true) || closed.get()) return
         stats.setDelegate(PoseDelegate.HOST)
+        cameraContainer.setHostRenderListener(renderListener)
         publishStatus(PosePipelineStatus.INITIALIZING)
         connect()
         healthExecutor.scheduleAtFixedRate(
@@ -80,8 +86,7 @@ class CameraHostPoseSource(
             if (closed.get() || socket !== webSocket) return
             performance.recordReceived()
             stats.recordAnalyzerFrame(monotonicNs())
-            if (pendingPacket.getAndSet(bytes) != null) performance.recordDroppedDisplay()
-            scheduleDrain()
+            processPacket(bytes.toByteArray())
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -98,70 +103,58 @@ class CameraHostPoseSource(
         }
     }
 
-    private fun scheduleDrain() {
-        if (!drainScheduled.compareAndSet(false, true)) return
-        decodeExecutor.execute {
-            try {
-                while (!closed.get()) {
-                    val message = pendingPacket.getAndSet(null) ?: break
-                    processPacket(message)
-                }
-            } finally {
-                drainScheduled.set(false)
-                if (pendingPacket.get() != null) scheduleDrain()
-            }
-        }
-    }
-
-    private fun processPacket(message: ByteString) {
+    private fun processPacket(message: ByteArray) {
         val receivedNs = monotonicNs()
         val packet =
-            runCatching { HostPoseProtocol.decodePacket(message.toByteArray()) }
+            runCatching { HostPoseProtocol.decodePacket(message) }
                 .onFailure { Log.e(TAG, "server error: malformed packet") }
                 .getOrNull() ?: return
-        if (!resultGate.accept(packet.frameId)) {
-            performance.recordDroppedDisplay()
-            return
-        }
-        val decodeStartedNs = monotonicNs()
-        val bitmap =
-            BitmapFactory.decodeByteArray(packet.jpeg, 0, packet.jpeg.size)
-                ?: run {
-                    Log.e(TAG, "server error: invalid JPEG")
-                    return
-                }
-        if (bitmap.width != packet.imageWidth || bitmap.height != packet.imageHeight) {
-            bitmap.recycle()
-            Log.e(TAG, "server error: JPEG dimensions do not match header")
-            return
-        }
-        val callbackNs = monotonicNs()
-        val decodeMs = (callbackNs - decodeStartedNs) / NANOS_PER_MILLISECOND
-        performance.recordDecoded(decodeMs)
+        if (closed.get() || !resultGate.accept(packet.frameId)) return
+
         stats.recordActualAnalysisResolution(packet.imageWidth, packet.imageHeight)
         stats.recordSubmitted(receivedNs, 0, PoseDelegate.HOST)
-
         val processed = resultProcessor.process(packet)
+        val poseProcessedNs = monotonicNs()
         val status = PosePipelineStatus.fromTracking(processed.feature.quality.trackingStatus)
         pipelineStatus = status
+        val guide = guideSide(processed.filteredPose, processed.feature)
+        val offer =
+            cameraContainer.offerHostFrame(
+                HostDisplayFrame(
+                    frameId = packet.frameId,
+                    payload = packet.payload,
+                    jpegOffset = packet.jpegOffset,
+                    jpegLength = packet.jpegLength,
+                    imageWidth = packet.imageWidth,
+                    imageHeight = packet.imageHeight,
+                    hip = guide?.hip,
+                    knee = guide?.knee,
+                    ankle = guide?.ankle,
+                    pipelineStatus = status,
+                ),
+            )
+        if (offer != LatestFrameOffer.ACCEPTED) performance.recordDroppedBeforeDecode()
+
         val latency =
             PoseLatencySample(
                 analyzerReceivedNs = receivedNs,
-                preprocessingStartedNs = decodeStartedNs,
-                inferenceSubmittedNs = decodeStartedNs,
-                inferenceCallbackNs = callbackNs,
-                stateMachineCompletedNs = callbackNs,
+                preprocessingStartedNs = receivedNs,
+                inferenceSubmittedNs = receivedNs,
+                inferenceCallbackNs = poseProcessedNs,
+                stateMachineCompletedNs = poseProcessedNs,
                 nativeEventDispatchedNs = null,
             )
+        if (closed.get()) return
         val completion =
             onFrame(
                 PoseFrameDelivery(
                     feature = processed.feature,
                     latency = latency,
-                    metrics = stats.snapshot(callbackNs),
+                    metrics = stats.snapshot(poseProcessedNs),
                     delegate = PoseDelegate.HOST,
                 ),
             )
+        performance.recordStateMachine()
         val completed =
             latency.copy(
                 stateMachineCompletedNs = completion.stateMachineCompletedNs,
@@ -171,23 +164,6 @@ class CameraHostPoseSource(
             processed.feature is PoseFeatureResult.Valid ||
                 processed.feature is PoseFeatureResult.CalibrationCandidate
         stats.recordResult(completed, packet.poseDetected, valid)
-        performance.recordPose(packet.poseDetected)
-        val guide = guideSide(processed.filteredPose, processed.feature)
-        cameraContainer.updateHostFrame(
-            HostSquatGuideFrame(
-                frameId = packet.frameId,
-                bitmap = bitmap,
-                imageWidth = packet.imageWidth,
-                imageHeight = packet.imageHeight,
-                hip = guide?.hip,
-                knee = guide?.knee,
-                ankle = guide?.ankle,
-                pipelineStatus = status,
-                state = completion.state,
-            ),
-            onDisplayed = performance::recordDisplayed,
-            onDropped = performance::recordDroppedDisplay,
-        )
     }
 
     private fun guideSide(pose: LowerBodyPose, feature: PoseFeatureResult): LowerBodySide? {
@@ -214,7 +190,6 @@ class CameraHostPoseSource(
         if (connected.getAndSet(false)) Log.i(TAG, "WebSocket disconnected")
         connecting.set(false)
         socket = null
-        pendingPacket.getAndSet(null)
         resultGate.reset()
         resultProcessor.reset()
         cameraContainer.clearGuide()
@@ -224,11 +199,25 @@ class CameraHostPoseSource(
     private fun healthTick() {
         if (closed.get()) return
         if (!connected.get()) connect()
+        performance.finishWindow(SystemClock.elapsedRealtime())?.let {
+            latestPerformance = it
+            Log.i(
+                PERF_TAG,
+                "receiveFps=${format(it.receiveFps)} " +
+                    "stateMachineFps=${format(it.stateMachineFps)} " +
+                    "displayedFps=${format(it.displayedFps)} " +
+                    "decodeP95Ms=${it.decodeP95Ms ?: "-"} " +
+                    "drawP95Ms=${it.drawP95Ms ?: "-"} " +
+                    "droppedBeforeDecode=${it.droppedBeforeDecode} " +
+                    "droppedBeforeDraw=${it.droppedBeforeDraw}",
+            )
+        }
         val metrics = stats.snapshot(monotonicNs())
-        val snapshot = performance.snapshot()
-        cameraContainer.updateHostMetrics(snapshot.displayedFps, snapshot.poseFps)
+        cameraContainer.updateHostMetrics(
+            latestPerformance.displayedFps,
+            latestPerformance.stateMachineFps,
+        )
         onStatus(PosePipelineStatusSnapshot(pipelineStatus, metrics))
-        performance.logIfDue()
     }
 
     private fun publishStatus(status: PosePipelineStatus) {
@@ -240,91 +229,92 @@ class CameraHostPoseSource(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        cameraContainer.setHostRenderListener(null)
         socket?.close(1000, null)
         socket = null
         connected.set(false)
         connecting.set(false)
-        pendingPacket.getAndSet(null)
         cameraContainer.clearGuide()
         resultGate.reset()
         resultProcessor.reset()
         healthExecutor.shutdownNow()
-        decodeExecutor.shutdownNow()
         httpClient.dispatcher.executorService.shutdown()
         httpClient.connectionPool.evictAll()
     }
 
-    private data class HostReceiveSnapshot(val displayedFps: Double, val poseFps: Double)
-
-    private class HostReceivePerformance {
-        private val receiveTimesMs = ArrayDeque<Long>()
-        private val displayTimesMs = ArrayDeque<Long>()
-        private val poseTimesMs = ArrayDeque<Long>()
-        private val decodeMs = ArrayDeque<Long>()
-        private var droppedDisplay = 0L
-        private var lastLogMs = Long.MIN_VALUE
-
-        @Synchronized fun recordReceived() = add(receiveTimesMs, SystemClock.elapsedRealtime())
-        @Synchronized fun recordDisplayed() = add(displayTimesMs, SystemClock.elapsedRealtime())
-        @Synchronized fun recordPose(detected: Boolean) {
-            if (detected) add(poseTimesMs, SystemClock.elapsedRealtime())
-        }
-        @Synchronized fun recordDecoded(durationMs: Long) = add(decodeMs, durationMs)
-        @Synchronized fun recordDroppedDisplay() { droppedDisplay += 1 }
-
-        @Synchronized
-        fun snapshot(): HostReceiveSnapshot {
-            val now = SystemClock.elapsedRealtime()
-            return HostReceiveSnapshot(fps(displayTimesMs, now), fps(poseTimesMs, now))
-        }
-
-        @Synchronized
-        fun logIfDue() {
-            val now = SystemClock.elapsedRealtime()
-            if (lastLogMs != Long.MIN_VALUE && now - lastLogMs < PERF_LOG_INTERVAL_MS) return
-            lastLogMs = now
-            Log.i(
-                PERF_TAG,
-                "receiveFps=${format(fps(receiveTimesMs, now))} " +
-                    "displayedFps=${format(fps(displayTimesMs, now))} " +
-                    "poseFps=${format(fps(poseTimesMs, now))} " +
-                    "decodeP95Ms=${p95(decodeMs) ?: "-"} " +
-                    "droppedDisplay=$droppedDisplay",
-            )
-        }
-
-        private fun add(values: ArrayDeque<Long>, value: Long) {
-            values.addLast(value)
-            while (values.size > MAX_SAMPLES) values.removeFirst()
-        }
-
-        private fun fps(values: ArrayDeque<Long>, now: Long): Double {
-            while (values.isNotEmpty() && now - values.first() > FPS_WINDOW_MS) {
-                values.removeFirst()
-            }
-            if (values.size < 2) return 0.0
-            val duration = values.last() - values.first()
-            return if (duration <= 0) 0.0 else (values.size - 1) * 1_000.0 / duration
-        }
-
-        private fun p95(values: Collection<Long>): Long? {
-            if (values.isEmpty()) return null
-            val sorted = values.sorted()
-            return sorted[((sorted.size - 1) * 0.95).toInt()]
-        }
-
-        private fun format(value: Double) = String.format(java.util.Locale.US, "%.1f", value)
-    }
-
     private fun monotonicNs(): Long = SystemClock.elapsedRealtimeNanos()
+
+    private fun format(value: Double) = String.format(java.util.Locale.US, "%.1f", value)
 
     private companion object {
         const val HOST_URL = "ws://10.0.2.2:8765"
         const val TAG = "HostPose"
         const val PERF_TAG = "PosePerf"
-        const val NANOS_PER_MILLISECOND = 1_000_000L
-        const val PERF_LOG_INTERVAL_MS = 5_000L
-        const val FPS_WINDOW_MS = 5_000L
-        const val MAX_SAMPLES = 180
+    }
+}
+
+internal data class HostPerformanceSnapshot(
+    val receiveFps: Double = 0.0,
+    val stateMachineFps: Double = 0.0,
+    val displayedFps: Double = 0.0,
+    val decodeP95Ms: Long? = null,
+    val drawP95Ms: Long? = null,
+    val droppedBeforeDecode: Long = 0,
+    val droppedBeforeDraw: Long = 0,
+)
+
+internal class HostPerformanceWindow(
+    startMs: Long,
+    private val windowMs: Long = 5_000,
+) {
+    private var windowStartMs = startMs
+    private var received = 0L
+    private var stateMachine = 0L
+    private var displayed = 0L
+    private var droppedBeforeDecode = 0L
+    private var droppedBeforeDraw = 0L
+    private val decodeMs = ArrayDeque<Long>()
+    private val drawMs = ArrayDeque<Long>()
+
+    @Synchronized fun recordReceived() { received += 1 }
+    @Synchronized fun recordStateMachine() { stateMachine += 1 }
+    @Synchronized fun recordDecoded(durationMs: Long) { decodeMs.addLast(durationMs) }
+    @Synchronized fun recordDisplayed(drawDurationMs: Long) {
+        displayed += 1
+        drawMs.addLast(drawDurationMs)
+    }
+    @Synchronized fun recordDroppedBeforeDecode() { droppedBeforeDecode += 1 }
+    @Synchronized fun recordDroppedBeforeDraw() { droppedBeforeDraw += 1 }
+
+    @Synchronized
+    fun finishWindow(nowMs: Long): HostPerformanceSnapshot? {
+        val durationMs = nowMs - windowStartMs
+        if (durationMs < windowMs) return null
+        val safeDurationMs = durationMs.coerceAtLeast(1)
+        val snapshot =
+            HostPerformanceSnapshot(
+                receiveFps = received * 1_000.0 / safeDurationMs,
+                stateMachineFps = stateMachine * 1_000.0 / safeDurationMs,
+                displayedFps = displayed * 1_000.0 / safeDurationMs,
+                decodeP95Ms = percentile95(decodeMs),
+                drawP95Ms = percentile95(drawMs),
+                droppedBeforeDecode = droppedBeforeDecode,
+                droppedBeforeDraw = droppedBeforeDraw,
+            )
+        windowStartMs = nowMs
+        received = 0
+        stateMachine = 0
+        displayed = 0
+        droppedBeforeDecode = 0
+        droppedBeforeDraw = 0
+        decodeMs.clear()
+        drawMs.clear()
+        return snapshot
+    }
+
+    private fun percentile95(values: Collection<Long>): Long? {
+        if (values.isEmpty()) return null
+        val sorted = values.sorted()
+        return sorted[((sorted.size - 1) * 0.95).toInt()]
     }
 }

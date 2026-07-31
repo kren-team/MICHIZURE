@@ -2,6 +2,8 @@
 
 1. Hardware graphicsでEmulatorを起動する。
 
+   発表用AVDはGraphicsをHardwareまたはAutomatic、CPUを4 core以上、RAMを4096MB以上にする。
+
    ```bash
    emulator -avd Pixel_8 -gpu host
    ```
