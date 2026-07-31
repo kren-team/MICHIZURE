@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
 import java.util.Locale
+import kotlin.math.abs
 
 data class NativeSquatSession(
     val squatSessionId: String,
@@ -529,16 +530,36 @@ class SquatSessionManager(
         if (update.repCompleted && update.repSequence > lastLoggedRepSequence) {
             lastLoggedRepSequence = update.repSequence
             val diagnostics = update.diagnostics
+            val standingAngle = diagnostics.calibratedStandingKneeAngleDeg ?: -1.0
+            val minimumKneeAngle = diagnostics.minimumAttemptKneeAngleDeg ?: -1.0
+            val currentKneeAngle = diagnostics.kneeAngleDeg ?: -1.0
+            val maximumHipDrop = diagnostics.maximumAttemptHipDropRatio ?: -1.0
+            val currentHipDrop = diagnostics.normalizedHipDrop ?: -1.0
+            val hipRecoveryRatio =
+                if (maximumHipDrop.isFinite() && abs(maximumHipDrop) > 1e-6 &&
+                    currentHipDrop.isFinite()
+                ) {
+                    (maximumHipDrop - currentHipDrop) / abs(maximumHipDrop)
+                } else {
+                    -1.0
+                }
             Log.i(
                 SQUAT_REP_TAG,
                 String.format(
                     Locale.US,
-                    "REP_ACCEPTED sequence=%d standing=%.1f minKnee=%.1f maxBend=%.1f evidence=%s",
+                    "REP_ACCEPTED sequence=%d standingAngle=%.1f minimumKneeAngle=%.1f " +
+                        "currentKneeAngle=%.1f kneeRecovery=%.1f maximumHipDrop=%.3f " +
+                        "currentHipDrop=%.3f hipRecoveryRatio=%.3f evidence=%s durationMs=%d",
                     update.repSequence,
-                    diagnostics.calibratedStandingKneeAngleDeg ?: -1.0,
-                    diagnostics.minimumAttemptKneeAngleDeg ?: -1.0,
-                    diagnostics.kneeBendDeltaDeg ?: -1.0,
+                    standingAngle,
+                    minimumKneeAngle,
+                    currentKneeAngle,
+                    currentKneeAngle - minimumKneeAngle,
+                    maximumHipDrop,
+                    currentHipDrop,
+                    hipRecoveryRatio,
                     diagnostics.bottomEvidencePath?.wireValue ?: "NONE",
+                    diagnostics.currentRepDurationMs ?: -1,
                 ),
             )
         }
