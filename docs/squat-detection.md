@@ -52,7 +52,7 @@ frame、bitmap、landmark全列はPlatform Channelへ流さない。Kotlinから
 | Preview | portrait 3:4 PlatformView / native FrameLayout（PreviewView + guide） |
 | Analyzer thread | single dedicated executor |
 
-Previewは24〜30 FPSをrequestする。Analyzerは重いBitmap変換前にGPU 12 FPS / CPU 8 FPSへthrottleし、`STRATEGY_KEEP_ONLY_LATEST`とMediaPipe側flow limiterにより古いframeをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`する。`detectAsync`がinputを同期packet化して戻った後にinput `MPImage` / Bitmapをcloseし、callbackまで保持するのは画像を含まないtimestamp・transform・latency metadataだけである。
+Previewはactive cameraが報告したrangeから`[30,30]`、lower bound 15以上、`[15,30]`相当の順に選び、該当rangeがなければCameraX defaultへ委ねる。未対応rangeは強制しない。Analyzerは重いBitmap変換前に物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 6 FPSへthrottleし、`STRATEGY_KEEP_ONLY_LATEST`とMediaPipe側flow limiterにより古いframeをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`する。`detectAsync`がinputを同期packet化して戻った後にinput `MPImage` / Bitmapをcloseし、callbackまで保持するのは画像を含まないtimestamp・transform・latency metadataだけである。
 
 `RGBA_8888`はplaneの`rowStride` / `pixelStride=4` / buffer長を検証し、CameraXのstride-aware `ImageProxy.toBitmap()`で変換する。`width * height * 4`の密なbufferを仮定したcopy、JPEG encode/decode、Preview surfaceからのcaptureは行わない。`rotationDegrees`はMediaPipe投入前にBitmapへ適用し、overlayはImageAnalysisの`OutputTransform`からPreviewView座標へ変換する。
 
@@ -141,13 +141,13 @@ timestampは同一pipelineの`SystemClock.elapsedRealtimeNanos()`から単調増
 
 ### 6.4 Range of motion
 
-1 rep中の `maxKneeAngle - minKneeAngle` を保持する。最低45°を初期値とし、浅い上下動を除外する。
+1 rep中の `maxKneeAngle - minKneeAngle` を保持する。最低50°を初期値とし、浅い上下動を除外する。
 
 ## 7. Smoothing
 
-左右それぞれのhip / knee / ankle x/yへOne-Euro Filterを適用してからfeatureを計算する。初期値は`minCutoff=1.0`、`beta=0.02`、`derivativeCutoff=1.0`で、固定FPSを仮定せずtimestamp差を使う。左右は独立filterとし、side切替で別脚の履歴を混ぜない。pose loss、逆順timestamp、500ms超gap、session終了ではresetする。
+左右それぞれのhip / knee / ankle x/yへOne-Euro Filterを適用してからfeatureを計算する。初期値は`minCutoff=1.0`、`beta=0.02`、`derivativeCutoff=1.0`で、固定FPSを仮定せずtimestamp差を使う。左右は独立filterとし、side切替で別脚の履歴を混ぜない。逆順timestampはrejectし、400ms超gapではfilterの値・微分履歴だけをre-armしてFSM phaseは維持する。session終了と1,500ms超のpose lossでは全状態をresetする。
 
-FSM側でmedian / EMAを重ねず、時間条件とhysteresisをdebounce authorityにする。設定値は`SquatDetectorConfig mediapipe-lite-knee-angle-hip-drop-v4`へ集約する。
+FSM側でmedian / EMAを重ねず、時間条件とhysteresisをdebounce authorityにする。設定値は`SquatDetectorConfig mediapipe-lite-knee-angle-hip-drop-v5`へ集約する。
 
 ## 8. Quality gate
 
@@ -159,9 +159,9 @@ FSM側でmedian / EMAを重ねず、時間条件とhysteresisをdebounce authori
 | valid side | 左右いずれかのhip/knee/ankleすべてvalid |
 | leg size | `(hip-knee + knee-ankle) / frame height >= 0.22` |
 | side stickiness | `500ms`、switch confidence margin `0.10` |
-| frame gap | `<= 250ms` |
-| invalid tracking grace | `<= 250ms` |
-| calibration stable time | `>= 1,000ms` |
+| velocity continuity | gap `<=400ms`。超過時はvelocityのみ無効 |
+| pose loss reset | valid poseなし `>1,500ms` |
+| calibration | 2秒観測、6〜8 sample、3秒timeout |
 
 quality warning:
 
@@ -174,11 +174,11 @@ quality warning:
 
 `numPoses=1`であるため、複数人が写ると対象が切り替わり得る。撮影範囲には1人だけ入り、胸の下から足首までを映すことを必須ガイドにする。
 
-tracking invalidが250ms以内ならFSMをfreezeし、復帰時にvelocity historyをresetする。250msを超えたら進行中repを破棄して`CALIBRATING`へ戻す。
+単一の長いcallback間隔ではphaseを失わない。400ms超gapではvelocityとOne-Euroの微分履歴をresetし、次のvalid sampleから角度・位置中心で再開する。usable poseが1,500msを超えて失われた場合だけ進行中repを破棄して`CALIBRATING`へ戻す。
 
 ## 9. Calibration
 
-開始時に安定立位を1秒以上保持する。
+開始時に2秒程度の観測期間を取り、3秒以内に得た6〜8件の安定立位sampleからbaselineを作る。sampleは連続frameでなくてよく、一時的なcallback gapだけで全破棄しない。
 
 calibration条件:
 
@@ -193,6 +193,7 @@ calibration条件:
 - standing knee angle median
 - standing hip y
 - leg length
+- baseline jitter（median absolute deviation）
 - selected side preference
 
 画像やraw landmarksは保存しない。calibrationはSquat sessionを閉じたら破棄する。
@@ -202,33 +203,34 @@ calibration条件:
 ```mermaid
 stateDiagram-v2
     [*] --> CALIBRATING
-    CALIBRATING --> STANDING: stable standing 1,000ms
-    STANDING --> DESCENDING: knee <= min(150°, baseline-12°) AND hipDrop >= 0.06 stable 100ms
+    CALIBRATING --> STANDING: 2s / 6-8 stable samples
+    STANDING --> DESCENDING: knee < min(150°, baseline-12°) OR hipDrop > 0.08 stable 100ms
     DESCENDING --> STANDING: shallow return / timeout
-    DESCENDING --> BOTTOM: knee <= 105° AND hipDrop >= 0.18 stable 150ms
-    BOTTOM --> ASCENDING: knee >= 120° AND hipDrop <= 0.17 stable 100ms
+    DESCENDING --> BOTTOM: knee <= 120° AND hipDrop >= 0.20 stable 150ms
+    BOTTOM --> ASCENDING: knee rising OR hipDrop falling, after bottom exit
     BOTTOM --> CALIBRATING: tracking lost / timeout
     ASCENDING --> BOTTOM: returns deep before standing
-    ASCENDING --> STANDING: knee >= max(155°, baseline-12°) stable 250ms
+    ASCENDING --> STANDING: knee >= 150° AND hipDrop <= 0.15 stable 200ms
     ASCENDING --> CALIBRATING: tracking lost / timeout
-    STANDING --> CALIBRATING: tracking invalid > 250ms
+    STANDING --> CALIBRATING: usable pose lost > 1,500ms
 ```
 
 ### 10.1 Initial thresholds
 
 | Transition | Condition |
 |---|---|
-| standing enter | knee `>= max(155°, baseline-12°)`, stable 250ms |
-| standing exit | knee `<= min(150°, baseline-12°)`, hip drop `>=0.06`、stable 100ms |
-| bottom enter | knee `<=105°`, hip drop `>=0.18`、stable 150ms |
-| bottom exit | knee `>=120°`, hip drop `<=0.17`、stable 100ms |
+| standing hold | knee `>= max(155°, baseline-12°)`, hip drop `<=0.12` |
+| standing exit | knee `< min(150°, baseline-12°)` **または** hip drop `>0.08`、stable 100ms |
+| bottom enter | knee `<=120°`, hip drop `>=0.20`、stable 150ms |
+| bottom exit | knee `>=125°`またはhip drop `<=0.18`で上昇方向、stable 100ms |
+| rep return | knee `>=150°`, hip drop `<=0.15`、stable 200ms |
 | full rep duration | 800〜6,000ms |
 | descending minimum | 200ms |
 | ascending minimum | 200ms |
 | range of motion | knee angle change `>=50°` |
 | refractory | count後500ms |
 
-閾値間のgapがヒステリシスである。例: bottomは105°以下で入り、120°以上になるまで出ない。knee 55°以下かつhip drop 0.20以上は過深動作としてrejectし、立位calibrationからやり直す。
+閾値間のgapがヒステリシスである。必要深度より深い動作はwarning対象にできるが、それだけではrejectしない。BOTTOMを正順で通過し、時間・ROMを満たして立位へ戻れば有効repとする。
 
 これらは初期値であり、合成テスト、複数体格・撮影角度の実機testからversioned configとして調整する。ユーザー別に無制限な自動学習はMVPで行わない。
 
@@ -242,8 +244,7 @@ ASCENDINGからSTANDINGへ戻る時点で、次をすべて満たせばlocal rep
 - range of motion >= 50°
 - total duration 800〜6,000ms
 - descending / ascending各200ms以上
-- tracking invalidの連続が250ms以下
-- cycleのvalid frame ratio >= 80%
+- usable poseが1,500msを超えて失われていない
 - 前回countから500ms以上
 
 満たさなければstateはSTANDINGへ戻るがcountしない。quality reasonをUIへ送る。
@@ -257,14 +258,14 @@ ASCENDINGからSTANDINGへ戻る時点で、次をすべて満たせばlocal rep
 | bottom付近のjitter | hysteresis、BOTTOMから直接countしない |
 | 立位付近の揺れ | stable 250ms、refractory |
 | 急なlandmark teleport | median、velocity sanity、invalid rep |
-| 一瞬の遮蔽 | 250ms grace、velocity reset |
+| 一瞬の遮蔽 / callback stall | phase維持、400ms超でvelocity reset |
 | 長い遮蔽 | rep破棄、recalibrate |
 | しゃがんだ状態から開始 | stable standing calibration必須 |
 | 椅子へ座る | knee angle / hip drop / tempo / ROMで低減。完全防止はMVP外 |
 | カメラに近づく | normalized hip drop、body size gate |
 | 別人へtracking switch | 1人ガイド、body scale/center discontinuityでrep破棄 |
 | 左右side switch | confidence hysteresis / stickiness |
-| 低FPS | frame gap gate、時間条件、latest frame |
+| 低FPS | monotonic time条件、velocityとpose lossの別timeout、latest frame |
 
 ## 13. Detector contract
 
@@ -337,7 +338,7 @@ offline:
 - production Rulesはfake_debug拒否
 - fakeを有効にすると画面へ常時DEBUG banner
 - production state machine codeをFakeのために分岐させない
-- debug Squat Labのthumbnailは、実際にImageAnalysisからMediaPipeへ渡す回転済みBitmapを1 FPS以下・幅120pxへ縮小してNative overlay内だけに表示する
+- debug Squat Labのthumbnailは初期状態OFF。明示ON時だけ、実際にImageAnalysisからMediaPipeへ渡す回転済みBitmapを1 FPS以下・幅120pxへ縮小してNative overlay内だけに表示する
 - thumbnail、fixture、landmarkは保存・network送信しない
 
 既知画像fixtureは2026-07-31にこのrepositoryの診断専用として生成した架空人物画像で、実ユーザーや第三者撮影物を含まない。debug source setだけに置き、release APKへ同梱しない。
@@ -469,7 +470,7 @@ Productionで精度不足が確認された場合、まずon-deviceの個人cali
 - CameraX `1.6.1`のfront優先 / rear fallback、`Preview` + `ImageAnalysis`、480×640近傍、`STRATEGY_KEEP_ONLY_LATEST`を採用した。
 - MediaPipe Tasks Vision `1.0.0`と公式Pose Landmarker Lite bundleを使用する。
 - analyzerは専用single executor、事前FPS gate、pending 1件を使い、skip、result、error、stopの全経路でImageProxy / MPImageをreleaseする。
-- `SquatDetectorConfig.VERSION = mediapipe-lite-knee-angle-hip-drop-v4`にthresholdとOne-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
+- `SquatDetectorConfig.VERSION = mediapipe-lite-knee-angle-hip-drop-v5`にthresholdとOne-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
 - `squat_control/v1`、`squat_events/v1`、`pose_preview/v1`を実装した。Dart adapterはtype別field allowlistを検証し、画像・landmarkに相当するextra fieldを拒否する。
 - session IDは18 random bytesのhex、repはnativeのmonotonic sequenceを使用し、Firestore event IDはPhase 8の`${uid}_${squatSessionId}_${sequence}`へ変換する。
 - route離脱、ユーザー終了、terminal Debtではnative sessionを停止する。background / foregroundはCameraXのActivity lifecycle bindingへ従う。
@@ -495,10 +496,12 @@ CameraX RGBA ImageAnalysis
 
 - ProductionはMediaPipe Pose Landmarker Liteのみを実行し、ML Kit Pose dependencyは含めない。
 - 公式model cardの制約から、顔なしlower-body frameでのpose成立率はhost webcamまたは物理端末のmanual gateで測る。
-- debug buildだけ、200msに1回以下でpose有無、選択side、左右hip/knee/ankle confidence、knee angle、normalized hip drop、knee/hip velocity、FSM state、reject reason、latency、accepted/rejected countをUIへ送る。
+- debug buildだけ、最大4 FPSでpose有無、選択side、raw/filtered knee angle、normalized hip drop、FSMの前後phase、transition/reject/reset reason、各confirmation時間、calibration sample数、input/submit/callback/valid-pose FPS、latency、accepted/rejected countを小さい専用Widgetへ送る。
 - diagnosticsは`analyzerFrames`、`inferenceSubmitted`、`resultCallbacks`、pose有無別result数、error callback数、callback age、active delegate、safe error code、preprocess / inference latencyを持つ。submit後callbackが未到達の`awaitingResult`と、callback到達済みでpose 0件の`noPose`を分離する。
 - Native overlayとFlutter guidanceは同じ`PosePipelineStatus`から生成し、callback未到達中に「landmarkを認識しました」と表示しない。
 - debug diagnosticsに画像、frame、landmark座標は含めない。releaseではnative event生成とFlutter cardの双方を無効化する。
 - synthetic testは顔・肩なし、片側のみ、欠損、confidence不足、浅い屈伸、jitter、bounce、pose loss、duplicate frame、1回および10回の正常cycleを検証する。
 
 host webcamのmanual gateではpose detected rate、各lower-body landmark confidence、latency sample数 / p50 / p95 / maxを記録する。測定前はp95 500ms達成やlower-body実Camera精度を完了扱いにしない。
+
+MediaPipe `1.0.0`でnon-square入力時に出ることがある`NORM_RECT without IMAGE_DIMENSIONS` warningを調査した。アプリは480×640近傍のRGBA Bitmapを`MPImage`として渡し、回転後のwidth/heightでlandmarkを画像座標へ戻している。公開Tasks APIは`MPImage`と`ImageProcessingOptions`までで、内部graphの`NORM_RECT`へimage dimensionsを別途注入する口はない。warningは非表示化せず、overlayとFSMが同じ変換済みlandmarkを使うことをmanual gateで確認する。現時点でcount停止の直接原因は、warningではなく250msのframe-gap resetだった。

@@ -74,9 +74,11 @@
 - [ ] analyzer / submit / callbackが増加し、inference latencyが0ms固定ではない
 - [ ] callback待機とcallbackあり・poseなしが別表示
 - [ ] debug既知画像でcallback、pose 1件以上、hip/knee/ankleを確認
-- [ ] diagnosticsが4 FPS以下、analysisがGPU 12 FPS / CPU 8 FPS近傍
-- [ ] 直立calibration
+- [ ] diagnosticsが4 FPS以下、analysisが物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 5〜6 FPS近傍
+- [ ] 2秒・6〜8 valid sampleで直立calibration
+- [ ] 前後phase、transition / reject / reset reason、frame dt、confirmation時間を記録
 - [ ] 正常3 squatをexactly 3回count
+- [ ] 深いsquat 1回をexactly 1回count
 - [ ] 浅い屈伸3回を0回としてreject
 - [ ] 複数squatで二重countなし
 - [ ] pending / confirmedを区別
