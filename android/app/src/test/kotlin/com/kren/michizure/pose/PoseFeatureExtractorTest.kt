@@ -61,7 +61,7 @@ class PoseFeatureExtractorTest {
     }
 
     @Test
-    fun lowConfidenceIsRejectedWithoutLoweringTheThreshold() {
+    fun lowConfidenceStandingGeometryUsesCalibrationOnlyFallback() {
         val result =
             extractor.extract(
                 pose(
@@ -72,15 +72,14 @@ class PoseFeatureExtractorTest {
                 ),
             )
 
-        assertEquals(
-            PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
-            (result as PoseFeatureResult.Invalid).warning,
-        )
+        val candidate = result as PoseFeatureResult.CalibrationCandidate
+        assertEquals(PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE, candidate.warning)
+        assertEquals(CalibrationQualityPath.ANGLE_CONFIDENCE_FALLBACK, candidate.qualityPath)
         assertEquals("lowerBodyConfidenceLow", result.rejectReason)
     }
 
     @Test
-    fun legScaleIsNormalizedByFrameHeight() {
+    fun tooSmallStandingGeometryUsesCalibrationOnlyFallback() {
         val tooSmall =
             extractor.extract(
                 pose(
@@ -93,10 +92,39 @@ class PoseFeatureExtractorTest {
                 ),
             )
 
-        assertEquals(
-            PoseQualityWarning.MOVE_CLOSER,
-            (tooSmall as PoseFeatureResult.Invalid).warning,
-        )
+        val candidate = tooSmall as PoseFeatureResult.CalibrationCandidate
+        assertEquals(PoseQualityWarning.MOVE_CLOSER, candidate.warning)
+        assertEquals(CalibrationQualityPath.ANGLE_SIZE_FALLBACK, candidate.qualityPath)
+    }
+
+    @Test
+    fun confidenceFallbackStillRequiresTwoRelaxedLandmarksAndInBoundsGeometry() {
+        val tooWeak =
+            extractor.extract(
+                pose(
+                    left =
+                        standingSide().copy(
+                            hip = point(50.0, 100.0, 0.10),
+                            knee = point(50.0, 200.0, 0.10),
+                            ankle = point(50.0, 300.0, 0.90),
+                        ),
+                ),
+            )
+        extractor.reset()
+        val outside =
+            extractor.extract(
+                pose(
+                    left =
+                        LowerBodySide(
+                            hip = point(-200.0, 100.0, 0.90),
+                            knee = point(-200.0, 200.0, 0.90),
+                            ankle = point(-200.0, 300.0, 0.40),
+                        ),
+                ),
+            )
+
+        assertEquals("lowerBodyConfidenceLow", (tooWeak as PoseFeatureResult.Invalid).rejectReason)
+        assertEquals("lowerBodyConfidenceLow", (outside as PoseFeatureResult.Invalid).rejectReason)
     }
 
     @Test

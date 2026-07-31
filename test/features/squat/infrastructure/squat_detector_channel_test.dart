@@ -196,6 +196,17 @@ void main() {
       'effectiveValidPoseFps': 8.0,
       'calibrationSampleCount': 8,
       'calibrationStatus': 'complete',
+      'strongStandingCandidateCount': 3,
+      'provisionalStandingAngle': 176.7,
+      'calibrationMedianAngle': 175.4,
+      'calibrationAngleRange': 5.6,
+      'calibrationWindowAgeMs': 1_000,
+      'calibrationTimeoutMs': 8_000,
+      'calibrationQualityPath': 'ANGLE_CONFIDENCE_FALLBACK',
+      'lastCalibrationRejectReason': null,
+      'candidateBufferPreserved': true,
+      'autoCalibratedOnDescent': false,
+      'standingBaselineSource': 'MULTI_SAMPLE_MEDIAN',
       'bottomReached': false,
       'standingConfirmationDurationMs': 0,
       'bottomConfirmationDurationMs': 0,
@@ -205,7 +216,7 @@ void main() {
       'standingThresholdDeg': 143.0,
       'descendingThresholdDeg': 148.0,
       'bottomThresholdDeg': 144.0,
-      'returnStandingThresholdDeg': 140.0,
+      'returnStandingThresholdDeg': 143.0,
       'minimumAttemptKneeAngle': 132.0,
       'maximumAttemptHipDrop': 0.11,
       'kneeBendDelta': 36.0,
@@ -272,7 +283,16 @@ void main() {
     expect(diagnostics.standingThresholdDeg, 143);
     expect(diagnostics.descendingThresholdDeg, 148);
     expect(diagnostics.bottomThresholdDeg, 144);
-    expect(diagnostics.returnStandingThresholdDeg, 140);
+    expect(diagnostics.returnStandingThresholdDeg, 143);
+    expect(diagnostics.strongStandingCandidateCount, 3);
+    expect(diagnostics.provisionalStandingAngle, 176.7);
+    expect(diagnostics.calibrationMedianAngle, 175.4);
+    expect(diagnostics.calibrationAngleRange, 5.6);
+    expect(diagnostics.calibrationWindowAgeMs, 1000);
+    expect(diagnostics.calibrationTimeoutMs, 8000);
+    expect(diagnostics.calibrationQualityPath, 'ANGLE_CONFIDENCE_FALLBACK');
+    expect(diagnostics.candidateBufferPreserved, isTrue);
+    expect(diagnostics.standingBaselineSource, 'MULTI_SAMPLE_MEDIAN');
     expect(diagnostics.minimumAttemptKneeAngle, 132);
     expect(diagnostics.maximumAttemptHipDrop, 0.11);
     expect(diagnostics.kneeBendDelta, 36);
@@ -320,6 +340,17 @@ void main() {
         'effectiveValidPoseFps': 8.0,
         'calibrationSampleCount': 8,
         'calibrationStatus': 'complete',
+        'strongStandingCandidateCount': 3,
+        'provisionalStandingAngle': 176.7,
+        'calibrationMedianAngle': 175.4,
+        'calibrationAngleRange': 5.6,
+        'calibrationWindowAgeMs': 1_000,
+        'calibrationTimeoutMs': 8_000,
+        'calibrationQualityPath': 'ANGLE_CONFIDENCE_FALLBACK',
+        'lastCalibrationRejectReason': null,
+        'candidateBufferPreserved': true,
+        'autoCalibratedOnDescent': false,
+        'standingBaselineSource': 'MULTI_SAMPLE_MEDIAN',
         'bottomReached': false,
         'standingConfirmationDurationMs': 0,
         'bottomConfirmationDurationMs': 0,
@@ -329,7 +360,7 @@ void main() {
         'standingThresholdDeg': 143.0,
         'descendingThresholdDeg': 148.0,
         'bottomThresholdDeg': 144.0,
-        'returnStandingThresholdDeg': 140.0,
+        'returnStandingThresholdDeg': 143.0,
         'minimumAttemptKneeAngle': 132.0,
         'maximumAttemptHipDrop': 0.11,
         'kneeBendDelta': 36.0,

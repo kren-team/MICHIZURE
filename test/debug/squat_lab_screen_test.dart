@@ -109,7 +109,7 @@ void main() {
         standingThresholdDeg: 143,
         descendingThresholdDeg: 148,
         bottomThresholdDeg: 144,
-        returnStandingThresholdDeg: 140,
+        returnStandingThresholdDeg: 143,
         minimumAttemptKneeAngle: 132,
         maximumAttemptHipDrop: 0.11,
         kneeBendDelta: 36,
@@ -120,6 +120,18 @@ void main() {
         legScale: 0.5,
         baselineJitter: 0.01,
         calibrationSelectedSide: SquatPoseSide.left,
+        calibrationSampleCount: 2,
+        calibrationStatus: 'COMPLETE',
+        strongStandingCandidateCount: 2,
+        provisionalStandingAngle: 176.7,
+        calibrationMedianAngle: 173.9,
+        calibrationAngleRange: 5.6,
+        calibrationWindowAgeMs: 500,
+        calibrationTimeoutMs: 8_000,
+        calibrationQualityPath: 'ANGLE_CONFIDENCE_FALLBACK',
+        candidateBufferPreserved: true,
+        autoCalibratedOnDescent: true,
+        standingBaselineSource: 'AUTO_CALIBRATED_ON_DESCENT',
         requestedAnalysisWidth: 320,
         requestedAnalysisHeight: 240,
         actualAnalysisWidth: 320,
@@ -136,7 +148,7 @@ void main() {
     );
     expect(
       find.textContaining(
-        'Threshold standing / descent / bottom / return: 143.00 / 148.00 / 144.00 / 140.00',
+        'Threshold standing / descent / bottom / return: 143.00 / 148.00 / 144.00 / 143.00',
       ),
       findsOneWidget,
     );
@@ -158,6 +170,16 @@ void main() {
     );
     expect(
       find.textContaining('Bitmap converted / rotated: 7 / 6'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Calibration: COMPLETE (2/2, strong 2)'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Buffer preserved / auto descent / baseline: true / true',
+      ),
       findsOneWidget,
     );
   });
