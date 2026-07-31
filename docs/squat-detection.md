@@ -52,7 +52,9 @@ frame、bitmap、landmark全列はPlatform Channelへ流さない。Kotlinから
 | Preview | portrait 3:4 PlatformView / native FrameLayout（PreviewView + guide） |
 | Analyzer thread | single dedicated executor |
 
-Previewは24〜30 FPSをrequestする。Analyzerは重いBitmap copy前にGPU 12 FPS / CPU 8 FPSへthrottleし、1 frame推論中に次frameをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`し、MPImageとBitmapはasync callbackまでpending 1件だけ保持する。
+Previewは24〜30 FPSをrequestする。Analyzerは重いBitmap変換前にGPU 12 FPS / CPU 8 FPSへthrottleし、`STRATEGY_KEEP_ONLY_LATEST`とMediaPipe側flow limiterにより古いframeをqueueへ積まない。skip / success / failureのすべてのpathで`ImageProxy.close()`する。`detectAsync`がinputを同期packet化して戻った後にinput `MPImage` / Bitmapをcloseし、callbackまで保持するのは画像を含まないtimestamp・transform・latency metadataだけである。
+
+`RGBA_8888`はplaneの`rowStride` / `pixelStride=4` / buffer長を検証し、CameraXのstride-aware `ImageProxy.toBitmap()`で変換する。`width * height * 4`の密なbufferを仮定したcopy、JPEG encode/decode、Preview surfaceからのcaptureは行わない。`rotationDegrees`はMediaPipe投入前にBitmapへ適用し、overlayはImageAnalysisの`OutputTransform`からPreviewView座標へ変換する。
 
 Native `FrameLayout`の同一boundsへ`PreviewView`と`SquatGuideOverlayView`を重ねる。`COMPATIBLE` / `FIT_CENTER`とCameraX transform APIで座標を合わせ、FlutterはAndroidViewを診断更新ごとに再生成しない。胸の下から足首までが十分なpixel数を占める撮影ガイドを表示し、カメラへ斜め30〜45度または横向きを案内する。高解像度化よりlatest frameの低遅延を優先する。
 
@@ -63,7 +65,10 @@ Native `FrameLayout`の同一boundsへ`PreviewView`と`SquatGuideOverlayView`を
 - `RunningMode.LIVE_STREAM`
 - `numPoses=1`
 - `outputSegmentationMasks=false`
-- GPU delegate優先、初期化失敗時はCPUへ1回だけfallback
+- 物理端末はGPU delegate優先、初期化失敗時はCPUへ1回だけfallback
+- Android Emulator（generic / sdk / ranchu / goldfish等）はGLES互換性差を避けCPU固定
+- GPUへ5件以上submit後、2秒以上callbackが0件ならruntime failureとし、LandmarkerをcloseしてCPUへ1回だけ再初期化
+- CPUでも同条件でcallbackがない場合はtyped failure。fallback loopは行わない
 - normalized x/y、`visibility`、`presence`をadapterで必要な6 landmarksへ縮約
 - world landmarkはMVPの必須判定へ使わない
 
@@ -322,6 +327,7 @@ offline:
 | `CameraMediaPipePoseSource` | debug / release | 本番CameraX + MediaPipe Lite |
 | `SyntheticLandmarkPoseSource` | debug / testのみ | production FSMへ決定的landmark列 |
 | `FakeSquatDetector` | debug / testのみ | end-to-endデモでbutton / timer rep |
+| `pose_fixture_generated.png` | debug assetのみ | MediaPipe CPU callback / pose / hip-knee-ankle smoke |
 
 安全策:
 
@@ -331,6 +337,16 @@ offline:
 - production Rulesはfake_debug拒否
 - fakeを有効にすると画面へ常時DEBUG banner
 - production state machine codeをFakeのために分岐させない
+- debug Squat Labのthumbnailは、実際にImageAnalysisからMediaPipeへ渡す回転済みBitmapを1 FPS以下・幅120pxへ縮小してNative overlay内だけに表示する
+- thumbnail、fixture、landmarkは保存・network送信しない
+
+既知画像fixtureは2026-07-31にこのrepositoryの診断専用として生成した架空人物画像で、実ユーザーや第三者撮影物を含まない。debug source setだけに置き、release APKへ同梱しない。
+
+- file: `android/app/src/debug/assets/pose_fixture_generated.png`
+- SHA-256: `0833e7f53cbaf9eb95868df78136d62f942dc72c447e67193d66514be25165b8`
+- size: 345,772 bytes
+- use: CPU `LIVE_STREAM`へ1枚だけ投入し、callback、pose数、hip / knee / ankleの利用可否だけを返す
+- license: project-generated test fixture（repository内のテスト・診断用途）
 
 Emulator cameraの選択:
 
@@ -368,11 +384,11 @@ PIIやlandmarkをmetricへ含めない。Emulatorはhardware acceleration / host
 ## 17. Performance controls
 
 - `STRATEGY_KEEP_ONLY_LATEST`
-- in-flight MediaPipe requestは1つ
+- application側にunbounded queueを持たず、MediaPipe `LIVE_STREAM`のflow limitingで処理中は古いinputをdrop
 - Lite bundle + `LIVE_STREAM`
 - 低めのanalysis resolution
 - overlay renderingをanalysis FPSから間引く
-- JPEG encode/decodeは行わず、公式sampleと同じRGBA→ARGB Bitmap copyを1回だけ行う
+- JPEG encode/decodeは行わず、CameraX `ImageProxy.toBitmap()`でRGBAのrow paddingを考慮してBitmapへ変換する
 - landmarkをDartへ送らない
 - analyzer executorをUI threadから分離
 - detectorをSquat画面外でclose
@@ -480,6 +496,8 @@ CameraX RGBA ImageAnalysis
 - ProductionはMediaPipe Pose Landmarker Liteのみを実行し、ML Kit Pose dependencyは含めない。
 - 公式model cardの制約から、顔なしlower-body frameでのpose成立率はhost webcamまたは物理端末のmanual gateで測る。
 - debug buildだけ、200msに1回以下でpose有無、選択side、左右hip/knee/ankle confidence、knee angle、normalized hip drop、knee/hip velocity、FSM state、reject reason、latency、accepted/rejected countをUIへ送る。
+- diagnosticsは`analyzerFrames`、`inferenceSubmitted`、`resultCallbacks`、pose有無別result数、error callback数、callback age、active delegate、safe error code、preprocess / inference latencyを持つ。submit後callbackが未到達の`awaitingResult`と、callback到達済みでpose 0件の`noPose`を分離する。
+- Native overlayとFlutter guidanceは同じ`PosePipelineStatus`から生成し、callback未到達中に「landmarkを認識しました」と表示しない。
 - debug diagnosticsに画像、frame、landmark座標は含めない。releaseではnative event生成とFlutter cardの双方を無効化する。
 - synthetic testは顔・肩なし、片側のみ、欠損、confidence不足、浅い屈伸、jitter、bounce、pose loss、duplicate frame、1回および10回の正常cycleを検証する。
 
