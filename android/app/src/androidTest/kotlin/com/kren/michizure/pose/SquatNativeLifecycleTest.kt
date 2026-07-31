@@ -22,6 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class SquatNativeLifecycleTest {
@@ -80,33 +81,28 @@ class SquatNativeLifecycleTest {
     }
 
     @Test
-    fun nativePreviewAndGuideShareExactlyTheSameThreeByFourBounds() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
+    fun generatedDebugFixtureProducesCallbackPoseAndLowerBodyLandmarks() {
         val context =
             ApplicationProvider.getApplicationContext<android.content.Context>()
-        lateinit var container: SquatCameraContainer
-        instrumentation.runOnMainSync {
-            container = SquatCameraContainer(context)
-            container.measure(
-                View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
-            )
-            container.layout(0, 0, 300, 400)
-            assertEquals(300, container.measuredWidth)
-            assertEquals(400, container.measuredHeight)
-            assertEquals(container.left, container.previewView.left)
-            assertEquals(container.top, container.previewView.top)
-            assertEquals(container.right, container.previewView.right)
-            assertEquals(container.bottom, container.previewView.bottom)
-            assertEquals(container.left, container.guideOverlayView.left)
-            assertEquals(container.top, container.guideOverlayView.top)
-            assertEquals(container.right, container.guideOverlayView.right)
-            assertEquals(container.bottom, container.guideOverlayView.bottom)
-            assertEquals(
-                PreviewView.ImplementationMode.COMPATIBLE,
-                container.previewView.implementationMode,
-            )
-            assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
+        val completed = CountDownLatch(1)
+        val result = AtomicReference<PoseFixtureDiagnosticResult?>()
+        val diagnostics = GeneratedPoseFixtureDiagnostics(context)
+        try {
+            diagnostics.run {
+                result.set(it)
+                completed.countDown()
+            }
+
+            assertTrue(completed.await(8, TimeUnit.SECONDS))
+            val actual = requireNotNull(result.get())
+            assertTrue(actual.callbackDelivered)
+            assertTrue(actual.poseCount >= 1)
+            assertTrue(actual.hipAvailable)
+            assertTrue(actual.kneeAvailable)
+            assertTrue(actual.ankleAvailable)
+            assertEquals(null, actual.errorCode)
+        } finally {
+            diagnostics.close()
         }
     }
 
@@ -123,7 +119,7 @@ class SquatNativeLifecycleTest {
         instrumentation.runOnMainSync {
             owner.resume()
             manager =
-                SquatSessionManager(owner) { _, _, onReady, _, _ ->
+                SquatSessionManager(owner) { _, _, onReady, _, _, _ ->
                     object : PoseSource {
                         override fun start() {
                             starts += 1
@@ -190,7 +186,7 @@ class SquatNativeLifecycleTest {
             instrumentation.runOnMainSync {
                 owner.resume()
                 manager =
-                    SquatSessionManager(owner) { _, _, _, _, onFailure ->
+                    SquatSessionManager(owner) { _, _, _, _, _, onFailure ->
                         object : PoseSource {
                             override fun start() {
                                 onFailure("cameraUnavailable")
@@ -240,18 +236,28 @@ class SquatNativeLifecycleTest {
             instrumentation.runOnMainSync {
                 owner.resume()
                 manager =
-                    SquatSessionManager(owner) { _, _, onReady, onFrame, _ ->
+                    SquatSessionManager(owner) { _, _, onReady, onStatus, onFrame, _ ->
                         object : PoseSource {
                             override fun start() {
                                 onReady(PoseDelegate.CPU)
+                                onStatus(
+                                    PosePipelineStatusSnapshot(
+                                        status = PosePipelineStatus.VALID,
+                                        metrics =
+                                            PosePipelineMetrics(
+                                                activeDelegate = PoseDelegate.CPU,
+                                            ),
+                                    ),
+                                )
                                 onFrame(
                                     PoseFrameDelivery(
                                         feature =
                                             PoseFeatureResult.Valid(
                                                 PoseFeatureSample(
                                                     timestampMs = 1_000,
+                                                    kneeAngleDeg = 174.0,
                                                     hipY = 0.25,
-                                                    kneeY = 0.50,
+                                                    legLength = 0.50,
                                                     confidence = 0.90,
                                                     selectedSide = PoseSide.LEFT,
                                                 ),

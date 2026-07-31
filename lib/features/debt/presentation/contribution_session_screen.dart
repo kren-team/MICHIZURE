@@ -313,7 +313,7 @@ final class _SquatControls extends StatelessWidget {
         Semantics(
           liveRegion: true,
           child: Text(
-            _qualityMessage(state.qualityWarning),
+            _qualityMessage(state.pipelineStatus, state.qualityWarning),
             key: const Key('squat-quality-message'),
             textAlign: TextAlign.center,
           ),
@@ -354,7 +354,22 @@ String _stateLabel(SquatDetectorState state) {
   };
 }
 
-String _qualityMessage(SquatQualityWarning? warning) {
+String _qualityMessage(
+  SquatPosePipelineStatus pipelineStatus,
+  SquatQualityWarning? warning,
+) {
+  final pipelineMessage = switch (pipelineStatus) {
+    SquatPosePipelineStatus.initializing => '姿勢判定を準備しています。',
+    SquatPosePipelineStatus.awaitingResult => '姿勢判定の結果を待っています。',
+    SquatPosePipelineStatus.noPose => '人物を認識できません。',
+    SquatPosePipelineStatus.hipUnavailable => '腰を認識できません。',
+    SquatPosePipelineStatus.kneeUnavailable => '膝を認識できません。',
+    SquatPosePipelineStatus.ankleUnavailable => '足首を認識できません。',
+    SquatPosePipelineStatus.confidenceInsufficient => '明るい場所で腰・膝・足首を映してください。',
+    SquatPosePipelineStatus.failed => '端末内の姿勢判定を確認してください。',
+    SquatPosePipelineStatus.valid => null,
+  };
+  if (pipelineMessage != null) return pipelineMessage;
   return switch (warning) {
     null => '腰・膝・足首を認識しました。',
     SquatQualityWarning.noPoseDetected => '人物を認識できません。',
@@ -390,6 +405,7 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
             children: [
               const Text('Debug detector diagnostics'),
               Text('Delegate: ${diagnostics.delegate?.name ?? 'initializing'}'),
+              Text('Pipeline: ${diagnostics.pipelineStatus.name}'),
               Text('Tracking: ${diagnostics.trackingStatus.name}'),
               Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
               Text(
@@ -419,8 +435,34 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
               ),
               Text('Inference latency: ${diagnostics.analysisLatencyMs}ms'),
               Text(
+                'Analyzer / submitted / callbacks: '
+                '${diagnostics.analyzerFrames} / '
+                '${diagnostics.inferenceSubmitted} / '
+                '${diagnostics.resultCallbacks}',
+              ),
+              Text(
+                'Pose / no pose / errors: '
+                '${diagnostics.resultsWithPose} / '
+                '${diagnostics.resultsWithoutPose} / '
+                '${diagnostics.errorCallbacks}',
+              ),
+              Text(
+                'Last callback age: '
+                '${diagnostics.lastCallbackAgeMs ?? '-'} ms',
+              ),
+              Text(
+                'Active delegate: '
+                '${diagnostics.activeDelegate?.name ?? 'initializing'}',
+              ),
+              Text('Last error: ${diagnostics.lastError ?? 'none'}'),
+              Text(
                 'Analysis FPS: '
                 '${diagnostics.actualAnalysisFps.toStringAsFixed(1)}',
+              ),
+              Text(
+                'Preprocess p50 / p95: '
+                '${diagnostics.preprocessingP50Ms ?? '-'} / '
+                '${diagnostics.preprocessingP95Ms ?? '-'} ms',
               ),
               Text(
                 'Inference p50 / p95: '

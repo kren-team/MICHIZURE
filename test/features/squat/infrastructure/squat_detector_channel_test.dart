@@ -173,6 +173,7 @@ void main() {
       'squatSessionId': 'session-12345678',
       'poseDetected': true,
       'trackingStatus': 'valid',
+      'pipelineStatus': 'valid',
       'selectedSide': 'left',
       'leftHipConfidence': 0.90,
       'leftKneeConfidence': 0.91,
@@ -189,11 +190,22 @@ void main() {
       'rejectedAttempts': 0,
       'delegate': 'cpu',
       'sampleCount': 20,
+      'analyzerFrames': 40,
+      'inferenceSubmitted': 22,
+      'resultCallbacks': 20,
+      'resultsWithPose': 17,
+      'resultsWithoutPose': 3,
+      'errorCallbacks': 0,
+      'lastCallbackAgeMs': 25,
+      'activeDelegate': 'cpu',
+      'lastError': null,
       'actualAnalysisFps': 10.0,
       'droppedBeforePreprocessing': 12,
       'rejectedAsBusy': 2,
       'resultCount': 20,
       'noPoseCount': 3,
+      'preprocessingP50Ms': 4,
+      'preprocessingP95Ms': 8,
       'inferenceP50Ms': 45,
       'inferenceP95Ms': 80,
       'nativePipelineP50Ms': 55,
@@ -217,6 +229,7 @@ void main() {
         'squatSessionId': 'session-12345678',
         'poseDetected': true,
         'trackingStatus': 'valid',
+        'pipelineStatus': 'valid',
         'selectedSide': 'left',
         'leftHipConfidence': 0.90,
         'leftKneeConfidence': 0.91,
@@ -233,11 +246,22 @@ void main() {
         'rejectedAttempts': 0,
         'delegate': 'cpu',
         'sampleCount': 20,
+        'analyzerFrames': 40,
+        'inferenceSubmitted': 22,
+        'resultCallbacks': 20,
+        'resultsWithPose': 17,
+        'resultsWithoutPose': 3,
+        'errorCallbacks': 0,
+        'lastCallbackAgeMs': 25,
+        'activeDelegate': 'cpu',
+        'lastError': null,
         'actualAnalysisFps': 10.0,
         'droppedBeforePreprocessing': 12,
         'rejectedAsBusy': 2,
         'resultCount': 20,
         'noPoseCount': 3,
+        'preprocessingP50Ms': 4,
+        'preprocessingP95Ms': 8,
         'inferenceP50Ms': 45,
         'inferenceP95Ms': 80,
         'nativePipelineP50Ms': 55,
@@ -246,6 +270,36 @@ void main() {
         'landmarks': <Object>[],
       }),
       throwsA(isA<SquatDetectorFailure>()),
+    );
+  });
+
+  test('distinguishes callback wait from callback with no pose', () {
+    final detector = MethodChannelSquatDetector(methodChannel: channel);
+
+    final waiting = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'pipelineStatusChanged',
+      'eventId': 'session-12345678_pipeline_1',
+      'occurredAtEpochMs': 1_000,
+      'squatSessionId': 'session-12345678',
+      'status': 'awaitingResult',
+    });
+    final noPose = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'pipelineStatusChanged',
+      'eventId': 'session-12345678_pipeline_2',
+      'occurredAtEpochMs': 1_001,
+      'squatSessionId': 'session-12345678',
+      'status': 'noPose',
+    });
+
+    expect(
+      (waiting as SquatPipelineStatusChanged).status,
+      SquatPosePipelineStatus.awaitingResult,
+    );
+    expect(
+      (noPose as SquatPipelineStatusChanged).status,
+      SquatPosePipelineStatus.noPose,
     );
   });
 }

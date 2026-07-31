@@ -82,6 +82,46 @@ void main() {
     expect(state.detectorDelegate, SquatInferenceDelegate.gpu);
   });
 
+  test('native pipeline status is the guidance source of truth', () async {
+    final detector = FakeSquatDetector();
+    final container = _container(detector, FakeContributionRepository());
+    addTearDown(() async {
+      container.dispose();
+      await detector.close();
+    });
+    final controller = container.read(squatSessionControllerProvider.notifier);
+    await _settle();
+    await controller.start(debtId: 'debt-a', remainingReps: 3);
+
+    detector.emit(
+      SquatPipelineStatusChanged(
+        eventId: '$sessionId-awaiting',
+        occurredAt: DateTime.utc(2026, 7, 30),
+        squatSessionId: sessionId,
+        status: SquatPosePipelineStatus.awaitingResult,
+      ),
+    );
+    await _settle();
+    expect(
+      container.read(squatSessionControllerProvider).pipelineStatus,
+      SquatPosePipelineStatus.awaitingResult,
+    );
+
+    detector.emit(
+      SquatPipelineStatusChanged(
+        eventId: '$sessionId-no-pose',
+        occurredAt: DateTime.utc(2026, 7, 30),
+        squatSessionId: sessionId,
+        status: SquatPosePipelineStatus.noPose,
+      ),
+    );
+    await _settle();
+    expect(
+      container.read(squatSessionControllerProvider).pipelineStatus,
+      SquatPosePipelineStatus.noPose,
+    );
+  });
+
   test('offline accepted rep converges into the Phase 8 Outbox', () async {
     final detector = FakeSquatDetector();
     final repository = FakeContributionRepository()

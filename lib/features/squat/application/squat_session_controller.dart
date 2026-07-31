@@ -52,6 +52,7 @@ final class SquatSessionState {
     this.lastAnalysisLatencyMs,
     this.diagnostics,
     this.detectorDelegate,
+    this.pipelineStatus = SquatPosePipelineStatus.initializing,
   });
 
   const SquatSessionState.initial()
@@ -68,7 +69,8 @@ final class SquatSessionState {
       failure = null,
       lastAnalysisLatencyMs = null,
       diagnostics = null,
-      detectorDelegate = null;
+      detectorDelegate = null,
+      pipelineStatus = SquatPosePipelineStatus.initializing;
 
   final SquatSessionStatus status;
   final CameraPermissionState permission;
@@ -84,6 +86,7 @@ final class SquatSessionState {
   final int? lastAnalysisLatencyMs;
   final SquatDetectorDiagnostics? diagnostics;
   final SquatInferenceDelegate? detectorDelegate;
+  final SquatPosePipelineStatus pipelineStatus;
 
   bool get isRunning => status == SquatSessionStatus.running;
 
@@ -102,6 +105,7 @@ final class SquatSessionState {
     int? lastAnalysisLatencyMs,
     SquatDetectorDiagnostics? diagnostics,
     SquatInferenceDelegate? detectorDelegate,
+    SquatPosePipelineStatus? pipelineStatus,
     bool clearSession = false,
     bool clearWarning = false,
     bool clearFailure = false,
@@ -128,6 +132,9 @@ final class SquatSessionState {
       detectorDelegate: clearSession
           ? null
           : detectorDelegate ?? this.detectorDelegate,
+      pipelineStatus: clearSession
+          ? SquatPosePipelineStatus.initializing
+          : pipelineStatus ?? this.pipelineStatus,
     );
   }
 }
@@ -233,6 +240,7 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
       lastSequence: 0,
       maximumLocalReps: remainingReps,
       detectorReady: false,
+      pipelineStatus: SquatPosePipelineStatus.initializing,
       clearWarning: true,
       clearFailure: true,
     );
@@ -323,6 +331,9 @@ final class SquatSessionController extends Notifier<SquatSessionState> {
           detectorState: event.state,
           lastAnalysisLatencyMs: event.analysisLatencyMs,
         );
+      case SquatPipelineStatusChanged():
+        if (event.squatSessionId != sessionId) return;
+        state = state.copyWith(pipelineStatus: event.status);
       case SquatQualityChanged():
         if (event.squatSessionId != sessionId) return;
         state = state.copyWith(

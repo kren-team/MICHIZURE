@@ -29,6 +29,18 @@ enum SquatPoseTrackingStatus {
 
 enum SquatInferenceDelegate { gpu, cpu }
 
+enum SquatPosePipelineStatus {
+  initializing,
+  awaitingResult,
+  noPose,
+  hipUnavailable,
+  kneeUnavailable,
+  ankleUnavailable,
+  confidenceInsufficient,
+  valid,
+  failed,
+}
+
 enum SquatDetectorFailureReason {
   permissionDenied,
   permissionPermanentlyDenied,
@@ -89,6 +101,18 @@ final class SquatStateChanged extends SquatDetectorEvent {
   final String squatSessionId;
   final SquatDetectorState state;
   final int analysisLatencyMs;
+}
+
+final class SquatPipelineStatusChanged extends SquatDetectorEvent {
+  const SquatPipelineStatusChanged({
+    required super.eventId,
+    required super.occurredAt,
+    required this.squatSessionId,
+    required this.status,
+  });
+
+  final String squatSessionId;
+  final SquatPosePipelineStatus status;
 }
 
 final class SquatQualityChanged extends SquatDetectorEvent {
@@ -160,13 +184,25 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     required this.acceptedReps,
     required this.rejectedAttempts,
     this.trackingStatus = SquatPoseTrackingStatus.noPose,
+    this.pipelineStatus = SquatPosePipelineStatus.initializing,
     this.delegate,
     this.sampleCount = 0,
+    this.analyzerFrames = 0,
+    this.inferenceSubmitted = 0,
+    this.resultCallbacks = 0,
+    this.resultsWithPose = 0,
+    this.resultsWithoutPose = 0,
+    this.errorCallbacks = 0,
+    this.lastCallbackAgeMs,
+    this.activeDelegate,
+    this.lastError,
     this.actualAnalysisFps = 0,
     this.droppedBeforePreprocessing = 0,
     this.rejectedAsBusy = 0,
     this.resultCount = 0,
     this.noPoseCount = 0,
+    this.preprocessingP50Ms,
+    this.preprocessingP95Ms,
     this.inferenceP50Ms,
     this.inferenceP95Ms,
     this.nativePipelineP50Ms,
@@ -193,13 +229,25 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final int acceptedReps;
   final int rejectedAttempts;
   final SquatPoseTrackingStatus trackingStatus;
+  final SquatPosePipelineStatus pipelineStatus;
   final SquatInferenceDelegate? delegate;
   final int sampleCount;
+  final int analyzerFrames;
+  final int inferenceSubmitted;
+  final int resultCallbacks;
+  final int resultsWithPose;
+  final int resultsWithoutPose;
+  final int errorCallbacks;
+  final int? lastCallbackAgeMs;
+  final SquatInferenceDelegate? activeDelegate;
+  final String? lastError;
   final double actualAnalysisFps;
   final int droppedBeforePreprocessing;
   final int rejectedAsBusy;
   final int resultCount;
   final int noPoseCount;
+  final int? preprocessingP50Ms;
+  final int? preprocessingP95Ms;
   final int? inferenceP50Ms;
   final int? inferenceP95Ms;
   final int? nativePipelineP50Ms;
