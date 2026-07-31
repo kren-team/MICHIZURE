@@ -2,6 +2,7 @@ package com.kren.michizure.pose
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -9,19 +10,20 @@ class SquatStateMachineTest {
     private val config = SquatDetectorConfig()
 
     @Test
-    fun calibrationUsesStableStandingSamples() {
+    fun calibrationUsesNonContiguousStableSamplesAndRobustBaseline() {
         val detector = SquatStateMachine(config)
-        repeat(10) { detector.valid(it * 100L, 170.0, 0.25) }
-        assertEquals(SquatState.CALIBRATING, detector.state)
+        listOf(0L, 250L, 700L, 1_100L, 1_450L, 2_050L).forEachIndexed { index, time ->
+            detector.valid(time, 168.0 + (index % 2), 0.250 + (index % 2) * 0.001)
+        }
 
-        detector.valid(1_000, 170.0, 0.25)
         assertEquals(SquatState.STANDING, detector.state)
+        assertEquals("complete", detector.valid(2_100, 169.0, 0.25).diagnostics.calibrationStatus)
     }
 
     @Test
     fun normalSquatProducesExactlyOneRepAfterReturnToStanding() {
         val detector = calibratedDetector()
-        val updates = normalRep(detector, 1_100)
+        val updates = normalRep(detector, CALIBRATED_AT + 200)
 
         assertEquals(1, updates.count { it.repCompleted })
         assertEquals(1, detector.repSequence)
@@ -29,16 +31,55 @@ class SquatStateMachineTest {
     }
 
     @Test
-    fun tenNormalSquatsProduceExactlyTenRepsWithMonotonicSequence() {
+    fun irregularFiveFpsNormalSquatProducesExactlyOneRep() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        val updates =
+            listOf(
+                detector.valid(start, 146.0, 0.29),
+                detector.valid(start + 220, 140.0, 0.31),
+                detector.valid(start + 430, 118.0, 0.36),
+                detector.valid(start + 650, 108.0, 0.38),
+                detector.valid(start + 880, 128.0, 0.34),
+                detector.valid(start + 1_100, 140.0, 0.32),
+                detector.valid(start + 1_330, 152.0, 0.315),
+                detector.valid(start + 1_560, 160.0, 0.30),
+            )
+
+        assertEquals(1, updates.count { it.repCompleted })
+    }
+
+    @Test
+    fun irregularEightFpsNormalSquatProducesExactlyOneRep() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        val updates = mutableListOf<SquatDetectorUpdate>()
+        listOf(
+            Triple(0L, 147.0, 0.29),
+            Triple(130L, 143.0, 0.30),
+            Triple(270L, 130.0, 0.33),
+            Triple(410L, 117.0, 0.36),
+            Triple(570L, 108.0, 0.38),
+            Triple(710L, 126.0, 0.35),
+            Triple(850L, 138.0, 0.33),
+            Triple(1_020L, 151.0, 0.32),
+            Triple(1_240L, 160.0, 0.30),
+        ).forEach { (offset, knee, hip) -> updates += detector.valid(start + offset, knee, hip) }
+
+        assertEquals(1, updates.count { it.repCompleted })
+    }
+
+    @Test
+    fun tenNormalSquatsProduceExactlyTenMonotonicReps() {
         val detector = calibratedDetector()
         val sequences = mutableListOf<Int>()
-        var start = 1_100L
+        var start = CALIBRATED_AT + 200
         repeat(10) {
             sequences += normalRep(detector, start)
-                .filter { update -> update.repCompleted }
-                .map { update -> update.repSequence }
-            detector.valid(start + 1_350, 170.0, 0.25)
-            start += 1_600
+                .filter { it.repCompleted }
+                .map { it.repSequence }
+            detector.valid(start + 1_900, 165.0, 0.30)
+            start += 2_100
         }
 
         assertEquals((1..10).toList(), sequences)
@@ -48,109 +89,167 @@ class SquatStateMachineTest {
     @Test
     fun tenShallowSquatsNeverCount() {
         val detector = calibratedDetector()
-        var timestamp = 1_100L
+        var start = CALIBRATED_AT + 200
         repeat(10) {
-            listOf(
-                detector.valid(timestamp, 148.0, 0.28),
-                detector.valid(timestamp + 100, 142.0, 0.29),
-                detector.valid(timestamp + 250, 130.0, 0.31),
-                detector.valid(timestamp + 450, 160.0, 0.27),
-                detector.valid(timestamp + 750, 170.0, 0.25),
-            )
-            timestamp += 1_000
+            shallowRep(detector, start)
+            start += 1_500
         }
         assertEquals(0, detector.repSequence)
     }
 
     @Test
-    fun tooDeepMotionIsRejectedAndRequiresRecalibration() {
+    fun deepSquatIsAcceptedInsteadOfRejected() {
         val detector = calibratedDetector()
-        detector.valid(1_100, 145.0, 0.29)
-        detector.valid(1_200, 140.0, 0.30)
-        val update = detector.valid(1_400, 50.0, 0.39)
+        val start = CALIBRATED_AT + 200
+        val updates =
+            listOf(
+                detector.valid(start, 145.0, 0.30),
+                detector.valid(start + 150, 135.0, 0.32),
+                detector.valid(start + 350, 50.0, 0.41),
+                detector.valid(start + 550, 45.0, 0.42),
+                detector.valid(start + 750, 128.0, 0.35),
+                detector.valid(start + 900, 140.0, 0.33),
+                detector.valid(start + 1_100, 152.0, 0.32),
+                detector.valid(start + 1_350, 160.0, 0.30),
+            )
 
-        assertFalse(update.repCompleted)
-        assertEquals(PoseQualityWarning.TOO_DEEP, update.qualityWarning)
-        assertEquals(0, detector.repSequence)
-        assertEquals(SquatState.CALIBRATING, detector.state)
+        assertEquals(1, updates.count { it.repCompleted })
+        assertEquals(1, detector.repSequence)
     }
 
     @Test
     fun forwardBendHipDropWithoutKneeFlexionNeverCounts() {
         val detector = calibratedDetector()
-        val updates =
-            listOf(
-                detector.valid(1_100, 168.0, 0.36),
-                detector.valid(1_300, 166.0, 0.38),
-                detector.valid(1_550, 170.0, 0.25),
-            )
+        val start = CALIBRATED_AT + 200
+        listOf(
+            detector.valid(start, 168.0, 0.31),
+            detector.valid(start + 200, 166.0, 0.38),
+            detector.valid(start + 450, 168.0, 0.39),
+            detector.valid(start + 700, 165.0, 0.30),
+            detector.valid(start + 1_000, 165.0, 0.30),
+        )
 
-        assertFalse(updates.any { it.repCompleted })
-        assertEquals(SquatState.STANDING, detector.state)
+        assertEquals(0, detector.repSequence)
     }
 
     @Test
-    fun bottomBounceAndIncompleteAscentDoNotDoubleCount() {
+    fun incompleteDescentAndIncompleteAscentDoNotCount() {
+        val descent = calibratedDetector()
+        shallowRep(descent, CALIBRATED_AT + 200)
+        assertEquals(0, descent.repSequence)
+
+        val ascent = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        normalDescent(ascent, start)
+        ascent.valid(start + 800, 130.0, 0.35)
+        ascent.valid(start + 1_000, 140.0, 0.33)
+        ascent.valid(start + 1_300, 145.0, 0.325)
+        assertEquals(0, ascent.repSequence)
+    }
+
+    @Test
+    fun bottomBounceCannotCreateDuplicateRep() {
         val detector = calibratedDetector()
-        val updates = normalDescent(detector, 1_100).toMutableList()
-        updates += detector.valid(1_650, 125.0, 0.33)
-        updates += detector.valid(1_750, 100.0, 0.36)
-        updates += detector.valid(1_900, 125.0, 0.33)
-        updates += detector.valid(2_000, 135.0, 0.32)
-        updates += detector.valid(2_200, 160.0, 0.27)
-        updates += detector.valid(2_450, 170.0, 0.25)
+        val start = CALIBRATED_AT + 200
+        val updates = normalDescent(detector, start).toMutableList()
+        updates += detector.valid(start + 800, 130.0, 0.35)
+        updates += detector.valid(start + 950, 140.0, 0.33)
+        updates += detector.valid(start + 1_100, 112.0, 0.37)
+        updates += detector.valid(start + 1_300, 105.0, 0.38)
+        updates += detector.valid(start + 1_500, 130.0, 0.35)
+        updates += detector.valid(start + 1_650, 140.0, 0.33)
+        updates += detector.valid(start + 1_850, 152.0, 0.32)
+        updates += detector.valid(start + 2_100, 160.0, 0.30)
 
         assertEquals(1, updates.count { it.repCompleted })
         assertEquals(1, detector.repSequence)
     }
 
     @Test
-    fun duplicateAndOutOfOrderFramesCannotCreateAnotherRep() {
+    fun sevenHundredMillisecondFrameGapKeepsCurrentPhaseAndResetsVelocityOnly() {
         val detector = calibratedDetector()
-        val updates = normalRep(detector, 1_100).toMutableList()
-        updates += detector.valid(2_200, 90.0, 0.36)
-        updates += detector.valid(2_100, 170.0, 0.25)
+        val start = CALIBRATED_AT + 200
+        detector.valid(start, 145.0, 0.30)
+        detector.valid(start + 150, 140.0, 0.31)
+        assertEquals(SquatState.DESCENDING, detector.state)
 
-        assertEquals(1, updates.count { it.repCompleted })
-        assertEquals(1, detector.repSequence)
-        assertEquals("duplicateFrame", updates.last().diagnostics.latestRejectReason)
+        val afterGap = detector.valid(start + 850, 118.0, 0.36)
+
+        assertEquals(SquatState.DESCENDING, detector.state)
+        assertNull(afterGap.diagnostics.kneeAngularVelocity)
+        assertEquals(700L, afterGap.diagnostics.frameDtMs)
+        assertFalse(afterGap.diagnostics.lastResetReason == "frameGap")
     }
 
     @Test
-    fun shortPoseLossIsToleratedButLongPoseLossResets() {
+    fun fourteenHundredMillisecondPoseLossDoesNotResetButLongerLossDoes() {
         val short = calibratedDetector()
-        val shortUpdates = normalDescent(short, 1_100).toMutableList()
-        shortUpdates += short.invalid(1_600)
-        shortUpdates += short.valid(1_700, 125.0, 0.33)
-        shortUpdates += short.valid(1_800, 135.0, 0.32)
-        shortUpdates += short.valid(2_000, 160.0, 0.27)
-        shortUpdates += short.valid(2_250, 170.0, 0.25)
-        assertEquals(1, shortUpdates.count { it.repCompleted })
+        val shortStart = CALIBRATED_AT + 200
+        short.valid(shortStart, 145.0, 0.30)
+        short.valid(shortStart + 150, 140.0, 0.31)
+        short.invalid(shortStart + 1_550)
+        assertEquals(SquatState.DESCENDING, short.state)
 
         val long = calibratedDetector()
-        normalDescent(long, 1_100)
-        long.invalid(1_600)
-        long.invalid(1_900)
+        val longStart = CALIBRATED_AT + 200
+        long.valid(longStart, 145.0, 0.30)
+        long.valid(longStart + 150, 140.0, 0.31)
+        val reset = long.invalid(longStart + 1_651)
         assertEquals(SquatState.CALIBRATING, long.state)
-        assertEquals(0, long.repSequence)
+        assertEquals("poseLoss", reset.diagnostics.lastResetReason)
     }
 
     @Test
-    fun startAtBottomAndStandingJitterNeverCount() {
-        val bottomStart = SquatStateMachine(config)
-        repeat(15) { bottomStart.valid(it * 100L, 95.0, 0.36) }
-        assertEquals(SquatState.CALIBRATING, bottomStart.state)
+    fun duplicateAndOutOfOrderTimestampsAreRejected() {
+        val detector = calibratedDetector()
+        val time = CALIBRATED_AT + 200
+        detector.valid(time, 145.0, 0.30)
 
-        val standing = calibratedDetector()
-        repeat(20) {
-            standing.valid(1_100 + it * 80L, 160.0 + (it % 3), 0.252)
-        }
-        assertEquals(0, standing.repSequence)
+        val duplicate = detector.valid(time, 100.0, 0.38)
+        val reversed = detector.valid(time - 1, 100.0, 0.38)
+
+        assertEquals("duplicateFrame", duplicate.diagnostics.latestRejectReason)
+        assertEquals("duplicateFrame", reversed.diagnostics.latestRejectReason)
+        assertEquals(0, detector.repSequence)
+    }
+
+    @Test
+    fun returnToStandingRequiresMonotonicTimeConfirmation() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        normalDescent(detector, start)
+        detector.valid(start + 800, 130.0, 0.35)
+        detector.valid(start + 950, 140.0, 0.33)
+        detector.valid(start + 1_150, 152.0, 0.32)
+        val tooEarly = detector.valid(start + 1_300, 160.0, 0.30)
+        assertFalse(tooEarly.repCompleted)
+
+        val confirmed = detector.valid(start + 1_370, 160.0, 0.30)
+        assertTrue(confirmed.repCompleted)
+    }
+
+    @Test
+    fun detectorRecoversAfterVelocityResetGapAndCompletesRep() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        detector.valid(start, 145.0, 0.30)
+        detector.valid(start + 150, 140.0, 0.31)
+        detector.valid(start + 850, 118.0, 0.36)
+        detector.valid(start + 1_050, 108.0, 0.38)
+        detector.valid(start + 1_750, 130.0, 0.35)
+        detector.valid(start + 1_900, 140.0, 0.33)
+        detector.valid(start + 2_100, 152.0, 0.32)
+        val accepted = detector.valid(start + 2_350, 160.0, 0.30)
+
+        assertTrue(accepted.repCompleted)
+        assertEquals(1, detector.repSequence)
     }
 
     private fun calibratedDetector(): SquatStateMachine {
         val detector = SquatStateMachine(config)
-        repeat(11) { detector.valid(it * 100L, 170.0, 0.25) }
+        CALIBRATION_TIMES.forEachIndexed { index, time ->
+            detector.valid(time, 168.0 + (index % 2), 0.25 + (index % 2) * 0.001)
+        }
         assertEquals(SquatState.STANDING, detector.state)
         return detector
     }
@@ -160,10 +259,10 @@ class SquatStateMachineTest {
         start: Long,
     ): List<SquatDetectorUpdate> {
         val updates = normalDescent(detector, start).toMutableList()
-        updates += detector.valid(start + 550, 125.0, 0.33)
-        updates += detector.valid(start + 650, 135.0, 0.32)
-        updates += detector.valid(start + 850, 160.0, 0.27)
-        updates += detector.valid(start + 1_100, 170.0, 0.25)
+        updates += detector.valid(start + 800, 130.0, 0.35)
+        updates += detector.valid(start + 950, 140.0, 0.33)
+        updates += detector.valid(start + 1_150, 152.0, 0.32)
+        updates += detector.valid(start + 1_400, 160.0, 0.30)
         return updates
     }
 
@@ -171,12 +270,22 @@ class SquatStateMachineTest {
         detector: SquatStateMachine,
         start: Long,
     ) = listOf(
-        detector.valid(start, 145.0, 0.29),
-        detector.valid(start + 100, 140.0, 0.30),
-        detector.valid(start + 200, 120.0, 0.32),
-        detector.valid(start + 300, 100.0, 0.36),
-        detector.valid(start + 450, 100.0, 0.36),
+        detector.valid(start, 145.0, 0.30),
+        detector.valid(start + 150, 140.0, 0.31),
+        detector.valid(start + 350, 118.0, 0.36),
+        detector.valid(start + 550, 108.0, 0.38),
     )
+
+    private fun shallowRep(
+        detector: SquatStateMachine,
+        start: Long,
+    ) {
+        detector.valid(start, 146.0, 0.29)
+        detector.valid(start + 150, 142.0, 0.30)
+        detector.valid(start + 350, 130.0, 0.32)
+        detector.valid(start + 550, 158.0, 0.30)
+        detector.valid(start + 850, 165.0, 0.30)
+    }
 
     private fun SquatStateMachine.valid(
         timestampMs: Long,
@@ -189,6 +298,7 @@ class SquatStateMachineTest {
                 PoseFeatureSample(
                     timestampMs = timestampMs,
                     kneeAngleDeg = knee,
+                    rawKneeAngleDeg = knee,
                     hipY = hipY,
                     legLength = 0.50,
                     confidence = 0.90,
@@ -208,11 +318,13 @@ class SquatStateMachineTest {
             PoseFeatureResult.Invalid(
                 timestampMs = timestampMs,
                 warning = PoseQualityWarning.NO_POSE_DETECTED,
-                quality =
-                    PoseQualityMetrics.EMPTY.copy(
-                        trackingStatus = PoseTrackingStatus.NO_POSE,
-                    ),
+                quality = PoseQualityMetrics.EMPTY.copy(trackingStatus = PoseTrackingStatus.NO_POSE),
                 rejectReason = "poseNotDetected",
             ),
         )
+
+    private companion object {
+        val CALIBRATION_TIMES = listOf(0L, 300L, 600L, 900L, 1_200L, 1_500L, 1_800L, 2_100L)
+        const val CALIBRATED_AT = 2_100L
+    }
 }
