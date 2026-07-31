@@ -12,7 +12,9 @@ import kotlin.math.min
  */
 class SquatStateMachine(
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
+    isEmulator: Boolean = false,
 ) {
+    private val poseLossResetMs = config.poseLossResetMs(isEmulator)
     var state: SquatState = SquatState.CALIBRATING
         private set
     var repSequence: Int = 0
@@ -104,9 +106,9 @@ class SquatStateMachine(
     private fun processInvalid(result: PoseFeatureResult.Invalid): SquatDetectorUpdate {
         latestRejectReason = result.rejectReason
         val lastValid = lastValidTimestampMs
-        if (lastValid != null && result.timestampMs - lastValid > config.poseLossResetMs) {
+        if (lastValid != null && result.timestampMs - lastValid > poseLossResetMs) {
             rejectActiveCycle(REJECT_POSE_LOST)
-            resetToCalibrating(RESET_POSE_LOST)
+            resetToCalibrating(RESET_POSE_LOSS_TIMEOUT)
         }
         lastDiagnostics =
             diagnostics(
@@ -123,8 +125,12 @@ class SquatStateMachine(
 
     private fun processValid(result: PoseFeatureResult.Valid): SquatDetectorUpdate {
         val sample = result.sample
-        val lastValid = lastValidTimestampMs
-        val validGapMs = lastValid?.let { sample.timestampMs - it }
+        var validGapMs = lastValidTimestampMs?.let { sample.timestampMs - it }
+        if (validGapMs != null && validGapMs > poseLossResetMs) {
+            rejectActiveCycle(REJECT_POSE_LOST)
+            resetToCalibrating(RESET_POSE_LOSS_TIMEOUT)
+            validGapMs = null
+        }
         val velocityUsable = validGapMs != null && validGapMs in 1..config.velocityResetGapMs
         val elapsedSeconds = validGapMs?.coerceIn(1, config.velocityResetGapMs)?.div(1_000.0)
         val kneeVelocity =
@@ -246,7 +252,11 @@ class SquatStateMachine(
     private fun fromDescending(sample: PoseFeatureSample): SquatDetectorUpdate {
         if (cycleTimedOut(sample.timestampMs)) return timeout()
         currentBottomEvidence().path?.let { path ->
-            return confirmBottom(sample, path)
+            confirmBottom(sample, path)
+            if (upwardMovementObserved && isReturnStanding(sample)) {
+                return confirmReturnStanding(sample)
+            }
+            return update(currentDepthWarning(sample))
         }
         if (isReturnStanding(sample)) return confirmRejectedReturn(sample)
 
@@ -311,7 +321,7 @@ class SquatStateMachine(
         val candidate = standingCandidateSinceMs ?: sample.timestampMs.also {
             standingCandidateSinceMs = it
         }
-        val strongSingleSample = isStrongReturnStanding(sample) && upwardMovementObserved
+        val strongSingleSample = isStrongReturnStanding(sample)
         if (!strongSingleSample && sample.timestampMs - candidate < config.returnStandingConfirmationMs) {
             latestRejectReason = REJECT_NO_BOTTOM_EVIDENCE
             return update()
@@ -326,7 +336,7 @@ class SquatStateMachine(
         val candidate = standingCandidateSinceMs ?: sample.timestampMs.also {
             standingCandidateSinceMs = it
         }
-        val strongSingleSample = isStrongReturnStanding(sample) && upwardMovementObserved
+        val strongSingleSample = isStrongReturnStanding(sample)
         if (!strongSingleSample && sample.timestampMs - candidate < config.returnStandingConfirmationMs) {
             latestRejectReason = WAITING_FOR_RETURN
             return update()
@@ -434,7 +444,8 @@ class SquatStateMachine(
         val thresholds = thresholds()
         return sample.kneeAngleDeg >= thresholds.returnStandingAngle ||
             (sample.kneeAngleDeg >= thresholds.returnStandingRelaxedAngle &&
-                hipDrop <= config.returnStandingMaximumHipDropRatio)
+                hipDrop <= config.returnStandingMaximumHipDropRatio &&
+                upwardMovementObserved)
     }
 
     private fun normalizedHipDrop(sample: PoseFeatureSample): Double? {
@@ -501,6 +512,7 @@ class SquatStateMachine(
         lastResetReason = reason
         resetCalibration()
         clearCycle(clearAttemptMetrics = true)
+        lastValidTimestampMs = null
         previousKnee = null
         previousHipY = null
     }
@@ -699,7 +711,7 @@ class SquatStateMachine(
         const val REJECT_DUPLICATE_TIMESTAMP = "REJECT_DUPLICATE_TIMESTAMP"
         const val REJECT_POSE_LOST = "REJECT_POSE_LOST"
         const val REJECT_CALIBRATION_MOTION = "REJECT_CALIBRATION_MOTION"
-        const val RESET_POSE_LOST = "RESET_POSE_LOST"
+        const val RESET_POSE_LOSS_TIMEOUT = "RESET_POSE_LOSS_TIMEOUT"
         const val RESET_REP_TIMEOUT = "RESET_REP_TIMEOUT"
         const val RESET_SESSION = "RESET_SESSION"
         const val RESET_CALIBRATION_SIDE_CHANGED = "RESET_CALIBRATION_SIDE_CHANGED"

@@ -2,6 +2,7 @@ package com.kren.michizure.pose
 
 import android.content.pm.ApplicationInfo
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
 
@@ -12,6 +13,8 @@ data class NativeSquatSession(
 
 class SquatSessionManager(
     private val lifecycleOwner: LifecycleOwner,
+    private val runtimeEnvironment: AndroidRuntimeEnvironment =
+        AndroidRuntimeEnvironment.current(),
     private val sourceFactory: (
         SquatCameraContainer,
         LifecycleOwner,
@@ -35,7 +38,7 @@ class SquatSessionManager(
     private var session: NativeSquatSession? = null
     private var previewView: SquatCameraContainer? = null
     private var source: PoseSource? = null
-    private var machine = SquatStateMachine(detectorConfig)
+    private var machine = SquatStateMachine(detectorConfig, runtimeEnvironment.isEmulator)
     private var lastState: SquatState? = null
     private var lastWarning: PoseQualityWarning? = null
     private var lastPipelineStatus: PosePipelineStatus? = null
@@ -47,6 +50,11 @@ class SquatSessionManager(
     private val latenciesMs = ArrayDeque<Long>()
     private var delegate: PoseDelegate? = null
     private var debugThumbnailEnabled = false
+    private var lastTraceLogMs = Long.MIN_VALUE
+    private var lastPerfLogMs = Long.MIN_VALUE
+    private var lastLoggedRepSequence = 0
+    private var lastLoggedRejectKey: String? = null
+    private var lastLoggedResetKey: String? = null
 
     @Synchronized
     fun attachPreview(view: SquatCameraContainer) {
@@ -78,7 +86,7 @@ class SquatSessionManager(
         }
         check(current == null) { "A different squat session is already active" }
         session = newSession
-        machine = SquatStateMachine(detectorConfig)
+        machine = SquatStateMachine(detectorConfig, runtimeEnvironment.isEmulator)
         lastState = null
         lastWarning = null
         lastPipelineStatus = null
@@ -89,6 +97,7 @@ class SquatSessionManager(
         lastDiagnosticsEmitMs = Long.MIN_VALUE
         lastDiagnosticsPayload = null
         delegate = null
+        resetDebugLogState()
         emit(
             type = "calibrating",
             values =
@@ -122,6 +131,7 @@ class SquatSessionManager(
         lastDiagnosticsEmitMs = Long.MIN_VALUE
         lastDiagnosticsPayload = null
         delegate = null
+        resetDebugLogState()
         return true
     }
 
@@ -177,6 +187,7 @@ class SquatSessionManager(
     private fun onPipelineStatus(snapshot: PosePipelineStatusSnapshot) {
         val current = session ?: return
         pipelineStatus = snapshot.status
+        logPosePerformance(snapshot.metrics)
         if (snapshot.status != lastPipelineStatus) {
             lastPipelineStatus = snapshot.status
             emit(
@@ -209,6 +220,7 @@ class SquatSessionManager(
         val feature = delivery.feature
         val update = machine.process(feature)
         lastUpdate = update
+        logSquatFrame(update, delivery.metrics)
         val stateMachineCompletedNs = elapsedNs()
         val latency =
             delivery.latency.copy(
@@ -451,6 +463,59 @@ class SquatSessionManager(
 
     private fun elapsedNs(): Long = SystemClock.elapsedRealtimeNanos()
 
+    private fun logSquatFrame(update: SquatDetectorUpdate, metrics: PosePipelineMetrics) {
+        if (!isDebugBuild()) return
+        val now = elapsedMs()
+        val intervalMs = 1_000L / detectorConfig.debugTraceFps
+        if (lastTraceLogMs == Long.MIN_VALUE || now - lastTraceLogMs >= intervalMs) {
+            lastTraceLogMs = now
+            Log.d(SQUAT_TRACE_TAG, SquatDebugTraceFormatter.trace(update, metrics))
+        }
+        if (update.repCompleted && update.repSequence > lastLoggedRepSequence) {
+            lastLoggedRepSequence = update.repSequence
+            Log.i(SQUAT_REP_TAG, "REP_ACCEPTED sequence=${update.repSequence}")
+        }
+        val diagnostics = update.diagnostics
+        val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }
+        val rejectKey = reject?.let { "$it:${diagnostics.rejectedAttempts}" }
+        if (rejectKey != null && rejectKey != lastLoggedRejectKey) {
+            lastLoggedRejectKey = rejectKey
+            Log.i(SQUAT_REP_TAG, reject)
+        }
+        val reset = diagnostics.lastResetReason
+        val resetKey = reset?.let { "$it:${diagnostics.rejectedAttempts}" }
+        if (resetKey != null && resetKey != lastLoggedResetKey) {
+            lastLoggedResetKey = resetKey
+            Log.i(SQUAT_REP_TAG, reset)
+        }
+        if ((diagnostics.frameDtMs ?: 0) > detectorConfig.velocityResetGapMs &&
+            diagnostics.attemptStartTimestampMs != null
+        ) {
+            Log.i(SQUAT_REP_TAG, "ATTEMPT_PRESERVED_FRAME_GAP")
+        }
+    }
+
+    private fun logPosePerformance(metrics: PosePipelineMetrics) {
+        if (!isDebugBuild()) return
+        val now = elapsedMs()
+        val intervalMs = 1_000L / detectorConfig.debugTraceFps
+        if (lastPerfLogMs != Long.MIN_VALUE && now - lastPerfLogMs < intervalMs) return
+        lastPerfLogMs = now
+        Log.d(POSE_PERF_TAG, SquatDebugTraceFormatter.performance(metrics))
+    }
+
+    private fun isDebugBuild(): Boolean =
+        previewView?.context?.applicationInfo?.flags
+            ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    private fun resetDebugLogState() {
+        lastTraceLogMs = Long.MIN_VALUE
+        lastPerfLogMs = Long.MIN_VALUE
+        lastLoggedRepSequence = 0
+        lastLoggedRejectKey = null
+        lastLoggedResetKey = null
+    }
+
     private fun diagnosticEventFps(nowMs: Long): Double {
         while (diagnosticEmitTimesMs.isNotEmpty() &&
             nowMs - diagnosticEmitTimesMs.first() > 1_000
@@ -468,6 +533,9 @@ class SquatSessionManager(
     companion object {
         private const val MAX_LATENCY_SAMPLES = 300
         private const val MAX_DIAGNOSTIC_EMIT_SAMPLES = 8
+        private const val SQUAT_TRACE_TAG = "SquatTrace"
+        private const val SQUAT_REP_TAG = "SquatRep"
+        private const val POSE_PERF_TAG = "PosePerf"
     }
 }
 

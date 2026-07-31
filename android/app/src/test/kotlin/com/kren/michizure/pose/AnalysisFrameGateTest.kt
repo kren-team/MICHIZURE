@@ -5,6 +5,15 @@ import org.junit.Test
 
 class AnalysisFrameGateTest {
     @Test
+    fun environmentAnalysisRatesMatchThePreconversionBudget() {
+        val config = SquatDetectorConfig()
+
+        assertEquals(4, config.targetEmulatorAnalysisFps)
+        assertEquals(8, config.targetCpuAnalysisFps)
+        assertEquals(10, config.targetGpuAnalysisFps)
+    }
+
+    @Test
     fun throttlesBeforePreprocessingAndNeverQueuesWhileBusy() {
         val gate = AnalysisFrameGate()
 

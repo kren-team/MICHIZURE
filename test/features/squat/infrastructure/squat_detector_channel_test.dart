@@ -202,10 +202,10 @@ void main() {
       'returnStandingDurationMs': 0,
       'currentRepDurationMs': 250,
       'calibratedStandingKneeAngle': 168.0,
-      'standingThresholdDeg': 150.0,
+      'standingThresholdDeg': 143.0,
       'descendingThresholdDeg': 148.0,
-      'bottomThresholdDeg': 140.0,
-      'returnStandingThresholdDeg': 146.0,
+      'bottomThresholdDeg': 144.0,
+      'returnStandingThresholdDeg': 140.0,
       'minimumAttemptKneeAngle': 132.0,
       'maximumAttemptHipDrop': 0.11,
       'kneeBendDelta': 36.0,
@@ -269,10 +269,10 @@ void main() {
     expect(diagnostics.calibrationSampleCount, 8);
     expect(diagnostics.validPoseFps, 8);
     expect(diagnostics.calibratedStandingKneeAngle, 168);
-    expect(diagnostics.standingThresholdDeg, 150);
+    expect(diagnostics.standingThresholdDeg, 143);
     expect(diagnostics.descendingThresholdDeg, 148);
-    expect(diagnostics.bottomThresholdDeg, 140);
-    expect(diagnostics.returnStandingThresholdDeg, 146);
+    expect(diagnostics.bottomThresholdDeg, 144);
+    expect(diagnostics.returnStandingThresholdDeg, 140);
     expect(diagnostics.minimumAttemptKneeAngle, 132);
     expect(diagnostics.maximumAttemptHipDrop, 0.11);
     expect(diagnostics.kneeBendDelta, 36);
@@ -326,10 +326,10 @@ void main() {
         'returnStandingDurationMs': 0,
         'currentRepDurationMs': 250,
         'calibratedStandingKneeAngle': 168.0,
-        'standingThresholdDeg': 150.0,
+        'standingThresholdDeg': 143.0,
         'descendingThresholdDeg': 148.0,
-        'bottomThresholdDeg': 140.0,
-        'returnStandingThresholdDeg': 146.0,
+        'bottomThresholdDeg': 144.0,
+        'returnStandingThresholdDeg': 140.0,
         'minimumAttemptKneeAngle': 132.0,
         'maximumAttemptHipDrop': 0.11,
         'kneeBendDelta': 36.0,

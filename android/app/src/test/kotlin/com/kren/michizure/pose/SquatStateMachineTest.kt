@@ -10,43 +10,49 @@ class SquatStateMachineTest {
     private val config = SquatDetectorConfig()
 
     @Test
+    fun poseLossTimeoutIsEnvironmentSpecific() {
+        assertEquals(4_000L, config.poseLossResetMs(isEmulator = true))
+        assertEquals(2_000L, config.poseLossResetMs(isEmulator = false))
+    }
+
+    @Test
     fun standingAngle168ProducesMultiEvidenceThresholds() {
         val thresholds = config.thresholdsFor(168.0)
 
-        assertEquals(150.0, thresholds.standingEnterAngle, 0.001)
-        assertEquals(143.0, thresholds.standingRelaxedAngle, 0.001)
+        assertEquals(143.0, thresholds.standingEnterAngle, 0.001)
+        assertEquals(136.0, thresholds.standingRelaxedAngle, 0.001)
         assertEquals(148.0, thresholds.descendingStartAngle, 0.001)
-        assertEquals(140.0, thresholds.bottomAngle, 0.001)
-        assertEquals(146.0, thresholds.returnStandingAngle, 0.001)
-        assertEquals(140.0, thresholds.returnStandingRelaxedAngle, 0.001)
+        assertEquals(144.0, thresholds.bottomAngle, 0.001)
+        assertEquals(140.0, thresholds.returnStandingAngle, 0.001)
+        assertEquals(133.0, thresholds.returnStandingRelaxedAngle, 0.001)
     }
 
     @Test
     fun standingAngle175KeepsBottomThresholdInsideClamp() {
         val bottom = config.thresholdsFor(175.0).bottomAngle
 
-        assertEquals(145.0, bottom, 0.001)
-        assertTrue(bottom in 130.0..145.0)
+        assertEquals(150.0, bottom, 0.001)
+        assertTrue(bottom in 135.0..150.0)
     }
 
     @Test
     fun lowStandingAngleCannotProduceBottomThresholdBelow130() {
         val bottom = config.thresholdsFor(150.0).bottomAngle
 
-        assertEquals(130.0, bottom, 0.001)
+        assertEquals(135.0, bottom, 0.001)
     }
 
     @Test
-    fun kneeBendDeltaTwentyEightIsSufficientWithoutHipDrop() {
-        val evidence = config.bottomEvidence(168.0, 140.0, 0.0, true, false)
+    fun kneeBendDeltaTwentyFourIsSufficientWithoutHipDrop() {
+        val evidence = config.bottomEvidence(168.0, 144.0, 0.0, true, false)
 
         assertEquals(3, evidence.score)
         assertEquals(BottomEvidencePath.KNEE_ONLY, evidence.path)
     }
 
     @Test
-    fun kneeBendDeltaTwentyAndHipDropPointZeroSixAreSufficient() {
-        val evidence = config.bottomEvidence(168.0, 148.0, 0.06, true, false)
+    fun kneeBendDeltaSixteenAndHipDropPointZeroFourAreSufficient() {
+        val evidence = config.bottomEvidence(168.0, 152.0, 0.04, true, false)
 
         assertEquals(4, evidence.score)
         assertEquals(BottomEvidencePath.KNEE_AND_HIP, evidence.path)
@@ -54,7 +60,7 @@ class SquatStateMachineTest {
 
     @Test
     fun hipDropAndReversalAreSufficientWithMinimumKneeBend() {
-        val evidence = config.bottomEvidence(168.0, 158.0, 0.10, true, true)
+        val evidence = config.bottomEvidence(168.0, 160.0, 0.08, true, true)
 
         assertEquals(6, evidence.score)
         assertEquals(BottomEvidencePath.HIP_AND_REVERSAL, evidence.path)
@@ -71,12 +77,12 @@ class SquatStateMachineTest {
     @Test
     fun eachEvidencePathCanSetBottomReachedInTheStateMachine() {
         val kneeOnly = calibratedDetector()
-        val kneeUpdate = kneeOnly.valid(CALIBRATED_AT + 200, 140.0, 0.25)
+        val kneeUpdate = kneeOnly.valid(CALIBRATED_AT + 200, 144.0, 0.25)
         assertTrue(kneeUpdate.diagnostics.bottomReached)
         assertEquals(BottomEvidencePath.KNEE_ONLY, kneeUpdate.diagnostics.bottomEvidencePath)
 
         val kneeAndHip = calibratedDetector()
-        val combinedUpdate = kneeAndHip.valid(CALIBRATED_AT + 200, 148.0, 0.28)
+        val combinedUpdate = kneeAndHip.valid(CALIBRATED_AT + 200, 152.0, 0.27)
         assertTrue(combinedUpdate.diagnostics.bottomReached)
         assertEquals(
             BottomEvidencePath.KNEE_AND_HIP,
@@ -84,12 +90,45 @@ class SquatStateMachineTest {
         )
 
         val hipReversal = calibratedDetector()
-        hipReversal.valid(CALIBRATED_AT + 200, 158.0, 0.305)
-        val reversalUpdate = hipReversal.valid(CALIBRATED_AT + 450, 158.0, 0.28)
-        assertTrue(reversalUpdate.diagnostics.bottomReached)
+        hipReversal.valid(CALIBRATED_AT + 200, 160.0, 0.295)
+        val reversalUpdate = hipReversal.valid(CALIBRATED_AT + 650, 160.0, 0.27)
+        assertTrue(reversalUpdate.repCompleted)
         assertEquals(
             BottomEvidencePath.HIP_AND_REVERSAL,
             reversalUpdate.diagnostics.bottomEvidencePath,
+        )
+    }
+
+    @Test
+    fun kneeOnlyPathCountsWhenHipDropIsUnavailableAsEvidence() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        val updates =
+            listOf(
+                detector.valid(start, 150.0, 0.25),
+                detector.valid(start + 300, 143.0, 0.25),
+                detector.valid(start + 700, 132.0, 0.25),
+                detector.valid(start + 1_100, 145.0, 0.25),
+            )
+
+        assertEquals(1, updates.count { it.repCompleted })
+        assertEquals(BottomEvidencePath.KNEE_ONLY, updates.last().diagnostics.bottomEvidencePath)
+    }
+
+    @Test
+    fun temporaryMissingKneeSamplePreservesHipReversalAttempt() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        detector.valid(start, 160.0, 0.295)
+        val missingKnee = detector.invalid(start + 200)
+        val returned = detector.valid(start + 500, 160.0, 0.270)
+
+        assertEquals(SquatState.DESCENDING, missingKnee.state)
+        assertEquals(1, returned.repSequence)
+        assertTrue(returned.repCompleted)
+        assertEquals(
+            BottomEvidencePath.HIP_AND_REVERSAL,
+            returned.diagnostics.bottomEvidencePath,
         )
     }
 
@@ -131,6 +170,38 @@ class SquatStateMachineTest {
                 detector.valid(start + 1_100, 150.0, 0.280),
                 detector.valid(start + 1_330, 154.0, 0.270),
                 detector.valid(start + 1_560, 160.0, 0.260),
+            )
+
+        assertEquals(1, updates.count { it.repCompleted })
+    }
+
+    @Test
+    fun irregularTwoFpsNormalSquatProducesExactlyOneRep() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        val updates =
+            listOf(
+                detector.valid(start, 150.0, 0.26),
+                detector.valid(start + 500, 143.0, 0.27),
+                detector.valid(start + 1_000, 132.0, 0.30),
+                detector.valid(start + 1_500, 145.0, 0.27),
+            )
+
+        assertEquals(1, updates.count { it.repCompleted })
+    }
+
+    @Test
+    fun irregularFourFpsNormalSquatProducesExactlyOneRep() {
+        val detector = calibratedDetector()
+        val start = CALIBRATED_AT + 200
+        val updates =
+            listOf(
+                detector.valid(start, 150.0, 0.26),
+                detector.valid(start + 250, 145.0, 0.27),
+                detector.valid(start + 500, 138.0, 0.29),
+                detector.valid(start + 750, 132.0, 0.30),
+                detector.valid(start + 1_000, 138.0, 0.29),
+                detector.valid(start + 1_250, 145.0, 0.27),
             )
 
         assertEquals(1, updates.count { it.repCompleted })
@@ -258,9 +329,9 @@ class SquatStateMachineTest {
         val detector = calibratedDetector()
         val start = CALIBRATED_AT + 200
         descendToBottom(detector, start)
-        detector.valid(start + 800, 136.0, 0.300)
-        detector.valid(start + 1_000, 138.0, 0.295)
-        detector.valid(start + 1_300, 139.0, 0.290)
+        detector.valid(start + 800, 125.0, 0.300)
+        detector.valid(start + 1_000, 128.0, 0.295)
+        detector.valid(start + 1_300, 130.0, 0.290)
 
         assertEquals(0, detector.repSequence)
     }
@@ -291,7 +362,7 @@ class SquatStateMachineTest {
         descendToBottom(detector, start)
         assertEquals(SquatState.BOTTOM, detector.state)
 
-        val afterGap = detector.valid(start + 1_250, 140.0, 0.290)
+        val afterGap = detector.valid(start + 1_250, 135.0, 0.300)
 
         assertEquals(SquatState.BOTTOM, detector.state)
         assertTrue(afterGap.diagnostics.bottomReached)
@@ -301,19 +372,32 @@ class SquatStateMachineTest {
     }
 
     @Test
-    fun nineteenHundredMillisecondPoseLossDoesNotReset() {
-        val detector = calibratedDetector()
+    fun thirtyNineHundredMillisecondPoseLossDoesNotResetOnEmulator() {
+        val detector = calibratedDetector(isEmulator = true)
         val start = CALIBRATED_AT + 200
         descendToBottom(detector, start)
 
-        val update = detector.invalid(start + 2_450)
+        val update = detector.invalid(start + 4_450)
 
         assertEquals(SquatState.BOTTOM, detector.state)
         assertTrue(update.diagnostics.bottomReached)
     }
 
     @Test
-    fun poseLossLongerThanTwoThousandMillisecondsResetsAttempt() {
+    fun poseLossLongerThanFourThousandMillisecondsResetsEmulatorAttempt() {
+        val detector = calibratedDetector(isEmulator = true)
+        val start = CALIBRATED_AT + 200
+        descendToBottom(detector, start)
+
+        val reset = detector.invalid(start + 4_551)
+
+        assertEquals(SquatState.CALIBRATING, detector.state)
+        assertFalse(reset.diagnostics.bottomReached)
+        assertEquals("RESET_POSE_LOSS_TIMEOUT", reset.diagnostics.lastResetReason)
+    }
+
+    @Test
+    fun physicalPoseLossLongerThanTwoThousandMillisecondsResetsAttempt() {
         val detector = calibratedDetector()
         val start = CALIBRATED_AT + 200
         descendToBottom(detector, start)
@@ -322,7 +406,22 @@ class SquatStateMachineTest {
 
         assertEquals(SquatState.CALIBRATING, detector.state)
         assertFalse(reset.diagnostics.bottomReached)
-        assertEquals("RESET_POSE_LOST", reset.diagnostics.lastResetReason)
+        assertEquals("RESET_POSE_LOSS_TIMEOUT", reset.diagnostics.lastResetReason)
+    }
+
+    @Test
+    fun twentyFiveHundredMillisecondValidGapPreservesEmulatorAttemptExtrema() {
+        val detector = calibratedDetector(isEmulator = true)
+        val start = CALIBRATED_AT + 200
+        descendToBottom(detector, start)
+
+        val afterGap = detector.valid(start + 3_050, 135.0, 0.30)
+
+        assertEquals(SquatState.BOTTOM, detector.state)
+        assertTrue(afterGap.diagnostics.bottomReached)
+        assertEquals(132.0, afterGap.diagnostics.minimumAttemptKneeAngleDeg!!, 0.001)
+        assertEquals(0.11, afterGap.diagnostics.maximumAttemptHipDropRatio!!, 0.001)
+        assertNull(afterGap.diagnostics.kneeAngularVelocity)
     }
 
     @Test
@@ -350,16 +449,19 @@ class SquatStateMachineTest {
         assertEquals(0, fast.repSequence)
         assertEquals("REJECT_DURATION", fastRejected.diagnostics.latestRejectReason)
 
-        val slow = calibratedDetector()
+        val slow = calibratedDetector(isEmulator = true)
         val slowStart = CALIBRATED_AT + 200
         descendToBottom(slow, slowStart)
-        val slowRejected = slow.valid(slowStart + 6_100, 140.0, 0.290)
+        slow.valid(slowStart + 3_500, 125.0, 0.300)
+        slow.valid(slowStart + 7_000, 125.0, 0.300)
+        slow.valid(slowStart + 10_500, 125.0, 0.300)
+        val slowRejected = slow.valid(slowStart + 12_400, 125.0, 0.300)
         assertEquals(SquatState.CALIBRATING, slow.state)
         assertEquals("RESET_REP_TIMEOUT", slowRejected.diagnostics.lastResetReason)
     }
 
-    private fun calibratedDetector(): SquatStateMachine {
-        val detector = SquatStateMachine(config)
+    private fun calibratedDetector(isEmulator: Boolean = false): SquatStateMachine {
+        val detector = SquatStateMachine(config, isEmulator)
         CALIBRATION_TIMES.forEach { time -> detector.valid(time, 168.0, 0.25) }
         assertEquals(SquatState.STANDING, detector.state)
         return detector
@@ -369,11 +471,11 @@ class SquatStateMachineTest {
         detector: SquatStateMachine,
         start: Long,
     ): List<SquatDetectorUpdate> {
-        val updates = descendToBottom(detector, start).toMutableList()
-        updates += detector.valid(start + 800, 140.0, 0.290)
-        updates += detector.valid(start + 950, 148.0, 0.285)
-        updates += detector.valid(start + 1_150, 154.0, 0.270)
-        updates += detector.valid(start + 1_400, 160.0, 0.260)
+        val updates = mutableListOf<SquatDetectorUpdate>()
+        updates += detector.valid(start, 150.0, 0.260)
+        updates += detector.valid(start + 250, 143.0, 0.270)
+        updates += detector.valid(start + 600, 132.0, 0.300)
+        updates += detector.valid(start + 1_000, 145.0, 0.270)
         return updates
     }
 
@@ -399,10 +501,10 @@ class SquatStateMachineTest {
         detector: SquatStateMachine,
         start: Long,
     ) {
-        detector.valid(start, 155.0, 0.285)
-        detector.valid(start + 200, 152.0, 0.290)
-        detector.valid(start + 450, 150.0, 0.295)
-        detector.valid(start + 900, 158.0, 0.270)
+        detector.valid(start, 164.0, 0.260)
+        detector.valid(start + 200, 162.0, 0.265)
+        detector.valid(start + 450, 160.5, 0.268)
+        detector.valid(start + 900, 164.0, 0.260)
         detector.valid(start + 1_100, 165.0, 0.260)
     }
 
