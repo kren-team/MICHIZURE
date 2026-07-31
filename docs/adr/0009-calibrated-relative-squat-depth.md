@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-31
 - Amends: [ADR 0008](0008-low-fps-squat-state-continuity.md) の固定BOTTOM閾値と全phase観測
+- Amended by: [ADR 0010](0010-multi-evidence-low-resolution-squat.md) の複数BOTTOM evidence経路と2,000ms pose-loss境界
 
 ## Context
 

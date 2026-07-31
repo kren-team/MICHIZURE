@@ -77,8 +77,9 @@
 - [ ] diagnosticsが4 FPS以下、analysisが物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 5〜6 FPS近傍
 - [ ] 2秒・6〜8 valid sampleで直立calibration
 - [ ] calibrated standing knee angle `S`とbaseline hip / leg scale / jitter / sideを記録
-- [ ] `bottomAngle=clamp(S-35°, 125°, 140°)`と4つの相対thresholdを確認
-- [ ] 前後phase、transition / reject / reset reason、frame dt、confirmation時間を記録
+- [ ] ImageAnalysis requested / actualが320×240優先で、Preview boundsが維持されることを確認
+- [ ] `bottomAngle=clamp(S-28°, 130°, 145°)`とstanding / returnのstrong・relaxed thresholdを確認
+- [ ] knee bend、max hip drop、下降/上昇、BOTTOM score / path、前後phase、reason、frame dtを記録
 - [ ] 正常3 squatをexactly 3回count
 - [ ] 深いsquat 1回をexactly 1回count
 - [ ] 浅い屈伸3回を0回としてreject

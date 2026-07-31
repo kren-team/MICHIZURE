@@ -443,7 +443,7 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 
 Camera画面では胸の下から足首までをportrait 3:4 guide内へ入れ、カメラへ斜め30〜45度または横向きになる。debug buildではHomeの「Squat Lab」からFirebase / Debtを使わずCamera→Pose→FSMだけを確認できる。Labのaccepted countはProduction Contributionではない。
 
-Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。manual gateではPreview/guideのbounds一致、物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 5〜6 FPS近傍、正常3回=3、深い1回=1、浅い3回=0を記録する。単一の700ms程度のcallback gapでphaseが失われず、1,500ms超のpose lossではCALIBRATINGへ戻ることも確認する。
+Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。manual gateではPreview/guideのbounds一致、ImageAnalysis requested / actual resolution、物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 5〜6 FPS近傍、正常3回=3、深い1回=1、浅い3回=0を記録する。単一の700ms程度のcallback gapでphaseとattempt extremaが失われず、2,000ms超のpose lossではCALIBRATINGへ戻ることも確認する。
 
 camera permissionを再試験する場合はDevice Ownerやapp dataを消去せず、permission flagsだけを操作する。
 
