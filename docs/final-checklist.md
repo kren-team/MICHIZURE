@@ -74,11 +74,11 @@
 - [ ] analyzer / submit / callbackが増加し、inference latencyが0ms固定ではない
 - [ ] callback待機とcallbackあり・poseなしが別表示
 - [ ] debug既知画像でcallback、pose 1件以上、hip/knee/ankleを確認
-- [ ] diagnosticsが4 FPS以下、analysisが物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 5〜6 FPS近傍
+- [ ] diagnosticsが4 FPS以下、analysisが物理GPU 10 FPS / 物理CPU 8 FPS / Emulator CPU 4 FPS上限
 - [ ] 2秒・6〜8 valid sampleで直立calibration
 - [ ] calibrated standing knee angle `S`とbaseline hip / leg scale / jitter / sideを記録
 - [ ] ImageAnalysis requested / actualが320×240優先で、Preview boundsが維持されることを確認
-- [ ] `bottomAngle=clamp(S-28°, 130°, 145°)`とstanding / returnのstrong・relaxed thresholdを確認
+- [ ] `bottomAngle=clamp(S-24°, 135°, 150°)`とstanding / returnのstrong・relaxed thresholdを確認
 - [ ] knee bend、max hip drop、下降/上昇、BOTTOM score / path、前後phase、reason、frame dtを記録
 - [ ] 正常3 squatをexactly 3回count
 - [ ] 深いsquat 1回をexactly 1回count
