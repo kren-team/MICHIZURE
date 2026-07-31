@@ -14,22 +14,25 @@ class PosePreviewFactory(
         context: Context,
         viewId: Int,
         args: Any?,
-    ): PlatformView = PosePreviewView(context, manager)
+    ): PlatformView = PosePreviewView(context, manager, PoseSourceMode.fromCreationParams(args))
 }
 
 private class PosePreviewView(
     context: Context,
     private val manager: SquatSessionManager,
+    mode: PoseSourceMode,
 ) : PlatformView {
-    private val cameraContainer = SquatCameraContainer(context)
+    private val cameraContainer =
+        SquatCameraContainer(context, initialHostPoseMode = mode == PoseSourceMode.HOST_DEMO)
 
     init {
-        manager.attachPreview(cameraContainer)
+        manager.attachPreview(cameraContainer, mode)
     }
 
     override fun getView(): View = cameraContainer
 
     override fun dispose() {
         manager.detachPreview(cameraContainer)
+        cameraContainer.releaseHostRenderer()
     }
 }

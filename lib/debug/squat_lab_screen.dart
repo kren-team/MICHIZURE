@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../app/providers.dart';
 import '../features/squat/domain/squat_detector.dart';
@@ -155,11 +156,14 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           if (_permission == CameraPermissionState.granted)
-            const AspectRatio(
+            AspectRatio(
               aspectRatio: 3 / 4,
               child: AndroidView(
-                key: Key('squat-lab-native-camera'),
+                key: const Key('squat-lab-native-camera'),
                 viewType: MethodChannelSquatDetector.previewViewType,
+                creationParams:
+                    MethodChannelSquatDetector.previewCreationParams,
+                creationParamsCodec: StandardMessageCodec(),
               ),
             )
           else
@@ -267,7 +271,20 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
           'Valid-pose FPS (FSM/pipeline): ${value?.effectiveValidPoseFps.toStringAsFixed(1) ?? '-'} / ${value?.validPoseFps.toStringAsFixed(1) ?? '-'}',
         ),
         Text(
-          'Calibration: ${value?.calibrationStatus ?? 'waiting'} (${value?.calibrationSampleCount ?? 0}/8)',
+          'Calibration: ${value?.calibrationStatus ?? 'waiting'} (${value?.calibrationSampleCount ?? 0}/2, strong ${value?.strongStandingCandidateCount ?? 0})',
+        ),
+        Text('Calibration guide: ${_calibrationGuide(value)}'),
+        Text(
+          'Provisional / median / range: ${_metric(value?.provisionalStandingAngle)} / ${_metric(value?.calibrationMedianAngle)} / ${_metric(value?.calibrationAngleRange)}',
+        ),
+        Text(
+          'Calibration window / timeout: ${value?.calibrationWindowAgeMs ?? '-'} / ${value?.calibrationTimeoutMs ?? '-'} ms',
+        ),
+        Text(
+          'Calibration quality / reject: ${value?.calibrationQualityPath ?? '-'} / ${value?.lastCalibrationRejectReason ?? '-'}',
+        ),
+        Text(
+          'Buffer preserved / auto descent / baseline: ${value?.candidateBufferPreserved ?? false} / ${value?.autoCalibratedOnDescent ?? false} / ${value?.standingBaselineSource ?? '-'}',
         ),
         Text('Bottom reached: ${value?.bottomReached ?? false}'),
         Text(
@@ -312,6 +329,16 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
 
   String _metric(double? value, {int digits = 2}) =>
       value?.toStringAsFixed(digits) ?? '-';
+
+  String _calibrationGuide(SquatDetectorDiagnostics? value) {
+    if (value?.autoCalibratedOnDescent ?? false) {
+      return '下降を検出して自動Calibration完了';
+    }
+    if (value?.calibrationStatus == 'COMPLETE') return '準備完了';
+    if (value?.provisionalStandingAngle != null) return '暫定準備完了';
+    if ((value?.calibrationSampleCount ?? 0) > 0) return '直立候補を検出';
+    return '直立してください';
+  }
 
   String _bottomPath(SquatBottomEvidencePath? path) => switch (path) {
     SquatBottomEvidencePath.kneeOnly => 'KNEE_ONLY',

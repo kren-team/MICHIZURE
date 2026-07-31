@@ -41,9 +41,9 @@ class SquatMethodHandler(
         }
         when (call.method) {
             SquatContract.METHOD_GET_CAMERA_PERMISSION ->
-                result.success(permissionPayload())
+                result.success(permissionPayload(call.arguments))
             SquatContract.METHOD_REQUEST_CAMERA_PERMISSION ->
-                requestPermission(result)
+                requestPermission(call.arguments, result)
             SquatContract.METHOD_OPEN_APP_SETTINGS -> {
                 activity.startActivity(
                     Intent(
@@ -93,7 +93,7 @@ class SquatMethodHandler(
         permissionPreferences.edit().putBoolean(HAS_REQUESTED_CAMERA, true).apply()
         val result = pendingPermissionResult
         pendingPermissionResult = null
-        result?.success(permissionPayload())
+        result?.success(permissionPayload(null))
         return true
     }
 
@@ -152,9 +152,13 @@ class SquatMethodHandler(
         result.success(SquatContract.versioned(mapOf("enabled" to enabled)))
     }
 
-    private fun requestPermission(result: MethodChannel.Result) {
+    private fun requestPermission(arguments: Any?, result: MethodChannel.Result) {
+        if (!PoseSourceMode.fromCreationParams(arguments).requiresCameraPermission) {
+            result.success(permissionPayload(arguments))
+            return
+        }
         if (hasCameraPermission()) {
-            result.success(permissionPayload())
+            result.success(permissionPayload(arguments))
             return
         }
         if (pendingPermissionResult != null) {
@@ -177,7 +181,8 @@ class SquatMethodHandler(
         arguments: Any?,
         result: MethodChannel.Result,
     ) {
-        if (!hasCameraPermission()) {
+        val mode = PoseSourceMode.fromCreationParams(arguments)
+        if (mode.requiresCameraPermission && !hasCameraPermission()) {
             val state = permissionState()
             val code =
                 if (state == "permanentlyDenied") {
@@ -185,7 +190,7 @@ class SquatMethodHandler(
                 } else {
                     SquatContract.ERROR_CAMERA_PERMISSION_DENIED
                 }
-            result.error(code, "Camera permission is required.", permissionPayload())
+            result.error(code, "Camera permission is required.", permissionPayload(arguments))
             return
         }
         val sessionId = stringArgument(arguments, "squatSessionId")
@@ -220,8 +225,17 @@ class SquatMethodHandler(
         }
     }
 
-    private fun permissionPayload(): Map<String, Any?> =
-        SquatContract.versioned(mapOf("state" to permissionState()))
+    private fun permissionPayload(arguments: Any?): Map<String, Any?> =
+        SquatContract.versioned(
+            mapOf(
+                "state" to
+                    if (PoseSourceMode.fromCreationParams(arguments).requiresCameraPermission) {
+                        permissionState()
+                    } else {
+                        "granted"
+                    },
+            ),
+        )
 
     private fun permissionState(): String {
         if (hasCameraPermission()) return "granted"

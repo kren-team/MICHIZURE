@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/providers.dart';
 import '../../squat/application/squat_session_controller.dart';
@@ -144,13 +144,6 @@ final class ContributionSessionView extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 16),
-        const Card(
-          child: ListTile(
-            leading: Icon(Icons.privacy_tip_outlined),
-            title: Text('カメラ映像は端末内だけで処理します'),
-            subtitle: Text('画像・動画・姿勢座標は保存せず、外部へ送信しません。'),
-          ),
-        ),
         _SquatControls(
           debt: debt,
           state: squatState,
@@ -275,14 +268,17 @@ final class _SquatControls extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (showNativePreview)
-          const AspectRatio(
-            key: Key('pose-preview'),
+          AspectRatio(
+            key: const Key('pose-preview'),
             aspectRatio: 3 / 4,
-            child: ClipRRect(
+            child: const ClipRRect(
               borderRadius: BorderRadius.all(Radius.circular(20)),
               child: AndroidView(
                 key: Key('native-squat-camera-container'),
                 viewType: MethodChannelSquatDetector.previewViewType,
+                creationParams:
+                    MethodChannelSquatDetector.previewCreationParams,
+                creationParamsCodec: StandardMessageCodec(),
               ),
             ),
           ),
@@ -293,7 +289,7 @@ final class _SquatControls extends StatelessWidget {
             child: ListTile(
               leading: CircularProgressIndicator(),
               title: Text('姿勢判定を準備しています'),
-              subtitle: Text('カメラ映像は端末内だけで処理します。'),
+              subtitle: Text('全身が映る位置でお待ちください。'),
             ),
           ),
         const Text(
@@ -318,13 +314,6 @@ final class _SquatControls extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ),
-        if (state.lastAnalysisLatencyMs case final latency?)
-          Text('端末内判定 ${latency}ms', key: const Key('squat-latency')),
-        if (kDebugMode)
-          if (state.diagnostics case final diagnostics?)
-            _CollapsibleDiagnostics(diagnostics: diagnostics)
-          else if (showNativePreview)
-            const _LiveSquatDiagnosticsPanel(),
         if (state.failure case final failure?)
           Text(
             _detectorFailureMessage(failure.reason),
@@ -346,8 +335,8 @@ final class _SquatControls extends StatelessWidget {
 
 String _stateLabel(SquatDetectorState state) {
   return switch (state) {
-    SquatDetectorState.calibrating => '立った姿勢を調整中',
-    SquatDetectorState.standing => '準備OK',
+    SquatDetectorState.calibrating => '姿勢を確認しています',
+    SquatDetectorState.standing => 'スクワットを開始してください',
     SquatDetectorState.descending => 'しゃがんでいます',
     SquatDetectorState.bottom => '深さOK・立ち上がってください',
     SquatDetectorState.ascending => '最後まで立ち上がってください',
@@ -366,7 +355,7 @@ String _qualityMessage(
     SquatPosePipelineStatus.kneeUnavailable => '膝を認識できません。',
     SquatPosePipelineStatus.ankleUnavailable => '足首を認識できません。',
     SquatPosePipelineStatus.confidenceInsufficient => '明るい場所で腰・膝・足首を映してください。',
-    SquatPosePipelineStatus.failed => '端末内の姿勢判定を確認してください。',
+    SquatPosePipelineStatus.failed => '姿勢を確認できません。もう一度準備してください。',
     SquatPosePipelineStatus.valid => null,
   };
   if (pipelineMessage != null) return pipelineMessage;
@@ -386,144 +375,6 @@ String _qualityMessage(
   };
 }
 
-final class _SquatDiagnosticsCard extends StatelessWidget {
-  const _SquatDiagnosticsCard({required this.diagnostics});
-
-  final SquatDetectorDiagnostics diagnostics;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      key: const Key('squat-debug-diagnostics'),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: DefaultTextStyle.merge(
-          style: Theme.of(context).textTheme.bodySmall,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Debug detector diagnostics'),
-              Text('Delegate: ${diagnostics.delegate?.name ?? 'initializing'}'),
-              Text('Pipeline: ${diagnostics.pipelineStatus.name}'),
-              Text('Tracking: ${diagnostics.trackingStatus.name}'),
-              Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
-              Text(
-                'Selected side: ${diagnostics.selectedSide?.name ?? 'none'}',
-              ),
-              Text(
-                'Left H/K/A: ${_metric(diagnostics.leftHipConfidence)} / '
-                '${_metric(diagnostics.leftKneeConfidence)} / '
-                '${_metric(diagnostics.leftAnkleConfidence)}',
-              ),
-              Text(
-                'Right H/K/A: ${_metric(diagnostics.rightHipConfidence)} / '
-                '${_metric(diagnostics.rightKneeConfidence)} / '
-                '${_metric(diagnostics.rightAnkleConfidence)}',
-              ),
-              Text('Knee angle: ${_metric(diagnostics.kneeAngle, digits: 1)}°'),
-              Text(
-                'Hip drop: ${_metric(diagnostics.normalizedHipDrop, digits: 3)}',
-              ),
-              Text('State: ${diagnostics.state.name}'),
-              Text(
-                'Latest reject: ${diagnostics.latestRejectReason ?? 'none'}',
-              ),
-              Text(
-                'Accepted / rejected: '
-                '${diagnostics.acceptedReps} / ${diagnostics.rejectedAttempts}',
-              ),
-              Text('Inference latency: ${diagnostics.analysisLatencyMs}ms'),
-              Text(
-                'Analyzer / submitted / callbacks: '
-                '${diagnostics.analyzerFrames} / '
-                '${diagnostics.inferenceSubmitted} / '
-                '${diagnostics.resultCallbacks}',
-              ),
-              Text(
-                'Pose / no pose / errors: '
-                '${diagnostics.resultsWithPose} / '
-                '${diagnostics.resultsWithoutPose} / '
-                '${diagnostics.errorCallbacks}',
-              ),
-              Text(
-                'Last callback age: '
-                '${diagnostics.lastCallbackAgeMs ?? '-'} ms',
-              ),
-              Text(
-                'Active delegate: '
-                '${diagnostics.activeDelegate?.name ?? 'initializing'}',
-              ),
-              Text('Last error: ${diagnostics.lastError ?? 'none'}'),
-              Text(
-                'Analysis FPS: '
-                '${diagnostics.actualAnalysisFps.toStringAsFixed(1)}',
-              ),
-              Text(
-                'Preprocess p50 / p95: '
-                '${diagnostics.preprocessingP50Ms ?? '-'} / '
-                '${diagnostics.preprocessingP95Ms ?? '-'} ms',
-              ),
-              Text(
-                'Inference p50 / p95: '
-                '${diagnostics.inferenceP50Ms ?? '-'} / '
-                '${diagnostics.inferenceP95Ms ?? '-'} ms',
-              ),
-              Text(
-                'Pipeline p50 / p95: '
-                '${diagnostics.nativePipelineP50Ms ?? '-'} / '
-                '${diagnostics.nativePipelineP95Ms ?? '-'} ms',
-              ),
-              Text(
-                'Dropped / busy: '
-                '${diagnostics.droppedBeforePreprocessing} / '
-                '${diagnostics.rejectedAsBusy}',
-              ),
-              Text(
-                'Results / no pose: '
-                '${diagnostics.resultCount} / ${diagnostics.noPoseCount}',
-              ),
-              Text(
-                'Diagnostic events: '
-                '${diagnostics.diagnosticEventFps.toStringAsFixed(1)} FPS',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-final class _LiveSquatDiagnosticsPanel extends ConsumerWidget {
-  const _LiveSquatDiagnosticsPanel();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final diagnostics = ref.watch(squatDiagnosticsProvider);
-    if (diagnostics == null) return const SizedBox.shrink();
-    return _CollapsibleDiagnostics(diagnostics: diagnostics);
-  }
-}
-
-final class _CollapsibleDiagnostics extends StatelessWidget {
-  const _CollapsibleDiagnostics({required this.diagnostics});
-
-  final SquatDetectorDiagnostics diagnostics;
-
-  @override
-  Widget build(BuildContext context) {
-    return ExpansionTile(
-      key: const Key('squat-debug-diagnostics-panel'),
-      title: const Text('判定診断（Debug）'),
-      initiallyExpanded: false,
-      children: [_SquatDiagnosticsCard(diagnostics: diagnostics)],
-    );
-  }
-}
-
-String _metric(double? value, {int digits = 2}) =>
-    value?.toStringAsFixed(digits) ?? '-';
-
 String _detectorFailureMessage(SquatDetectorFailureReason reason) {
   return switch (reason) {
     SquatDetectorFailureReason.permissionDenied => 'カメラ権限が必要です。',
@@ -534,7 +385,7 @@ String _detectorFailureMessage(SquatDetectorFailureReason reason) {
     SquatDetectorFailureReason.contractMismatch ||
     SquatDetectorFailureReason.malformedEvent => '判定機能の互換性を確認できません。',
     SquatDetectorFailureReason.nativeUnavailable ||
-    SquatDetectorFailureReason.unknown => '端末内の姿勢判定でエラーが発生しました。',
+    SquatDetectorFailureReason.unknown => '姿勢を確認できません。もう一度準備してください。',
   };
 }
 

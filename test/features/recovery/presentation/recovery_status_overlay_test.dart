@@ -53,4 +53,77 @@ void main() {
     expect(find.text('端末またはアカウント状態の確認が必要です。'), findsOneWidget);
     expect(find.textContaining('FirebaseException'), findsNothing);
   });
+
+  testWidgets('warning has a close button and stays dismissed', (tester) async {
+    await tester.pumpWidget(_warningApp());
+
+    expect(find.byKey(const Key('recovery-close-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('recovery-close-button')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const Key('recovery-status-card')), findsNothing);
+  });
+
+  testWidgets('body remains tappable while warning is visible', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      _warningApp(
+        child: Scaffold(
+          body: Center(
+            child: FilledButton(
+              key: const Key('body-action'),
+              onPressed: () => taps += 1,
+              child: const Text('本文の操作'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('body-action')));
+
+    expect(taps, 1);
+    expect(find.byKey(const Key('recovery-status-card')), findsOneWidget);
+  });
+
+  testWidgets('same warning is rendered only once after rebuild', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_warningApp());
+    await tester.pumpWidget(_warningApp());
+
+    expect(find.byKey(const Key('recovery-status-card')), findsOneWidget);
+    expect(find.text('一部の同期を保留しています。通信状態を確認してください。'), findsOneWidget);
+  });
+
+  testWidgets('retry invokes its callback exactly once', (tester) async {
+    var retries = 0;
+    await tester.pumpWidget(_warningApp(onRetry: () => retries += 1));
+
+    await tester.tap(find.byKey(const Key('recovery-retry-button')));
+    await tester.pump();
+
+    expect(retries, 1);
+  });
+}
+
+Widget _warningApp({Widget? child, VoidCallback? onRetry}) {
+  return ProviderScope(
+    overrides: [
+      recoveryControllerProvider.overrideWithBuild(
+        (ref, notifier) => const RecoveryControllerState(
+          phase: RecoveryPhase.degraded,
+          trigger: RecoveryTrigger.coldStart,
+        ),
+      ),
+    ],
+    child: MaterialApp(
+      home: RecoveryStatusOverlay(
+        onRetry: onRetry,
+        child: child ?? const Scaffold(body: Text('Home')),
+      ),
+    ),
+  );
 }

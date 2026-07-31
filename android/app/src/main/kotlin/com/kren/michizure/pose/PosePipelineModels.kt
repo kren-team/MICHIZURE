@@ -3,6 +3,7 @@ package com.kren.michizure.pose
 enum class PoseDelegate(val wireValue: String) {
     GPU("gpu"),
     CPU("cpu"),
+    HOST("host"),
 }
 
 enum class PosePipelineStatus(val wireValue: String) {

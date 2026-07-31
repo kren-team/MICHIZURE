@@ -45,24 +45,31 @@ internal data class SquatGuideDrawing(
  */
 class SquatCameraContainer(
     context: Context,
+    initialHostPoseMode: Boolean = false,
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
 ) : FrameLayout(context) {
-    val previewView =
+    val previewView: PreviewView by lazy {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             scaleType = PreviewView.ScaleType.FIT_CENTER
             background = ColorDrawable(Color.BLACK)
         }
+    }
+    private val hostSurfaceViewDelegate = lazy { HostPoseSurfaceView(context) }
+    private val hostSurfaceView: HostPoseSurfaceView
+        get() = hostSurfaceViewDelegate.value
     internal val guideOverlayView = SquatGuideOverlayView(context)
     private var lastGuideTimestampMs = Long.MIN_VALUE
+    private var hostPoseMode = initialHostPoseMode
     private var debugThumbnailEnabled = false
 
     init {
         background = ColorDrawable(Color.BLACK)
         clipChildren = true
         clipToPadding = true
-        addView(previewView, matchParentLayoutParams())
+        addView(backgroundView(), matchParentLayoutParams())
         addView(guideOverlayView, matchParentLayoutParams())
+        guideOverlayView.setHostPoseMode(hostPoseMode)
     }
 
     internal fun updateGuide(frame: SquatGuideFrame) {
@@ -108,7 +115,35 @@ class SquatCameraContainer(
     }
 
     internal fun updatePipelineStatus(snapshot: PosePipelineStatusSnapshot) {
-        post { guideOverlayView.updateStatus(snapshot.status) }
+        post {
+            guideOverlayView.updateStatus(snapshot.status)
+        }
+    }
+
+    internal fun setHostPoseMode(enabled: Boolean) {
+        if (hostPoseMode == enabled) return
+        hostPoseMode = enabled
+        post {
+            removeView(if (enabled) previewView else hostSurfaceView)
+            addView(backgroundView(), 0, matchParentLayoutParams())
+            guideOverlayView.clear()
+            guideOverlayView.setHostPoseMode(enabled)
+        }
+    }
+
+    internal fun setHostRenderListener(listener: HostPoseRenderListener?) {
+        if (hostSurfaceViewDelegate.isInitialized()) hostSurfaceView.setRenderListener(listener)
+    }
+
+    internal fun offerHostFrame(frame: HostDisplayFrame): LatestFrameOffer =
+        if (hostPoseMode && hostSurfaceViewDelegate.isInitialized()) {
+            hostSurfaceView.offer(frame)
+        } else {
+            LatestFrameOffer.REJECTED_DISPOSED
+        }
+
+    internal fun updateHostMetrics(videoFps: Double, poseFps: Double) {
+        post { guideOverlayView.updateHostMetrics(videoFps, poseFps) }
     }
 
     internal fun updateDebugThumbnail(bitmap: Bitmap) {
@@ -134,8 +169,18 @@ class SquatCameraContainer(
 
     internal fun clearGuide() {
         lastGuideTimestampMs = Long.MIN_VALUE
-        post { guideOverlayView.clear() }
+        if (hostSurfaceViewDelegate.isInitialized()) hostSurfaceView.clearFrame()
+        post {
+            guideOverlayView.clear()
+            guideOverlayView.setHostPoseMode(hostPoseMode)
+        }
     }
+
+    internal fun releaseHostRenderer() {
+        if (hostSurfaceViewDelegate.isInitialized()) hostSurfaceView.release()
+    }
+
+    private fun backgroundView(): View = if (hostPoseMode) hostSurfaceView else previewView
 
     private fun matchParentLayoutParams() =
         LayoutParams(
@@ -148,6 +193,11 @@ class SquatCameraContainer(
             context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     private var lastDebugThumbnailMs = Long.MIN_VALUE
+
+    override fun onDetachedFromWindow() {
+        releaseHostRenderer()
+        super.onDetachedFromWindow()
+    }
 
     private companion object {
         const val DEBUG_THUMBNAIL_INTERVAL_MS = 1_000L
@@ -183,15 +233,44 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     private var drawing: SquatGuideDrawing? = null
     private var pipelineStatus = PosePipelineStatus.INITIALIZING
     private var debugThumbnail: Bitmap? = null
+    private var hostPoseMode = false
+    private var hostVideoFps = 0.0
+    private var hostResultFps = 0.0
+    private var lastHostMetricsUpdateMs = Long.MIN_VALUE
 
     fun update(next: SquatGuideDrawing?) {
+        if (drawing == next) return
         drawing = next
         if (next != null) pipelineStatus = next.pipelineStatus
         invalidate()
     }
 
     fun updateStatus(next: PosePipelineStatus) {
+        if (pipelineStatus == next) return
         pipelineStatus = next
+        invalidate()
+    }
+
+    fun setHostPoseMode(enabled: Boolean) {
+        if (hostPoseMode == enabled) return
+        hostPoseMode = enabled
+        invalidate()
+    }
+
+    fun updateHostMetrics(videoFps: Double, poseFps: Double) {
+        if (!hostPoseMode) return
+        val nowMs = SystemClock.elapsedRealtime()
+        if (lastHostMetricsUpdateMs != Long.MIN_VALUE &&
+            nowMs - lastHostMetricsUpdateMs < HOST_METRICS_INTERVAL_MS
+        ) {
+            return
+        }
+        lastHostMetricsUpdateMs = nowMs
+        if (kotlin.math.abs(hostVideoFps - videoFps) < 0.1 &&
+            kotlin.math.abs(hostResultFps - poseFps) < 0.1
+        ) return
+        hostVideoFps = videoFps
+        hostResultFps = poseFps
         invalidate()
     }
 
@@ -240,7 +319,7 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
         val current = drawing
         if (current == null) {
             canvas.drawText(
-                pipelineStatus.displayLabel,
+                statusLabel(),
                 inset,
                 top + dp(30f),
                 textPaint,
@@ -266,12 +345,16 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             }
         }
         canvas.drawText(
-            "${pipelineStatus.displayLabel} / ${current.state.wireValue}",
+            statusLabel(),
             inset,
             max(top + dp(30f), dp(24f)),
             textPaint,
         )
         drawDebugThumbnail(canvas, inset, top)
+    }
+
+    private fun statusLabel(): String {
+        return pipelineStatus.displayLabel
     }
 
     private fun drawDebugThumbnail(
@@ -301,18 +384,22 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     }
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
+
+    private companion object {
+        const val HOST_METRICS_INTERVAL_MS = 1_000L
+    }
 }
 
 private val PosePipelineStatus.displayLabel: String
     get() =
         when (this) {
-            PosePipelineStatus.INITIALIZING -> "初期化中"
-            PosePipelineStatus.AWAITING_RESULT -> "callback待機"
-            PosePipelineStatus.NO_POSE -> "callbackあり・人物なし"
-            PosePipelineStatus.HIP_UNAVAILABLE -> "腰なし"
-            PosePipelineStatus.KNEE_UNAVAILABLE -> "膝なし"
-            PosePipelineStatus.ANKLE_UNAVAILABLE -> "足首なし"
-            PosePipelineStatus.CONFIDENCE_INSUFFICIENT -> "信頼度不足"
-            PosePipelineStatus.VALID -> "検出"
-            PosePipelineStatus.FAILED -> "推論エラー"
+            PosePipelineStatus.INITIALIZING -> "姿勢を確認しています"
+            PosePipelineStatus.AWAITING_RESULT -> "姿勢を確認しています"
+            PosePipelineStatus.NO_POSE -> "全身が映る位置に立ってください"
+            PosePipelineStatus.HIP_UNAVAILABLE -> "腰まで映してください"
+            PosePipelineStatus.KNEE_UNAVAILABLE -> "膝まで映してください"
+            PosePipelineStatus.ANKLE_UNAVAILABLE -> "足首まで映してください"
+            PosePipelineStatus.CONFIDENCE_INSUFFICIENT -> "明るい場所で全身を映してください"
+            PosePipelineStatus.VALID -> "準備ができました"
+            PosePipelineStatus.FAILED -> "姿勢を確認できません"
         }

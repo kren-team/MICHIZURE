@@ -4,64 +4,85 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../application/recovery_controller.dart';
 import '../domain/recovery.dart';
 
-final class RecoveryStatusOverlay extends ConsumerWidget {
-  const RecoveryStatusOverlay({required this.child, super.key});
+final class RecoveryStatusOverlay extends ConsumerStatefulWidget {
+  const RecoveryStatusOverlay({required this.child, this.onRetry, super.key});
 
   final Widget child;
+  final VoidCallback? onRetry;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecoveryStatusOverlay> createState() =>
+      _RecoveryStatusOverlayState();
+}
+
+final class _RecoveryStatusOverlayState
+    extends ConsumerState<RecoveryStatusOverlay> {
+  String? _dismissedWarning;
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(recoveryControllerProvider);
-    return Stack(
+    final warning = _warningKey(state.phase);
+    return Column(
       children: [
-        child,
         if (state.isRecovering)
-          const Align(
-            alignment: Alignment.topCenter,
-            child: SafeArea(
-              child: LinearProgressIndicator(
-                key: Key('recovery-progress-indicator'),
-              ),
+          const SafeArea(
+            bottom: false,
+            child: LinearProgressIndicator(
+              key: Key('recovery-progress-indicator'),
             ),
           )
-        else if (state.phase == RecoveryPhase.degraded ||
-            state.phase == RecoveryPhase.actionRequired ||
-            state.phase == RecoveryPhase.failed)
-          Align(
-            alignment: Alignment.topCenter,
-            child: SafeArea(
-              child: Card(
-                key: const Key('recovery-status-card'),
-                margin: const EdgeInsets.all(12),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        state.phase == RecoveryPhase.degraded
-                            ? Icons.cloud_off
-                            : Icons.sync_problem,
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(_message(state.phase))),
-                      TextButton(
-                        key: const Key('recovery-retry-button'),
-                        onPressed: () => ref
-                            .read(recoveryControllerProvider.notifier)
-                            .recover(RecoveryTrigger.manualRetry),
-                        child: const Text('再試行'),
-                      ),
-                    ],
-                  ),
+        else if (warning != null && warning != _dismissedWarning)
+          SafeArea(
+            bottom: false,
+            child: Card(
+              key: const Key('recovery-status-card'),
+              margin: const EdgeInsets.all(12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      state.phase == RecoveryPhase.degraded
+                          ? Icons.cloud_off
+                          : Icons.sync_problem,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_message(state.phase))),
+                    TextButton(
+                      key: const Key('recovery-retry-button'),
+                      onPressed:
+                          widget.onRetry ??
+                          () => ref
+                              .read(recoveryControllerProvider.notifier)
+                              .recover(RecoveryTrigger.manualRetry),
+                      child: const Text('再試行'),
+                    ),
+                    IconButton(
+                      key: const Key('recovery-close-button'),
+                      tooltip: '閉じる',
+                      onPressed: () => setState(() {
+                        _dismissedWarning = warning;
+                      }),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
+        Expanded(child: widget.child),
       ],
     );
   }
 }
+
+String? _warningKey(RecoveryPhase phase) => switch (phase) {
+  RecoveryPhase.degraded ||
+  RecoveryPhase.actionRequired ||
+  RecoveryPhase.failed => '${phase.name}:${_message(phase)}',
+  _ => null,
+};
 
 String _message(RecoveryPhase phase) {
   return switch (phase) {

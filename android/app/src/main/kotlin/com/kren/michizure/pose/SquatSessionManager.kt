@@ -5,6 +5,8 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
+import java.util.Locale
+import kotlin.math.abs
 
 data class NativeSquatSession(
     val squatSessionId: String,
@@ -16,27 +18,41 @@ class SquatSessionManager(
     private val runtimeEnvironment: AndroidRuntimeEnvironment =
         AndroidRuntimeEnvironment.current(),
     private val sourceFactory: (
+        PoseSourceMode,
         SquatCameraContainer,
         LifecycleOwner,
         (PoseDelegate) -> Unit,
         (PosePipelineStatusSnapshot) -> Unit,
         (PoseFrameDelivery) -> PoseFrameCompletion,
         (String) -> Unit,
-    ) -> PoseSource = { view, owner, onReady, onStatus, onFrame, onFailure ->
-        CameraMediaPipePoseSource(
-            context = view.context.applicationContext,
-            lifecycleOwner = owner,
-            cameraContainer = view,
-            onReady = onReady,
-            onStatus = onStatus,
-            onFrame = onFrame,
-            onFailure = onFailure,
-        )
+    ) -> PoseSource = { mode, view, owner, onReady, onStatus, onFrame, onFailure ->
+        PoseSourceSelector(
+            hostFactory = {
+                CameraHostPoseSource(
+                    cameraContainer = view,
+                    onReady = onReady,
+                    onStatus = onStatus,
+                    onFrame = onFrame,
+                )
+            },
+            localFactory = {
+                CameraMediaPipePoseSource(
+                    context = view.context.applicationContext,
+                    lifecycleOwner = owner,
+                    cameraContainer = view,
+                    onReady = onReady,
+                    onStatus = onStatus,
+                    onFrame = onFrame,
+                    onFailure = onFailure,
+                )
+            },
+        ).create(mode)
     },
 ) : AutoCloseable {
     private val detectorConfig = SquatDetectorConfig()
     private var session: NativeSquatSession? = null
     private var previewView: SquatCameraContainer? = null
+    private var sourceMode = PoseSourceMode.ANDROID_LOCAL
     private var source: PoseSource? = null
     private var machine = SquatStateMachine(detectorConfig, runtimeEnvironment.isEmulator)
     private var lastState: SquatState? = null
@@ -50,15 +66,21 @@ class SquatSessionManager(
     private val latenciesMs = ArrayDeque<Long>()
     private var delegate: PoseDelegate? = null
     private var debugThumbnailEnabled = false
-    private var lastTraceLogMs = Long.MIN_VALUE
     private var lastPerfLogMs = Long.MIN_VALUE
+    private var lastLoggedTransitionKey: String? = null
     private var lastLoggedRepSequence = 0
     private var lastLoggedRejectKey: String? = null
     private var lastLoggedResetKey: String? = null
 
     @Synchronized
-    fun attachPreview(view: SquatCameraContainer) {
+    fun attachPreview(view: SquatCameraContainer, mode: PoseSourceMode) {
+        if (previewView !== view && source != null) {
+            source?.close()
+            source = null
+        }
         previewView = view
+        sourceMode = mode
+        view.setHostPoseMode(mode == PoseSourceMode.HOST_DEMO)
         view.setDebugThumbnailEnabled(debugThumbnailEnabled)
         startSourceIfReady()
     }
@@ -158,6 +180,7 @@ class SquatSessionManager(
         if (source != null) return
         source =
             sourceFactory(
+                sourceMode,
                 view,
                 lifecycleOwner,
                 ::onDetectorReady,
@@ -269,7 +292,12 @@ class SquatSessionManager(
                         "detectorType" to "mediapipe",
                         "detectorVersion" to SquatDetectorConfig.VERSION,
                         "frameObservedElapsedMs" to
-                            (feature as? PoseFeatureResult.Valid)?.sample?.timestampMs,
+                            when (feature) {
+                                is PoseFeatureResult.Valid -> feature.sample.timestampMs
+                                is PoseFeatureResult.CalibrationCandidate ->
+                                    feature.sample.timestampMs
+                                is PoseFeatureResult.Invalid -> null
+                            },
                         "uiEmittedElapsedMs" to elapsedMs(),
                         "analysisLatencyMs" to latencyMs,
                     ),
@@ -333,6 +361,22 @@ class SquatSessionManager(
                 "effectiveValidPoseFps" to (diagnostics?.effectiveValidPoseFps ?: 0.0),
                 "calibrationSampleCount" to (diagnostics?.calibrationSampleCount ?: 0),
                 "calibrationStatus" to (diagnostics?.calibrationStatus ?: "waitingForStanding"),
+                "strongStandingCandidateCount" to
+                    (diagnostics?.strongStandingCandidateCount ?: 0),
+                "provisionalStandingAngle" to diagnostics?.provisionalStandingAngleDeg,
+                "calibrationMedianAngle" to diagnostics?.calibrationMedianAngleDeg,
+                "calibrationAngleRange" to diagnostics?.calibrationAngleRangeDeg,
+                "calibrationWindowAgeMs" to diagnostics?.calibrationWindowAgeMs,
+                "calibrationTimeoutMs" to
+                    (diagnostics?.calibrationTimeoutMs ?:
+                        detectorConfig.calibrationTimeoutMs(runtimeEnvironment.isEmulator)),
+                "calibrationQualityPath" to diagnostics?.calibrationQualityPath?.wireValue,
+                "lastCalibrationRejectReason" to diagnostics?.lastCalibrationRejectReason,
+                "candidateBufferPreserved" to
+                    (diagnostics?.candidateBufferPreserved ?: false),
+                "autoCalibratedOnDescent" to
+                    (diagnostics?.autoCalibratedOnDescent ?: false),
+                "standingBaselineSource" to diagnostics?.standingBaselineSource,
                 "bottomReached" to (diagnostics?.bottomReached ?: false),
                 "standingConfirmationDurationMs" to
                     (diagnostics?.standingConfirmationDurationMs ?: 0),
@@ -465,40 +509,74 @@ class SquatSessionManager(
 
     private fun logSquatFrame(update: SquatDetectorUpdate, metrics: PosePipelineMetrics) {
         if (!isDebugBuild()) return
-        val now = elapsedMs()
-        val intervalMs = 1_000L / detectorConfig.debugTraceFps
-        if (lastTraceLogMs == Long.MIN_VALUE || now - lastTraceLogMs >= intervalMs) {
-            lastTraceLogMs = now
+        val diagnostics = update.diagnostics
+        val transitionKey =
+            diagnostics.lastTransitionReason?.let {
+                "${update.state.wireValue}:$it:${update.repSequence}"
+            }
+        val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }
+        val rejectKey = reject?.let { "$it:${diagnostics.rejectedAttempts}" }
+        val reset = diagnostics.lastResetReason
+        val resetKey = reset?.let { "$it:${diagnostics.rejectedAttempts}" }
+        val shouldTrace =
+            update.repCompleted ||
+                (transitionKey != null && transitionKey != lastLoggedTransitionKey) ||
+                (rejectKey != null && rejectKey != lastLoggedRejectKey) ||
+                (resetKey != null && resetKey != lastLoggedResetKey)
+        if (shouldTrace) {
+            lastLoggedTransitionKey = transitionKey
             Log.d(SQUAT_TRACE_TAG, SquatDebugTraceFormatter.trace(update, metrics))
         }
         if (update.repCompleted && update.repSequence > lastLoggedRepSequence) {
             lastLoggedRepSequence = update.repSequence
-            Log.i(SQUAT_REP_TAG, "REP_ACCEPTED sequence=${update.repSequence}")
+            val diagnostics = update.diagnostics
+            val standingAngle = diagnostics.calibratedStandingKneeAngleDeg ?: -1.0
+            val minimumKneeAngle = diagnostics.minimumAttemptKneeAngleDeg ?: -1.0
+            val currentKneeAngle = diagnostics.kneeAngleDeg ?: -1.0
+            val maximumHipDrop = diagnostics.maximumAttemptHipDropRatio ?: -1.0
+            val currentHipDrop = diagnostics.normalizedHipDrop ?: -1.0
+            val hipRecoveryRatio =
+                if (maximumHipDrop.isFinite() && abs(maximumHipDrop) > 1e-6 &&
+                    currentHipDrop.isFinite()
+                ) {
+                    (maximumHipDrop - currentHipDrop) / abs(maximumHipDrop)
+                } else {
+                    -1.0
+                }
+            Log.i(
+                SQUAT_REP_TAG,
+                String.format(
+                    Locale.US,
+                    "REP_ACCEPTED sequence=%d standingAngle=%.1f minimumKneeAngle=%.1f " +
+                        "currentKneeAngle=%.1f kneeRecovery=%.1f maximumHipDrop=%.3f " +
+                        "currentHipDrop=%.3f hipRecoveryRatio=%.3f evidence=%s durationMs=%d",
+                    update.repSequence,
+                    standingAngle,
+                    minimumKneeAngle,
+                    currentKneeAngle,
+                    currentKneeAngle - minimumKneeAngle,
+                    maximumHipDrop,
+                    currentHipDrop,
+                    hipRecoveryRatio,
+                    diagnostics.bottomEvidencePath?.wireValue ?: "NONE",
+                    diagnostics.currentRepDurationMs ?: -1,
+                ),
+            )
         }
-        val diagnostics = update.diagnostics
-        val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }
-        val rejectKey = reject?.let { "$it:${diagnostics.rejectedAttempts}" }
         if (rejectKey != null && rejectKey != lastLoggedRejectKey) {
             lastLoggedRejectKey = rejectKey
             Log.i(SQUAT_REP_TAG, reject)
         }
-        val reset = diagnostics.lastResetReason
-        val resetKey = reset?.let { "$it:${diagnostics.rejectedAttempts}" }
         if (resetKey != null && resetKey != lastLoggedResetKey) {
             lastLoggedResetKey = resetKey
             Log.i(SQUAT_REP_TAG, reset)
-        }
-        if ((diagnostics.frameDtMs ?: 0) > detectorConfig.velocityResetGapMs &&
-            diagnostics.attemptStartTimestampMs != null
-        ) {
-            Log.i(SQUAT_REP_TAG, "ATTEMPT_PRESERVED_FRAME_GAP")
         }
     }
 
     private fun logPosePerformance(metrics: PosePipelineMetrics) {
         if (!isDebugBuild()) return
         val now = elapsedMs()
-        val intervalMs = 1_000L / detectorConfig.debugTraceFps
+        val intervalMs = POSE_PERF_INTERVAL_MS
         if (lastPerfLogMs != Long.MIN_VALUE && now - lastPerfLogMs < intervalMs) return
         lastPerfLogMs = now
         Log.d(POSE_PERF_TAG, SquatDebugTraceFormatter.performance(metrics))
@@ -509,8 +587,8 @@ class SquatSessionManager(
             ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     private fun resetDebugLogState() {
-        lastTraceLogMs = Long.MIN_VALUE
         lastPerfLogMs = Long.MIN_VALUE
+        lastLoggedTransitionKey = null
         lastLoggedRepSequence = 0
         lastLoggedRejectKey = null
         lastLoggedResetKey = null
@@ -533,6 +611,7 @@ class SquatSessionManager(
     companion object {
         private const val MAX_LATENCY_SAMPLES = 300
         private const val MAX_DIAGNOSTIC_EMIT_SAMPLES = 8
+        private const val POSE_PERF_INTERVAL_MS = 5_000L
         private const val SQUAT_TRACE_TAG = "SquatTrace"
         private const val SQUAT_REP_TAG = "SquatRep"
         private const val POSE_PERF_TAG = "PosePerf"

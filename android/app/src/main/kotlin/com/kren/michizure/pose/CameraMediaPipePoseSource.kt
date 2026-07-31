@@ -115,6 +115,7 @@ class CameraMediaPipePoseSource(
                     when (selectedDelegate) {
                         PoseDelegate.GPU -> Delegate.GPU
                         PoseDelegate.CPU -> Delegate.CPU
+                        PoseDelegate.HOST -> error("HOST does not initialize MediaPipe on Android")
                     },
                 )
                 .build()
@@ -436,6 +437,20 @@ class CameraMediaPipePoseSource(
                             quality = filteredFeature.quality,
                         )
                     }
+                    is PoseFeatureResult.CalibrationCandidate -> {
+                        val rawAngle =
+                            extractor.kneeAngleForSide(
+                                pose,
+                                filteredFeature.sample.selectedSide,
+                            )
+                        filteredFeature.copy(
+                            sample =
+                                filteredFeature.sample.copy(
+                                    rawKneeAngleDeg =
+                                        rawAngle ?: filteredFeature.sample.kneeAngleDeg,
+                                ),
+                        )
+                    }
                     is PoseFeatureResult.Invalid -> filteredFeature
                 }
             val nextPipelineStatus =
@@ -460,8 +475,11 @@ class CameraMediaPipePoseSource(
                     ),
                 )
             val selectedSide =
-                (feature as? PoseFeatureResult.Valid)?.sample?.selectedSide
-                    ?: feature.quality.selectedSide
+                when (feature) {
+                    is PoseFeatureResult.Valid -> feature.sample.selectedSide
+                    is PoseFeatureResult.CalibrationCandidate -> feature.sample.selectedSide
+                    is PoseFeatureResult.Invalid -> feature.quality.selectedSide
+                }
             val guideSide =
                 when (selectedSide) {
                     PoseSide.LEFT -> filteredPose.left
@@ -487,7 +505,9 @@ class CameraMediaPipePoseSource(
             stats.recordResult(
                 sample = completed,
                 poseDetected = pose.poseDetected,
-                validPose = feature is PoseFeatureResult.Valid,
+                validPose =
+                    feature is PoseFeatureResult.Valid ||
+                        feature is PoseFeatureResult.CalibrationCandidate,
             )
             publishStatus(nextPipelineStatus)
         } finally {

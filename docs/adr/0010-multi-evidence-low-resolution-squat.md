@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-01
 - Amends: [ADR 0009](0009-calibrated-relative-squat-depth.md) のBOTTOM同時条件、確認時間、立位復帰、pose-loss境界
+- Amended by: [ADR 0011](0011-low-fps-provisional-calibration.md) のCalibration fallbackと立位復帰
 
 ## Context
 
