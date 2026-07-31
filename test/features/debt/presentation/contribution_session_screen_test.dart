@@ -30,7 +30,9 @@ void main() {
 
     expect(find.text('返済中の負債: debt-1'), findsOneWidget);
     expect(find.text('残り 10 回'), findsOneWidget);
-    expect(find.textContaining('カメラ映像は端末内だけ'), findsOneWidget);
+    expect(find.textContaining('デモPC'), findsNothing);
+    expect(find.textContaining('Host Pose'), findsNothing);
+    expect(find.textContaining('FPS'), findsNothing);
     expect(find.byKey(const Key('request-camera-permission')), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(find.byType(TextFormField), findsNothing);
@@ -145,7 +147,7 @@ void main() {
       ),
     );
 
-    expect(find.text('次の動作: 立った姿勢を調整中'), findsOneWidget);
+    expect(find.text('次の動作: 姿勢を確認しています'), findsOneWidget);
     expect(find.text('足首を認識できません。'), findsOneWidget);
     expect(find.text('端末で検出 1 回'), findsOneWidget);
     expect(find.text('送信待ち 1 回'), findsOneWidget);
@@ -195,7 +197,7 @@ void main() {
       final originalAndroidView = tester.widget<AndroidView>(nativeFinder);
 
       await tester.pumpWidget(buildView(SquatDetectorState.standing));
-      expect(find.text('次の動作: 準備OK'), findsOneWidget);
+      expect(find.text('次の動作: スクワットを開始してください'), findsOneWidget);
       expect(
         identical(
           originalAndroidView,
@@ -206,7 +208,7 @@ void main() {
     },
   );
 
-  testWidgets('shows lower-body diagnostics only in debug builds', (
+  testWidgets('hides developer diagnostics while keeping user guidance', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -255,11 +257,19 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(const Key('squat-debug-diagnostics-panel')));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byKey(const Key('squat-debug-diagnostics')), findsOneWidget);
-    expect(find.textContaining('Selected side: left'), findsOneWidget);
-    expect(find.textContaining('Latest reject: shallowSquat'), findsOneWidget);
+    expect(
+      find.byKey(const Key('squat-debug-diagnostics-panel')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('squat-debug-diagnostics')), findsNothing);
+    expect(find.textContaining('Selected side'), findsNothing);
+    expect(find.textContaining('Latest reject'), findsNothing);
+    expect(find.textContaining('Host Pose'), findsNothing);
+    expect(find.textContaining('Video FPS'), findsNothing);
+    expect(find.textContaining('Pose FPS'), findsNothing);
+    expect(find.textContaining('デモPC'), findsNothing);
+    expect(find.text('残り 10 回'), findsOneWidget);
+    expect(find.text('次の動作: しゃがんでいます'), findsOneWidget);
     expect(find.textContaining('胸の下から足首まで映してください'), findsOneWidget);
   });
 

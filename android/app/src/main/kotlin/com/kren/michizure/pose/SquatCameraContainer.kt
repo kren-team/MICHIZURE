@@ -324,7 +324,6 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
                 top + dp(30f),
                 textPaint,
             )
-            drawHostMetrics(canvas, inset, top)
             drawDebugThumbnail(canvas, inset, top)
             return
         }
@@ -346,42 +345,16 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             }
         }
         canvas.drawText(
-            "${statusLabel()} / ${current.state.wireValue}",
+            statusLabel(),
             inset,
             max(top + dp(30f), dp(24f)),
             textPaint,
         )
-        drawHostMetrics(canvas, inset, top)
         drawDebugThumbnail(canvas, inset, top)
     }
 
-    private fun drawHostMetrics(
-        canvas: Canvas,
-        inset: Float,
-        top: Float,
-    ) {
-        if (!hostPoseMode) return
-        canvas.drawText(
-            "Video FPS: ${String.format(java.util.Locale.US, "%.1f", hostVideoFps)}",
-            inset,
-            max(top + dp(50f), dp(44f)),
-            textPaint,
-        )
-        canvas.drawText(
-            "Pose FPS: ${String.format(java.util.Locale.US, "%.1f", hostResultFps)}",
-            inset,
-            max(top + dp(70f), dp(64f)),
-            textPaint,
-        )
-    }
-
     private fun statusLabel(): String {
-        if (!hostPoseMode) return pipelineStatus.displayLabel
-        return when (pipelineStatus) {
-            PosePipelineStatus.INITIALIZING -> "Host Pose: Connecting"
-            PosePipelineStatus.FAILED -> "Host Pose: Disconnected"
-            else -> "Host Pose: Ready"
-        }
+        return pipelineStatus.displayLabel
     }
 
     private fun drawDebugThumbnail(
@@ -420,13 +393,13 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
 private val PosePipelineStatus.displayLabel: String
     get() =
         when (this) {
-            PosePipelineStatus.INITIALIZING -> "初期化中"
-            PosePipelineStatus.AWAITING_RESULT -> "callback待機"
-            PosePipelineStatus.NO_POSE -> "callbackあり・人物なし"
-            PosePipelineStatus.HIP_UNAVAILABLE -> "腰なし"
-            PosePipelineStatus.KNEE_UNAVAILABLE -> "膝なし"
-            PosePipelineStatus.ANKLE_UNAVAILABLE -> "足首なし"
-            PosePipelineStatus.CONFIDENCE_INSUFFICIENT -> "信頼度不足"
-            PosePipelineStatus.VALID -> "検出"
-            PosePipelineStatus.FAILED -> "推論エラー"
+            PosePipelineStatus.INITIALIZING -> "姿勢を確認しています"
+            PosePipelineStatus.AWAITING_RESULT -> "姿勢を確認しています"
+            PosePipelineStatus.NO_POSE -> "全身が映る位置に立ってください"
+            PosePipelineStatus.HIP_UNAVAILABLE -> "腰まで映してください"
+            PosePipelineStatus.KNEE_UNAVAILABLE -> "膝まで映してください"
+            PosePipelineStatus.ANKLE_UNAVAILABLE -> "足首まで映してください"
+            PosePipelineStatus.CONFIDENCE_INSUFFICIENT -> "明るい場所で全身を映してください"
+            PosePipelineStatus.VALID -> "準備ができました"
+            PosePipelineStatus.FAILED -> "姿勢を確認できません"
         }
