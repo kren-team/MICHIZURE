@@ -20,6 +20,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -225,12 +226,17 @@ class SquatNativeLifecycleTest {
             ApplicationProvider.getApplicationContext<android.content.Context>()
         val owner = TestLifecycleOwner()
         val diagnosticsDelivered = CountDownLatch(1)
-        val events = mutableListOf<Map<String, Any?>>()
+        val events = CopyOnWriteArrayList<Map<String, Any?>>()
+        lateinit var reportValidStatus: () -> Unit
         lateinit var manager: SquatSessionManager
 
         SquatEventBus.setListener { event ->
             events += event
-            if (event["type"] == "diagnostics" && event["selectedSide"] == "left") {
+            if (
+                event["type"] == "diagnostics" &&
+                    event["selectedSide"] == "left" &&
+                    event["poseDetected"] == true
+            ) {
                 diagnosticsDelivered.countDown()
             }
         }
@@ -242,15 +248,17 @@ class SquatNativeLifecycleTest {
                         object : PoseSource {
                             override fun start() {
                                 onReady(PoseDelegate.CPU)
-                                onStatus(
-                                    PosePipelineStatusSnapshot(
-                                        status = PosePipelineStatus.VALID,
-                                        metrics =
-                                            PosePipelineMetrics(
-                                                activeDelegate = PoseDelegate.CPU,
-                                            ),
-                                    ),
-                                )
+                                reportValidStatus = {
+                                    onStatus(
+                                        PosePipelineStatusSnapshot(
+                                            status = PosePipelineStatus.VALID,
+                                            metrics =
+                                                PosePipelineMetrics(
+                                                    activeDelegate = PoseDelegate.CPU,
+                                                ),
+                                        ),
+                                    )
+                                }
                                 onFrame(
                                     PoseFrameDelivery(
                                         feature =
@@ -299,10 +307,14 @@ class SquatNativeLifecycleTest {
                 )
             }
 
+            Thread.sleep(250)
+            reportValidStatus()
             assertTrue(diagnosticsDelivered.await(2, TimeUnit.SECONDS))
             val diagnostics =
                 events.first {
-                    it["type"] == "diagnostics" && it["selectedSide"] == "left"
+                    it["type"] == "diagnostics" &&
+                        it["selectedSide"] == "left" &&
+                        it["poseDetected"] == true
                 }
             assertEquals(true, diagnostics["poseDetected"])
             assertEquals("left", diagnostics["selectedSide"])
