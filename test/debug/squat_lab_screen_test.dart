@@ -106,12 +106,16 @@ void main() {
         acceptedReps: 0,
         rejectedAttempts: 0,
         calibratedStandingKneeAngle: 168,
-        standingThresholdDeg: 156,
+        standingThresholdDeg: 150,
         descendingThresholdDeg: 148,
-        bottomThresholdDeg: 133,
-        returnStandingThresholdDeg: 153,
+        bottomThresholdDeg: 140,
+        returnStandingThresholdDeg: 146,
         minimumAttemptKneeAngle: 132,
         maximumAttemptHipDrop: 0.11,
+        kneeBendDelta: 36,
+        downwardMovementObserved: true,
+        bottomEvidenceScore: 5,
+        bottomEvidencePath: SquatBottomEvidencePath.kneeOnly,
         baselineHipY: 0.25,
         legScale: 0.5,
         baselineJitter: 0.01,
@@ -130,12 +134,20 @@ void main() {
     );
     expect(
       find.textContaining(
-        'Threshold standing / descent / bottom / return: 156.00 / 148.00 / 133.00 / 153.00',
+        'Threshold standing / descent / bottom / return: 150.00 / 148.00 / 140.00 / 146.00',
       ),
       findsOneWidget,
     );
     expect(
       find.textContaining('Attempt min knee / max hip drop: 132.00 / 0.110'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Knee bend / movement down-up: 36.00 / true-false'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Bottom evidence: 5 / KNEE_ONLY'),
       findsOneWidget,
     );
     expect(

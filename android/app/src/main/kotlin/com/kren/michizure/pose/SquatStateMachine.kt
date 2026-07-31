@@ -6,12 +6,9 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Timestamp-driven squat detector whose depth thresholds are derived from the
- * calibrated standing knee angle.
- *
- * A delayed callback invalidates velocity only. It does not erase calibration,
- * the current phase, or [bottomReached]. Only sustained loss of a usable pose
- * resets the active attempt.
+ * Timestamp-driven detector that accumulates knee, hip, and reversal evidence
+ * over an attempt. A delayed valid frame invalidates velocity only; a sustained
+ * pose loss is the only frame-timing condition that discards the attempt.
  */
 class SquatStateMachine(
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
@@ -40,14 +37,16 @@ class SquatStateMachine(
     private var baselineJitter = 0.0
 
     private var cycleStartedMs: Long? = null
-    private var stateEnteredMs: Long? = null
-    private var descendingCandidateSinceMs: Long? = null
-    private var bottomCandidateSinceMs: Long? = null
-    private var ascendingCandidateSinceMs: Long? = null
     private var standingCandidateSinceMs: Long? = null
     private var lastRepAtMs = Long.MIN_VALUE
     private var minimumKnee = 180.0
     private var maximumHipDrop = 0.0
+    private var lastAttemptKnee: Double? = null
+    private var lastAttemptHipDrop: Double? = null
+    private var downwardMovementObserved = false
+    private var upwardMovementObserved = false
+    private var bottomEvidenceScore = 0
+    private var bottomEvidencePath: BottomEvidencePath? = null
     private var bottomReached = false
 
     private var previousState: SquatState? = null
@@ -148,7 +147,7 @@ class SquatStateMachine(
         recordValidPoseTime(sample.timestampMs)
 
         val hipDrop = normalizedHipDrop(sample)
-        if (cycleStartedMs != null) recordAttempt(sample, hipDrop ?: 0.0)
+        if (cycleStartedMs != null) observeAttempt(sample, hipDrop ?: 0.0)
 
         val detectorUpdate =
             when (state) {
@@ -156,7 +155,7 @@ class SquatStateMachine(
                 SquatState.STANDING -> fromStanding(sample)
                 SquatState.DESCENDING -> fromDescending(sample)
                 SquatState.BOTTOM -> fromBottom(sample, kneeVelocity, hipVelocity)
-                SquatState.ASCENDING -> fromAscending(sample)
+                SquatState.ASCENDING -> fromAscending(sample, kneeVelocity, hipVelocity)
             }
         lastDiagnostics =
             diagnostics(
@@ -220,55 +219,39 @@ class SquatStateMachine(
             return update()
         }
         val hipDrop = normalizedHipDrop(sample) ?: 0.0
-        if (isBottomCandidate(sample, hipDrop)) {
-            beginCycleIfNeeded(sample, hipDrop)
-            descendingCandidateSinceMs = null
-            return confirmBottom(sample, directFromStanding = true)
-        }
-
-        bottomCandidateSinceMs = null
-        val thresholds = thresholds()
-        val descendingByAngle = sample.kneeAngleDeg < thresholds.descendingStartAngle
+        val descendingByAngle = sample.kneeAngleDeg < thresholds().descendingStartAngle
         val descendingByHipDrop = hipDrop > config.descendingHipDropRatio
-        if (!descendingByAngle && !descendingByHipDrop) {
-            descendingCandidateSinceMs = null
-            if (cycleStartedMs != null && !bottomReached) clearCycle(clearAttemptMetrics = false)
+        val minimumMovement =
+            standingKneeAngle - sample.kneeAngleDeg >=
+                config.hipReversalMinimumKneeBendDeltaDeg ||
+                hipDrop >= config.mediumHipDropRatio
+        if (!descendingByAngle && !descendingByHipDrop && !minimumMovement) {
             latestRejectReason = WAITING_FOR_DESCENT
             return update()
         }
 
-        beginCycleIfNeeded(sample, hipDrop)
-        latestRejectReason =
-            if (descendingByAngle) DESCENDING_BY_ANGLE else DESCENDING_BY_HIP_DROP
-        val candidate = descendingCandidateSinceMs ?: sample.timestampMs.also {
-            descendingCandidateSinceMs = it
+        beginCycle(sample, hipDrop)
+        currentBottomEvidence().path?.let { path ->
+            return confirmBottom(sample, path)
         }
-        if (sample.timestampMs - candidate >= config.descendingStableMs) {
-            transition(SquatState.DESCENDING, sample.timestampMs, latestRejectReason!!)
-        }
+        transition(
+            SquatState.DESCENDING,
+            sample.timestampMs,
+            if (descendingByAngle) DESCENDING_BY_ANGLE else DESCENDING_BY_HIP_DROP,
+        )
+        latestRejectReason = REJECT_NO_BOTTOM_EVIDENCE
         return update()
     }
 
     private fun fromDescending(sample: PoseFeatureSample): SquatDetectorUpdate {
         if (cycleTimedOut(sample.timestampMs)) return timeout()
-        val hipDrop = normalizedHipDrop(sample) ?: 0.0
-        if (isBottomCandidate(sample, hipDrop)) return confirmBottom(sample)
-
-        bottomCandidateSinceMs = null
-        if (isStanding(sample)) {
-            val candidate = standingCandidateSinceMs ?: sample.timestampMs.also {
-                standingCandidateSinceMs = it
-            }
-            latestRejectReason = REJECT_SHALLOW
-            if (sample.timestampMs - candidate >= config.standingConfirmationMs) {
-                rejectActiveCycle(REJECT_SHALLOW)
-                transition(SquatState.STANDING, sample.timestampMs, REJECT_SHALLOW)
-                clearCycle(clearAttemptMetrics = false)
-            }
-            return update()
+        currentBottomEvidence().path?.let { path ->
+            return confirmBottom(sample, path)
         }
+        if (isReturnStanding(sample)) return confirmRejectedReturn(sample)
+
         standingCandidateSinceMs = null
-        latestRejectReason = missingBottomReason(sample, hipDrop)
+        latestRejectReason = REJECT_NO_BOTTOM_EVIDENCE
         return update(PoseQualityWarning.SQUAT_DEEPER)
     }
 
@@ -281,76 +264,71 @@ class SquatStateMachine(
         if (isReturnStanding(sample)) return confirmReturnStanding(sample)
         standingCandidateSinceMs = null
 
-        val hipDrop = normalizedHipDrop(sample) ?: 0.0
-        if (isBottomCandidate(sample, hipDrop)) {
-            ascendingCandidateSinceMs = null
-            latestRejectReason = BOTTOM_CONFIRMED
-            return update(if (isVeryDeep(sample, hipDrop)) PoseQualityWarning.TOO_DEEP else null)
-        }
-
         val movingUp =
-            (kneeVelocity != null && kneeVelocity > 0.0) ||
+            upwardMovementObserved ||
+                (kneeVelocity != null && kneeVelocity > 0.0) ||
                 (hipVelocity != null && hipVelocity < 0.0)
-        val velocityUnavailable = kneeVelocity == null && hipVelocity == null
-        val positionExitedBottom =
-            sample.kneeAngleDeg > thresholds().bottomAngle ||
-                hipDrop < config.bottomHipDropRatio
-        if (!movingUp && !(velocityUnavailable && positionExitedBottom)) {
-            ascendingCandidateSinceMs = null
-            latestRejectReason = WAITING_FOR_ASCENT
-            return update()
-        }
-
-        val candidate = ascendingCandidateSinceMs ?: sample.timestampMs.also {
-            ascendingCandidateSinceMs = it
-        }
-        if (sample.timestampMs - candidate >= config.ascendingStableMs) {
+        if (movingUp) {
             transition(SquatState.ASCENDING, sample.timestampMs, ASCENDING_CONFIRMED)
+            latestRejectReason = WAITING_FOR_RETURN
+        } else {
+            latestRejectReason = bottomEvidencePath?.transitionReason ?: BOTTOM_CONFIRMED
         }
-        return update()
+        return update(currentDepthWarning(sample))
     }
 
-    private fun fromAscending(sample: PoseFeatureSample): SquatDetectorUpdate {
+    private fun fromAscending(
+        sample: PoseFeatureSample,
+        kneeVelocity: Double?,
+        hipVelocity: Double?,
+    ): SquatDetectorUpdate {
         if (cycleTimedOut(sample.timestampMs)) return timeout()
-        val hipDrop = normalizedHipDrop(sample) ?: 0.0
-        if (isBottomCandidate(sample, hipDrop)) {
-            transition(SquatState.BOTTOM, sample.timestampMs, RETURNED_TO_BOTTOM)
-            return update(if (isVeryDeep(sample, hipDrop)) PoseQualityWarning.TOO_DEEP else null)
-        }
         if (isReturnStanding(sample)) return confirmReturnStanding(sample)
 
+        val movingDown =
+            (kneeVelocity != null && kneeVelocity < 0.0) ||
+                (hipVelocity != null && hipVelocity > 0.0)
+        if (movingDown && currentBottomEvidence().path != null) {
+            transition(SquatState.BOTTOM, sample.timestampMs, RETURNED_TO_BOTTOM)
+        }
         standingCandidateSinceMs = null
-        latestRejectReason = missingReturnReason(sample, hipDrop)
-        return update()
+        latestRejectReason = WAITING_FOR_RETURN
+        return update(currentDepthWarning(sample))
     }
 
     private fun confirmBottom(
         sample: PoseFeatureSample,
-        directFromStanding: Boolean = false,
+        path: BottomEvidencePath,
     ): SquatDetectorUpdate {
-        val hipDrop = normalizedHipDrop(sample) ?: 0.0
-        val candidate = bottomCandidateSinceMs ?: sample.timestampMs.also {
-            bottomCandidateSinceMs = it
+        bottomReached = true
+        bottomEvidencePath = path
+        transition(SquatState.BOTTOM, sample.timestampMs, path.transitionReason)
+        latestRejectReason = null
+        return update(currentDepthWarning(sample))
+    }
+
+    private fun confirmRejectedReturn(sample: PoseFeatureSample): SquatDetectorUpdate {
+        val candidate = standingCandidateSinceMs ?: sample.timestampMs.also {
+            standingCandidateSinceMs = it
         }
-        latestRejectReason = BOTTOM_CONFIRMING
-        if (sample.timestampMs - candidate >= config.bottomConfirmationMs) {
-            bottomReached = true
-            transition(
-                SquatState.BOTTOM,
-                sample.timestampMs,
-                if (directFromStanding) BOTTOM_CONFIRMED_DIRECT else BOTTOM_CONFIRMED,
-            )
-            latestRejectReason = null
+        val strongSingleSample = isStrongReturnStanding(sample) && upwardMovementObserved
+        if (!strongSingleSample && sample.timestampMs - candidate < config.returnStandingConfirmationMs) {
+            latestRejectReason = REJECT_NO_BOTTOM_EVIDENCE
+            return update()
         }
-        return update(if (isVeryDeep(sample, hipDrop)) PoseQualityWarning.TOO_DEEP else null)
+        rejectActiveCycle(REJECT_SHALLOW)
+        transition(SquatState.STANDING, sample.timestampMs, REJECT_SHALLOW)
+        clearCycle(clearAttemptMetrics = false)
+        return update()
     }
 
     private fun confirmReturnStanding(sample: PoseFeatureSample): SquatDetectorUpdate {
         val candidate = standingCandidateSinceMs ?: sample.timestampMs.also {
             standingCandidateSinceMs = it
         }
-        if (sample.timestampMs - candidate < config.returnStandingConfirmationMs) {
-            latestRejectReason = RETURN_STANDING_CONFIRMING
+        val strongSingleSample = isStrongReturnStanding(sample) && upwardMovementObserved
+        if (!strongSingleSample && sample.timestampMs - candidate < config.returnStandingConfirmationMs) {
+            latestRejectReason = WAITING_FOR_RETURN
             return update()
         }
 
@@ -362,7 +340,7 @@ class SquatStateMachine(
         if (!validRep) {
             val reason =
                 when {
-                    !bottomReached -> REJECT_SHALLOW
+                    !bottomReached -> REJECT_NO_BOTTOM_EVIDENCE
                     !durationValid -> REJECT_DURATION
                     else -> REJECT_DUPLICATE
                 }
@@ -388,72 +366,80 @@ class SquatStateMachine(
 
     private fun thresholds(): SquatCalibrationThresholds = config.thresholdsFor(standingKneeAngle)
 
-    private fun isBottomCandidate(sample: PoseFeatureSample, hipDrop: Double): Boolean {
-        val bottomAngle = thresholds().bottomAngle
-        if (sample.kneeAngleDeg > bottomAngle) return false
-        val requiredHipDrop =
-            if (sample.kneeAngleDeg <= bottomAngle - config.deepBottomAngleMarginDeg) {
-                config.deepBottomMinimumHipDropRatio
-            } else {
-                config.bottomHipDropRatio
-            }
-        return hipDrop >= requiredHipDrop
+    private fun beginCycle(sample: PoseFeatureSample, hipDrop: Double) {
+        cycleStartedMs = sample.timestampMs
+        minimumKnee = sample.kneeAngleDeg
+        maximumHipDrop = hipDrop
+        lastAttemptKnee = sample.kneeAngleDeg
+        lastAttemptHipDrop = hipDrop
+        downwardMovementObserved =
+            standingKneeAngle - sample.kneeAngleDeg >= config.initialDownwardKneeDeltaDeg ||
+            hipDrop >= config.initialDownwardHipDropRatio
+        upwardMovementObserved = false
+        bottomReached = false
+        bottomEvidencePath = null
+        bottomEvidenceScore = currentBottomEvidence().score
     }
 
-    private fun missingBottomReason(sample: PoseFeatureSample, hipDrop: Double): String {
-        val bottomAngle = thresholds().bottomAngle
-        if (sample.kneeAngleDeg > bottomAngle) return BOTTOM_ANGLE_NOT_REACHED
-        val requiredHipDrop =
-            if (sample.kneeAngleDeg <= bottomAngle - config.deepBottomAngleMarginDeg) {
-                config.deepBottomMinimumHipDropRatio
-            } else {
-                config.bottomHipDropRatio
+    private fun observeAttempt(sample: PoseFeatureSample, hipDrop: Double) {
+        val priorKnee = lastAttemptKnee
+        val priorHipDrop = lastAttemptHipDrop
+        if (priorKnee != null && priorHipDrop != null) {
+            if (sample.kneeAngleDeg <= priorKnee - config.movementKneeDeltaDeg ||
+                hipDrop >= priorHipDrop + config.movementHipDropDeltaRatio
+            ) {
+                downwardMovementObserved = true
             }
-        return if (hipDrop < requiredHipDrop) {
-            BOTTOM_HIP_DROP_NOT_REACHED
+            if (downwardMovementObserved &&
+                (sample.kneeAngleDeg >= minimumKnee + config.movementKneeDeltaDeg ||
+                    hipDrop <= maximumHipDrop - config.movementHipDropDeltaRatio)
+            ) {
+                upwardMovementObserved = true
+            }
+        }
+        minimumKnee = min(minimumKnee, sample.kneeAngleDeg)
+        maximumHipDrop = max(maximumHipDrop, hipDrop)
+        lastAttemptKnee = sample.kneeAngleDeg
+        lastAttemptHipDrop = hipDrop
+        val evidence = currentBottomEvidence()
+        bottomEvidenceScore = evidence.score
+        if (bottomEvidencePath == null) bottomEvidencePath = evidence.path
+    }
+
+    private fun currentBottomEvidence(): BottomEvidence =
+        config.bottomEvidence(
+            calibratedStandingAngle = standingKneeAngle,
+            minimumKneeAngle = minimumKnee,
+            maximumHipDrop = maximumHipDrop,
+            downwardMovementObserved = downwardMovementObserved,
+            upwardMovementObserved = upwardMovementObserved,
+        ).also { bottomEvidenceScore = it.score }
+
+    private fun currentDepthWarning(sample: PoseFeatureSample): PoseQualityWarning? {
+        val hipDrop = normalizedHipDrop(sample) ?: 0.0
+        return if (sample.kneeAngleDeg <= config.tooDeepKneeDeg &&
+            hipDrop >= config.tooDeepHipDropRatio
+        ) {
+            PoseQualityWarning.TOO_DEEP
         } else {
-            BOTTOM_CONFIRMING
+            null
         }
     }
 
-    private fun missingReturnReason(sample: PoseFeatureSample, hipDrop: Double): String =
-        if (sample.kneeAngleDeg < thresholds().returnStandingAngle) {
-            RETURN_ANGLE_NOT_REACHED
-        } else if (hipDrop > config.returnStandingMaximumHipDropRatio) {
-            RETURN_HIP_DROP_NOT_REACHED
-        } else {
-            RETURN_STANDING_CONFIRMING
-        }
+    private fun isStrongReturnStanding(sample: PoseFeatureSample): Boolean =
+        sample.kneeAngleDeg >= thresholds().returnStandingAngle
 
-    private fun isVeryDeep(sample: PoseFeatureSample, hipDrop: Double): Boolean =
-        sample.kneeAngleDeg <= config.tooDeepKneeDeg && hipDrop >= config.tooDeepHipDropRatio
-
-    private fun isReturnStanding(sample: PoseFeatureSample): Boolean =
-        sample.kneeAngleDeg >= thresholds().returnStandingAngle &&
-            (normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY) <=
-            config.returnStandingMaximumHipDropRatio
-
-    private fun isStanding(sample: PoseFeatureSample): Boolean =
-        sample.kneeAngleDeg >= thresholds().standingEnterAngle &&
-            (normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY) <=
-            config.standingMaximumHipDropRatio
+    private fun isReturnStanding(sample: PoseFeatureSample): Boolean {
+        val hipDrop = normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY
+        val thresholds = thresholds()
+        return sample.kneeAngleDeg >= thresholds.returnStandingAngle ||
+            (sample.kneeAngleDeg >= thresholds.returnStandingRelaxedAngle &&
+                hipDrop <= config.returnStandingMaximumHipDropRatio)
+    }
 
     private fun normalizedHipDrop(sample: PoseFeatureSample): Double? {
         if (standingLegLength <= EPSILON || state == SquatState.CALIBRATING) return null
         return (sample.hipY - standingHipY) / standingLegLength
-    }
-
-    private fun beginCycleIfNeeded(sample: PoseFeatureSample, hipDrop: Double) {
-        if (cycleStartedMs != null) return
-        cycleStartedMs = sample.timestampMs
-        minimumKnee = sample.kneeAngleDeg
-        maximumHipDrop = hipDrop
-        bottomReached = false
-    }
-
-    private fun recordAttempt(sample: PoseFeatureSample, hipDrop: Double) {
-        minimumKnee = min(minimumKnee, sample.kneeAngleDeg)
-        maximumHipDrop = max(maximumHipDrop, hipDrop)
     }
 
     private fun addCalibrationSample(sample: PoseFeatureSample) {
@@ -497,31 +483,8 @@ class SquatStateMachine(
     private fun transition(next: SquatState, timestampMs: Long, reason: String) {
         previousState = state
         state = next
-        stateEnteredMs = timestampMs
         lastTransitionReason = reason
-        when (next) {
-            SquatState.CALIBRATING -> Unit
-            SquatState.STANDING -> {
-                descendingCandidateSinceMs = null
-                bottomCandidateSinceMs = null
-                ascendingCandidateSinceMs = null
-                standingCandidateSinceMs = null
-            }
-            SquatState.DESCENDING -> {
-                descendingCandidateSinceMs = null
-                bottomCandidateSinceMs = null
-                standingCandidateSinceMs = null
-            }
-            SquatState.BOTTOM -> {
-                bottomCandidateSinceMs = null
-                ascendingCandidateSinceMs = null
-                standingCandidateSinceMs = null
-            }
-            SquatState.ASCENDING -> {
-                ascendingCandidateSinceMs = null
-                standingCandidateSinceMs = null
-            }
-        }
+        standingCandidateSinceMs = null
     }
 
     private fun rejectActiveCycle(reason: String) {
@@ -534,11 +497,10 @@ class SquatStateMachine(
     private fun resetToCalibrating(reason: String) {
         previousState = state
         state = SquatState.CALIBRATING
-        stateEnteredMs = null
         lastTransitionReason = RESET_TO_CALIBRATING
         lastResetReason = reason
         resetCalibration()
-        clearCycle(clearAttemptMetrics = false)
+        clearCycle(clearAttemptMetrics = true)
         previousKnee = null
         previousHipY = null
     }
@@ -554,14 +516,17 @@ class SquatStateMachine(
 
     private fun clearCycle(clearAttemptMetrics: Boolean) {
         cycleStartedMs = null
-        descendingCandidateSinceMs = null
-        bottomCandidateSinceMs = null
-        ascendingCandidateSinceMs = null
         standingCandidateSinceMs = null
+        lastAttemptKnee = null
+        lastAttemptHipDrop = null
         bottomReached = false
         if (clearAttemptMetrics) {
             minimumKnee = 180.0
             maximumHipDrop = 0.0
+            downwardMovementObserved = false
+            upwardMovementObserved = false
+            bottomEvidencePath = null
+            bottomEvidenceScore = 0
         }
     }
 
@@ -602,10 +567,9 @@ class SquatStateMachine(
             calibrationSampleCount = calibrationKnees.size,
             calibrationStatus = calibrationStatus,
             bottomReached = bottomReached,
-            standingConfirmationDurationMs = candidateDuration(standingCandidateSinceMs, timestampMs),
-            bottomConfirmationDurationMs = candidateDuration(bottomCandidateSinceMs, timestampMs),
-            returnStandingDurationMs =
-                if (bottomReached) candidateDuration(standingCandidateSinceMs, timestampMs) else 0,
+            standingConfirmationDurationMs = 0,
+            bottomConfirmationDurationMs = 0,
+            returnStandingDurationMs = candidateDuration(standingCandidateSinceMs, timestampMs),
             currentRepDurationMs = cycleStartedMs?.let { (timestampMs - it).coerceAtLeast(0) },
             calibratedStandingKneeAngleDeg = standingKneeAngle.takeIf { calibrated },
             standingThresholdDeg = thresholds.standingEnterAngle,
@@ -614,6 +578,15 @@ class SquatStateMachine(
             returnStandingThresholdDeg = thresholds.returnStandingAngle,
             minimumAttemptKneeAngleDeg = minimumKnee.takeIf { cycleStartedMs != null || it < 180.0 },
             maximumAttemptHipDropRatio = maximumHipDrop.takeIf { cycleStartedMs != null || it > 0.0 },
+            kneeBendDeltaDeg =
+                (standingKneeAngle - minimumKnee).coerceAtLeast(0.0)
+                    .takeIf { cycleStartedMs != null || minimumKnee < 180.0 },
+            downwardMovementObserved = downwardMovementObserved,
+            upwardMovementObserved = upwardMovementObserved,
+            bottomEvidenceScore = bottomEvidenceScore,
+            bottomEvidencePath = bottomEvidencePath,
+            attemptStartTimestampMs = cycleStartedMs,
+            lastValidPoseTimestampMs = lastValidTimestampMs,
             baselineHipY = standingHipY.takeIf { calibrated },
             legScale = standingLegLength.takeIf { calibrated },
             baselineJitter = baselineJitter.takeIf { calibrated },
@@ -674,6 +647,13 @@ class SquatStateMachine(
             returnStandingThresholdDeg = thresholds.returnStandingAngle,
             minimumAttemptKneeAngleDeg = null,
             maximumAttemptHipDropRatio = null,
+            kneeBendDeltaDeg = null,
+            downwardMovementObserved = false,
+            upwardMovementObserved = false,
+            bottomEvidenceScore = 0,
+            bottomEvidencePath = null,
+            attemptStartTimestampMs = null,
+            lastValidPoseTimestampMs = null,
             baselineHipY = null,
             legScale = null,
             baselineJitter = null,
@@ -704,22 +684,16 @@ class SquatStateMachine(
 
         const val WAITING_FOR_STANDING = "WAITING_FOR_STANDING"
         const val WAITING_FOR_DESCENT = "WAITING_FOR_DESCENT"
-        const val WAITING_FOR_ASCENT = "WAITING_FOR_ASCENT"
+        const val WAITING_FOR_RETURN = "WAITING_FOR_RETURN"
         const val WAITING_FOR_REFRACTORY = "WAITING_FOR_REFRACTORY"
         const val DESCENDING_BY_ANGLE = "DESCENDING_BY_ANGLE"
         const val DESCENDING_BY_HIP_DROP = "DESCENDING_BY_HIP_DROP"
-        const val BOTTOM_ANGLE_NOT_REACHED = "BOTTOM_ANGLE_NOT_REACHED"
-        const val BOTTOM_HIP_DROP_NOT_REACHED = "BOTTOM_HIP_DROP_NOT_REACHED"
-        const val BOTTOM_CONFIRMING = "BOTTOM_CONFIRMING"
         const val BOTTOM_CONFIRMED = "BOTTOM_CONFIRMED"
-        const val BOTTOM_CONFIRMED_DIRECT = "BOTTOM_CONFIRMED_DIRECT_FROM_STANDING"
         const val ASCENDING_CONFIRMED = "ASCENDING_CONFIRMED"
         const val RETURNED_TO_BOTTOM = "RETURNED_TO_BOTTOM"
-        const val RETURN_ANGLE_NOT_REACHED = "RETURN_ANGLE_NOT_REACHED"
-        const val RETURN_HIP_DROP_NOT_REACHED = "RETURN_HIP_DROP_NOT_REACHED"
-        const val RETURN_STANDING_CONFIRMING = "RETURN_STANDING_CONFIRMING"
         const val REP_ACCEPTED = "REP_ACCEPTED"
         const val REJECT_SHALLOW = "REJECT_SHALLOW"
+        const val REJECT_NO_BOTTOM_EVIDENCE = "REJECT_NO_BOTTOM_EVIDENCE"
         const val REJECT_DURATION = "REJECT_DURATION"
         const val REJECT_DUPLICATE = "REJECT_DUPLICATE"
         const val REJECT_DUPLICATE_TIMESTAMP = "REJECT_DUPLICATE_TIMESTAMP"

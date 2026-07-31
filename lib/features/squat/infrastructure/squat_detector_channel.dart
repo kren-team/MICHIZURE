@@ -208,6 +208,13 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'returnStandingThresholdDeg',
         'minimumAttemptKneeAngle',
         'maximumAttemptHipDrop',
+        'kneeBendDelta',
+        'downwardMovementObserved',
+        'upwardMovementObserved',
+        'bottomEvidenceScore',
+        'bottomEvidencePath',
+        'attemptStartTimestampMs',
+        'lastValidPoseTimestampMs',
         'baselineHipY',
         'legScale',
         'baselineJitter',
@@ -311,7 +318,9 @@ final class MethodChannelSquatDetector implements SquatDetector {
         calibrationStatus is! String ||
         calibrationStatus.isEmpty ||
         calibrationStatus.length > 64 ||
-        raw['bottomReached'] is! bool) {
+        raw['bottomReached'] is! bool ||
+        raw['downwardMovementObserved'] is! bool ||
+        raw['upwardMovementObserved'] is! bool) {
       throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       );
@@ -388,6 +397,19 @@ final class MethodChannelSquatDetector implements SquatDetector {
       ),
       minimumAttemptKneeAngle: _nullableDouble(raw, 'minimumAttemptKneeAngle'),
       maximumAttemptHipDrop: _nullableDouble(raw, 'maximumAttemptHipDrop'),
+      kneeBendDelta: _nullableDouble(raw, 'kneeBendDelta'),
+      downwardMovementObserved: raw['downwardMovementObserved'] as bool,
+      upwardMovementObserved: raw['upwardMovementObserved'] as bool,
+      bottomEvidenceScore: _nonNegativeInt(raw, 'bottomEvidenceScore'),
+      bottomEvidencePath: _bottomEvidencePath(raw['bottomEvidencePath']),
+      attemptStartTimestampMs: _nullableNonNegativeInt(
+        raw,
+        'attemptStartTimestampMs',
+      ),
+      lastValidPoseTimestampMs: _nullableNonNegativeInt(
+        raw,
+        'lastValidPoseTimestampMs',
+      ),
       baselineHipY: _nullableDouble(raw, 'baselineHipY'),
       legScale: _nullableDouble(raw, 'legScale'),
       baselineJitter: _nullableDouble(raw, 'baselineJitter'),
@@ -585,6 +607,18 @@ final class MethodChannelSquatDetector implements SquatDetector {
     return switch (value) {
       'gpu' => SquatInferenceDelegate.gpu,
       'cpu' => SquatInferenceDelegate.cpu,
+      _ => throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      ),
+    };
+  }
+
+  SquatBottomEvidencePath? _bottomEvidencePath(Object? value) {
+    return switch (value) {
+      null => null,
+      'KNEE_ONLY' => SquatBottomEvidencePath.kneeOnly,
+      'KNEE_AND_HIP' => SquatBottomEvidencePath.kneeAndHip,
+      'HIP_AND_REVERSAL' => SquatBottomEvidencePath.hipAndReversal,
       _ => throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       ),

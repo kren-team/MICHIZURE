@@ -29,6 +29,8 @@ enum SquatPoseTrackingStatus {
 
 enum SquatInferenceDelegate { gpu, cpu }
 
+enum SquatBottomEvidencePath { kneeOnly, kneeAndHip, hipAndReversal }
+
 enum SquatPosePipelineStatus {
   initializing,
   awaitingResult,
@@ -207,6 +209,13 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.returnStandingThresholdDeg = 150,
     this.minimumAttemptKneeAngle,
     this.maximumAttemptHipDrop,
+    this.kneeBendDelta,
+    this.downwardMovementObserved = false,
+    this.upwardMovementObserved = false,
+    this.bottomEvidenceScore = 0,
+    this.bottomEvidencePath,
+    this.attemptStartTimestampMs,
+    this.lastValidPoseTimestampMs,
     this.baselineHipY,
     this.legScale,
     this.baselineJitter,
@@ -279,6 +288,13 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final double returnStandingThresholdDeg;
   final double? minimumAttemptKneeAngle;
   final double? maximumAttemptHipDrop;
+  final double? kneeBendDelta;
+  final bool downwardMovementObserved;
+  final bool upwardMovementObserved;
+  final int bottomEvidenceScore;
+  final SquatBottomEvidencePath? bottomEvidencePath;
+  final int? attemptStartTimestampMs;
+  final int? lastValidPoseTimestampMs;
   final double? baselineHipY;
   final double? legScale;
   final double? baselineJitter;

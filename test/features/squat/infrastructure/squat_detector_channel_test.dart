@@ -202,12 +202,19 @@ void main() {
       'returnStandingDurationMs': 0,
       'currentRepDurationMs': 250,
       'calibratedStandingKneeAngle': 168.0,
-      'standingThresholdDeg': 156.0,
+      'standingThresholdDeg': 150.0,
       'descendingThresholdDeg': 148.0,
-      'bottomThresholdDeg': 133.0,
-      'returnStandingThresholdDeg': 153.0,
+      'bottomThresholdDeg': 140.0,
+      'returnStandingThresholdDeg': 146.0,
       'minimumAttemptKneeAngle': 132.0,
       'maximumAttemptHipDrop': 0.11,
+      'kneeBendDelta': 36.0,
+      'downwardMovementObserved': true,
+      'upwardMovementObserved': false,
+      'bottomEvidenceScore': 5,
+      'bottomEvidencePath': 'KNEE_ONLY',
+      'attemptStartTimestampMs': 750,
+      'lastValidPoseTimestampMs': 1_000,
       'baselineHipY': 0.25,
       'legScale': 0.50,
       'baselineJitter': 0.01,
@@ -260,12 +267,19 @@ void main() {
     expect(diagnostics.calibrationSampleCount, 8);
     expect(diagnostics.validPoseFps, 8);
     expect(diagnostics.calibratedStandingKneeAngle, 168);
-    expect(diagnostics.standingThresholdDeg, 156);
+    expect(diagnostics.standingThresholdDeg, 150);
     expect(diagnostics.descendingThresholdDeg, 148);
-    expect(diagnostics.bottomThresholdDeg, 133);
-    expect(diagnostics.returnStandingThresholdDeg, 153);
+    expect(diagnostics.bottomThresholdDeg, 140);
+    expect(diagnostics.returnStandingThresholdDeg, 146);
     expect(diagnostics.minimumAttemptKneeAngle, 132);
     expect(diagnostics.maximumAttemptHipDrop, 0.11);
+    expect(diagnostics.kneeBendDelta, 36);
+    expect(diagnostics.downwardMovementObserved, isTrue);
+    expect(diagnostics.upwardMovementObserved, isFalse);
+    expect(diagnostics.bottomEvidenceScore, 5);
+    expect(diagnostics.bottomEvidencePath, SquatBottomEvidencePath.kneeOnly);
+    expect(diagnostics.attemptStartTimestampMs, 750);
+    expect(diagnostics.lastValidPoseTimestampMs, 1000);
     expect(diagnostics.calibrationSelectedSide, SquatPoseSide.left);
     expect(diagnostics.requestedAnalysisWidth, 320);
     expect(diagnostics.requestedAnalysisHeight, 240);
@@ -310,12 +324,19 @@ void main() {
         'returnStandingDurationMs': 0,
         'currentRepDurationMs': 250,
         'calibratedStandingKneeAngle': 168.0,
-        'standingThresholdDeg': 156.0,
+        'standingThresholdDeg': 150.0,
         'descendingThresholdDeg': 148.0,
-        'bottomThresholdDeg': 133.0,
-        'returnStandingThresholdDeg': 153.0,
+        'bottomThresholdDeg': 140.0,
+        'returnStandingThresholdDeg': 146.0,
         'minimumAttemptKneeAngle': 132.0,
         'maximumAttemptHipDrop': 0.11,
+        'kneeBendDelta': 36.0,
+        'downwardMovementObserved': true,
+        'upwardMovementObserved': false,
+        'bottomEvidenceScore': 5,
+        'bottomEvidencePath': 'KNEE_ONLY',
+        'attemptStartTimestampMs': 750,
+        'lastValidPoseTimestampMs': 1_000,
         'baselineHipY': 0.25,
         'legScale': 0.50,
         'baselineJitter': 0.01,

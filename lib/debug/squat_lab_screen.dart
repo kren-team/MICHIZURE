@@ -239,6 +239,12 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
           'Attempt min knee / max hip drop: ${_metric(value?.minimumAttemptKneeAngle)} / ${_metric(value?.maximumAttemptHipDrop, digits: 3)}',
         ),
         Text(
+          'Knee bend / movement down-up: ${_metric(value?.kneeBendDelta)} / ${value?.downwardMovementObserved ?? false}-${value?.upwardMovementObserved ?? false}',
+        ),
+        Text(
+          'Bottom evidence: ${value?.bottomEvidenceScore ?? 0} / ${_bottomPath(value?.bottomEvidencePath)}',
+        ),
+        Text(
           'Calibrated standing knee: ${_metric(value?.calibratedStandingKneeAngle)}',
         ),
         Text(
@@ -303,4 +309,11 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
 
   String _metric(double? value, {int digits = 2}) =>
       value?.toStringAsFixed(digits) ?? '-';
+
+  String _bottomPath(SquatBottomEvidencePath? path) => switch (path) {
+    SquatBottomEvidencePath.kneeOnly => 'KNEE_ONLY',
+    SquatBottomEvidencePath.kneeAndHip => 'KNEE_AND_HIP',
+    SquatBottomEvidencePath.hipAndReversal => 'HIP_AND_REVERSAL',
+    null => 'none',
+  };
 }

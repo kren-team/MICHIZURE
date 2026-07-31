@@ -345,6 +345,15 @@ class SquatSessionManager(
                         detectorConfig.thresholdsFor(180.0).returnStandingAngle),
                 "minimumAttemptKneeAngle" to diagnostics?.minimumAttemptKneeAngleDeg,
                 "maximumAttemptHipDrop" to diagnostics?.maximumAttemptHipDropRatio,
+                "kneeBendDelta" to diagnostics?.kneeBendDeltaDeg,
+                "downwardMovementObserved" to
+                    (diagnostics?.downwardMovementObserved ?: false),
+                "upwardMovementObserved" to
+                    (diagnostics?.upwardMovementObserved ?: false),
+                "bottomEvidenceScore" to (diagnostics?.bottomEvidenceScore ?: 0),
+                "bottomEvidencePath" to diagnostics?.bottomEvidencePath?.wireValue,
+                "attemptStartTimestampMs" to diagnostics?.attemptStartTimestampMs,
+                "lastValidPoseTimestampMs" to diagnostics?.lastValidPoseTimestampMs,
                 "baselineHipY" to diagnostics?.baselineHipY,
                 "legScale" to diagnostics?.legScale,
                 "baselineJitter" to diagnostics?.baselineJitter,
