@@ -24,8 +24,12 @@ abstract interface class DebugPoseFixtureGateway {
   Future<DebugPoseFixtureResult> run();
 }
 
+abstract interface class DebugPoseThumbnailGateway {
+  Future<void> setEnabled(bool enabled);
+}
+
 final class MethodChannelDebugPoseFixtureGateway
-    implements DebugPoseFixtureGateway {
+    implements DebugPoseFixtureGateway, DebugPoseThumbnailGateway {
   MethodChannelDebugPoseFixtureGateway({MethodChannel? channel})
     : _channel =
           channel ?? const MethodChannel('com.kren.michizure/squat_control/v1');
@@ -57,5 +61,20 @@ final class MethodChannelDebugPoseFixtureGateway
       ankleAvailable: payload['ankleAvailable']! as bool,
       errorCode: payload['errorCode'] as String?,
     );
+  }
+
+  @override
+  Future<void> setEnabled(bool enabled) async {
+    final payload = await _channel
+        .invokeMapMethod<Object?, Object?>('setDebugPoseThumbnailEnabled', {
+          'contractVersion': MethodChannelSquatDetector.contractVersion,
+          'enabled': enabled,
+        });
+    if (payload == null ||
+        payload['contractVersion'] !=
+            MethodChannelSquatDetector.contractVersion ||
+        payload['enabled'] != enabled) {
+      throw const FormatException('Malformed debug thumbnail result');
+    }
   }
 }

@@ -354,7 +354,8 @@ class SquatStateMachine(
     private fun isStanding(sample: PoseFeatureSample): Boolean =
         sample.kneeAngleDeg >=
             max(config.standingKneeDeg, standingKneeAngle - config.standingKneeBaselineToleranceDeg) &&
-            (normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY) <= 0.12
+            (normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY) <=
+            config.standingMaximumHipDropRatio
 
     private fun isReturnStanding(sample: PoseFeatureSample): Boolean =
         sample.kneeAngleDeg >= config.returnStandingKneeDeg &&

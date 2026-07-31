@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.PixelFormat
+import android.hardware.camera2.CameraCharacteristics
 import android.os.SystemClock
 import android.util.Range
 import android.util.Size
@@ -15,6 +16,7 @@ import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.view.transform.ImageProxyTransformFactory
 import androidx.camera.view.transform.OutputTransform
 import androidx.core.content.ContextCompat
@@ -166,10 +168,23 @@ class CameraMediaPipePoseSource(
                 provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
             } ?: error("No camera is available")
 
+        val cameraInfo = selector.filter(provider.availableCameraInfos).firstOrNull()
+        val supportedRanges =
+            cameraInfo?.let { info ->
+                Camera2CameraInfo.from(info)
+                    .getCameraCharacteristic(
+                        CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES,
+                    )
+                    ?.map { range -> SupportedFrameRateRange(range.lower, range.upper) }
+                    .orEmpty()
+            }.orEmpty()
+        val selectedRange = CameraFrameRatePolicy.select(supportedRanges)
+        val previewBuilder = Preview.Builder()
+        selectedRange?.let {
+            previewBuilder.setTargetFrameRate(Range(it.lower, it.upper))
+        }
         val preview =
-            Preview.Builder()
-                .setTargetFrameRate(Range(PREVIEW_MIN_FPS, PREVIEW_TARGET_FPS))
-                .build()
+            previewBuilder.build()
                 .also {
                 it.surfaceProvider = previewView.surfaceProvider
             }
@@ -206,14 +221,15 @@ class CameraMediaPipePoseSource(
     private fun analyze(imageProxy: ImageProxy) {
         val analyzerReceivedNs = monotonicNs()
         var acquired = false
-        stats.recordAnalyzerFrame()
+        stats.recordAnalyzerFrame(analyzerReceivedNs)
         try {
             if (closed.get() || terminalPipelineFailure.get()) return
             val selectedDelegate = delegate ?: return
             val targetFps =
-                when (selectedDelegate) {
-                    PoseDelegate.GPU -> config.targetGpuAnalysisFps
-                    PoseDelegate.CPU -> config.targetCpuAnalysisFps
+                when {
+                    runtimeEnvironment.isEmulator -> config.targetEmulatorAnalysisFps
+                    selectedDelegate == PoseDelegate.GPU -> config.targetGpuAnalysisFps
+                    else -> config.targetCpuAnalysisFps
                 }
             when (frameGate.tryAcquire(analyzerReceivedNs, targetFps)) {
                 AnalysisFrameDecision.THROTTLED -> {
@@ -371,7 +387,26 @@ class CameraMediaPipePoseSource(
                     ),
                 )
             val filteredPose = poseFilter.filter(pose)
-            val feature = extractor.extract(filteredPose)
+            val filteredFeature = extractor.extract(filteredPose)
+            val feature =
+                when (filteredFeature) {
+                    is PoseFeatureResult.Valid -> {
+                        val rawAngle =
+                            extractor.kneeAngleForSide(
+                                pose,
+                                filteredFeature.sample.selectedSide,
+                            )
+                        PoseFeatureResult.Valid(
+                            sample =
+                                filteredFeature.sample.copy(
+                                    rawKneeAngleDeg =
+                                        rawAngle ?: filteredFeature.sample.kneeAngleDeg,
+                                ),
+                            quality = filteredFeature.quality,
+                        )
+                    }
+                    is PoseFeatureResult.Invalid -> filteredFeature
+                }
             val nextPipelineStatus =
                 PosePipelineStatus.fromTracking(feature.quality.trackingStatus)
             pipelineStatus = nextPipelineStatus
@@ -418,7 +453,11 @@ class CameraMediaPipePoseSource(
                     stateMachineCompletedNs = completion.stateMachineCompletedNs,
                     nativeEventDispatchedNs = completion.nativeEventDispatchedNs,
                 )
-            stats.recordResult(completed, pose.poseDetected)
+            stats.recordResult(
+                sample = completed,
+                poseDetected = pose.poseDetected,
+                validPose = feature is PoseFeatureResult.Valid,
+            )
             publishStatus(nextPipelineStatus)
         } finally {
             input.close()
@@ -631,8 +670,6 @@ class CameraMediaPipePoseSource(
 
     private companion object {
         const val NANOS_PER_MILLISECOND = 1_000_000L
-        const val PREVIEW_MIN_FPS = 24
-        const val PREVIEW_TARGET_FPS = 30
         const val HEALTH_CHECK_INTERVAL_MS = 250L
         const val MAX_PENDING_METADATA = 24
         const val ERROR_INITIALIZATION = "landmarker_initialization"

@@ -119,6 +119,19 @@ class PoseFeatureExtractor(
         selectedAtMs = Long.MIN_VALUE
     }
 
+    /** Returns an unfiltered angle for diagnostics using the already selected side. */
+    fun kneeAngleForSide(
+        pose: LowerBodyPose,
+        side: PoseSide,
+    ): Double? =
+        measure(
+            when (side) {
+                PoseSide.LEFT -> pose.left
+                PoseSide.RIGHT -> pose.right
+            } ?: return null,
+            side,
+        )?.kneeAngle
+
     private fun selectSide(
         left: SideMeasurement?,
         right: SideMeasurement?,

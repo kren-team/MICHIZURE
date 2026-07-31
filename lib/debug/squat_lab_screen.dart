@@ -13,9 +13,10 @@ import 'debug_pose_fixture_channel.dart';
 ///
 /// It intentionally has no Auth, Debt, Contribution, or Firestore dependency.
 final class SquatLabScreen extends ConsumerStatefulWidget {
-  const SquatLabScreen({super.key, this.fixtureGateway});
+  const SquatLabScreen({super.key, this.fixtureGateway, this.thumbnailGateway});
 
   final DebugPoseFixtureGateway? fixtureGateway;
+  final DebugPoseThumbnailGateway? thumbnailGateway;
 
   @override
   ConsumerState<SquatLabScreen> createState() => _SquatLabScreenState();
@@ -29,7 +30,9 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
   CameraPermissionState? _permission;
   SquatDetectorState _phase = SquatDetectorState.calibrating;
   SquatQualityWarning? _warning;
-  SquatDetectorDiagnostics? _diagnostics;
+  final ValueNotifier<SquatDetectorDiagnostics?> _diagnostics = ValueNotifier(
+    null,
+  );
   SquatInferenceDelegate? _delegate;
   SquatPosePipelineStatus _pipelineStatus =
       SquatPosePipelineStatus.initializing;
@@ -37,11 +40,14 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
   var _accepted = 0;
   var _running = false;
   var _fixtureRunning = false;
+  var _thumbnailEnabled = false;
   DebugPoseFixtureResult? _fixtureResult;
 
   SquatDetector get _detector => ref.read(squatDetectorProvider);
   DebugPoseFixtureGateway get _fixtureGateway =>
       widget.fixtureGateway ?? MethodChannelDebugPoseFixtureGateway();
+  DebugPoseThumbnailGateway get _thumbnailGateway =>
+      widget.thumbnailGateway ?? MethodChannelDebugPoseFixtureGateway();
 
   @override
   void initState() {
@@ -100,6 +106,15 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
     }
   }
 
+  Future<void> _setThumbnailEnabled(bool enabled) async {
+    try {
+      await _thumbnailGateway.setEnabled(enabled);
+      if (mounted) setState(() => _thumbnailEnabled = enabled);
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    }
+  }
+
   void _onEvent(SquatDetectorEvent event) {
     if (!mounted) return;
     switch (event) {
@@ -114,11 +129,7 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
       case SquatRepCompleted():
         setState(() => _accepted = event.sequence);
       case SquatDetectorDiagnostics():
-        setState(() {
-          _diagnostics = event;
-          _phase = event.state;
-          _accepted = event.acceptedReps;
-        });
+        _diagnostics.value = event;
       case SquatDetectorFailed():
         setState(() => _error = event.code);
     }
@@ -132,12 +143,12 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
         _detector.stop(squatSessionId: _sessionId).catchError((Object _) {}),
       );
     }
+    _diagnostics.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final diagnostics = _diagnostics;
     return Scaffold(
       appBar: AppBar(title: const Text('Squat Lab（Debug）')),
       body: ListView(
@@ -162,51 +173,13 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
           Text('Phase: ${_phase.name}'),
           Text('Guidance: ${_warning?.name ?? 'ready'}'),
           Text('Delegate: ${_delegate?.name ?? 'initializing'}'),
-          Text(
-            'Pipeline: ${diagnostics?.pipelineStatus.name ?? _pipelineStatus.name}',
+          SwitchListTile(
+            key: const Key('squat-lab-thumbnail-toggle'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('解析入力thumbnail（最大1 FPS）'),
+            value: _thumbnailEnabled,
+            onChanged: _setThumbnailEnabled,
           ),
-          Text('Tracking: ${diagnostics?.trackingStatus.name ?? 'waiting'}'),
-          Text('Side: ${diagnostics?.selectedSide?.name ?? 'none'}'),
-          Text('Knee angle: ${_value(diagnostics?.kneeAngle)}'),
-          Text('Hip drop: ${_value(diagnostics?.normalizedHipDrop)}'),
-          Text(
-            'Accepted / rejected: '
-            '${diagnostics?.acceptedReps ?? 0} / '
-            '${diagnostics?.rejectedAttempts ?? 0}',
-          ),
-          Text(
-            'Analysis FPS: '
-            '${diagnostics?.actualAnalysisFps.toStringAsFixed(1) ?? '-'}',
-          ),
-          Text(
-            'Inference p50/p95: '
-            '${diagnostics?.inferenceP50Ms ?? '-'} / '
-            '${diagnostics?.inferenceP95Ms ?? '-'} ms',
-          ),
-          Text(
-            'Pipeline p50/p95: '
-            '${diagnostics?.nativePipelineP50Ms ?? '-'} / '
-            '${diagnostics?.nativePipelineP95Ms ?? '-'} ms',
-          ),
-          Text(
-            'Throttle/busy drop: '
-            '${diagnostics?.droppedBeforePreprocessing ?? 0} / '
-            '${diagnostics?.rejectedAsBusy ?? 0}',
-          ),
-          Text(
-            'Analyzer/submitted/callbacks: '
-            '${diagnostics?.analyzerFrames ?? 0} / '
-            '${diagnostics?.inferenceSubmitted ?? 0} / '
-            '${diagnostics?.resultCallbacks ?? 0}',
-          ),
-          Text(
-            'Pose/no-pose/errors: '
-            '${diagnostics?.resultsWithPose ?? 0} / '
-            '${diagnostics?.resultsWithoutPose ?? 0} / '
-            '${diagnostics?.errorCallbacks ?? 0}',
-          ),
-          Text('Callback age: ${diagnostics?.lastCallbackAgeMs ?? '-'} ms'),
-          Text('Last error: ${diagnostics?.lastError ?? 'none'}'),
           const SizedBox(height: 12),
           FilledButton.tonal(
             key: const Key('squat-lab-run-fixture'),
@@ -222,12 +195,100 @@ final class _SquatLabScreenState extends ConsumerState<SquatLabScreen> {
               '${fixture.errorCode == null ? '' : ' (${fixture.errorCode})'}',
               key: const Key('squat-lab-fixture-result'),
             ),
+          ValueListenableBuilder<SquatDetectorDiagnostics?>(
+            valueListenable: _diagnostics,
+            builder: (context, diagnostics, _) => _SquatLabDiagnosticsPanel(
+              diagnostics: diagnostics,
+              fallbackPipelineStatus: _pipelineStatus,
+            ),
+          ),
           if (_error != null)
             const Text('姿勢判定を開始できませんでした。', key: Key('squat-lab-error')),
         ],
       ),
     );
   }
+}
 
-  String _value(double? value) => value?.toStringAsFixed(2) ?? '-';
+final class _SquatLabDiagnosticsPanel extends StatelessWidget {
+  const _SquatLabDiagnosticsPanel({
+    required this.diagnostics,
+    required this.fallbackPipelineStatus,
+  });
+
+  final SquatDetectorDiagnostics? diagnostics;
+  final SquatPosePipelineStatus fallbackPipelineStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = diagnostics;
+    return Column(
+      key: const Key('squat-lab-diagnostics'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Pipeline: ${value?.pipelineStatus.name ?? fallbackPipelineStatus.name}',
+        ),
+        Text('Tracking: ${value?.trackingStatus.name ?? 'waiting'}'),
+        Text('Side: ${value?.selectedSide?.name ?? 'none'}'),
+        Text(
+          'Raw / filtered knee: ${_metric(value?.rawKneeAngle)} / ${_metric(value?.kneeAngle)}',
+        ),
+        Text('Hip drop: ${_metric(value?.normalizedHipDrop, digits: 3)}'),
+        Text(
+          'Threshold standing / bottom: ${_metric(value?.standingThresholdDeg)} / ${_metric(value?.bottomThresholdDeg)}',
+        ),
+        Text(
+          'Phase path: ${value?.previousState?.name ?? '-'} → ${value?.state.name ?? '-'}',
+        ),
+        Text('Transition: ${value?.lastTransitionReason ?? 'none'}'),
+        Text(
+          'Reject / reset: ${value?.latestRejectReason ?? 'none'} / ${value?.lastResetReason ?? 'none'}',
+        ),
+        Text(
+          'Frame dt / valid age: ${value?.frameDtMs ?? '-'} / ${value?.validPoseAgeMs ?? '-'} ms',
+        ),
+        Text(
+          'Valid-pose FPS (FSM/pipeline): ${value?.effectiveValidPoseFps.toStringAsFixed(1) ?? '-'} / ${value?.validPoseFps.toStringAsFixed(1) ?? '-'}',
+        ),
+        Text(
+          'Calibration: ${value?.calibrationStatus ?? 'waiting'} (${value?.calibrationSampleCount ?? 0}/8)',
+        ),
+        Text('Bottom reached: ${value?.bottomReached ?? false}'),
+        Text(
+          'Confirm standing / bottom / return: ${value?.standingConfirmationDurationMs ?? 0} / ${value?.bottomConfirmationDurationMs ?? 0} / ${value?.returnStandingDurationMs ?? 0} ms',
+        ),
+        Text('Current rep duration: ${value?.currentRepDurationMs ?? '-'} ms'),
+        Text(
+          'Accepted / rejected: ${value?.acceptedReps ?? 0} / ${value?.rejectedAttempts ?? 0}',
+        ),
+        Text(
+          'Input / submit / callback / valid FPS: ${value?.analyzerInputFps.toStringAsFixed(1) ?? '-'} / ${value?.inferenceSubmittedFps.toStringAsFixed(1) ?? '-'} / ${value?.resultCallbackFps.toStringAsFixed(1) ?? '-'} / ${value?.validPoseFps.toStringAsFixed(1) ?? '-'}',
+        ),
+        Text(
+          'Preprocess p50/p95: ${value?.preprocessingP50Ms ?? '-'} / ${value?.preprocessingP95Ms ?? '-'} ms',
+        ),
+        Text(
+          'Inference p50/p95: ${value?.inferenceP50Ms ?? '-'} / ${value?.inferenceP95Ms ?? '-'} ms',
+        ),
+        Text(
+          'Pipeline p50/p95: ${value?.nativePipelineP50Ms ?? '-'} / ${value?.nativePipelineP95Ms ?? '-'} ms',
+        ),
+        Text(
+          'Throttle/busy drop: ${value?.droppedBeforePreprocessing ?? 0} / ${value?.rejectedAsBusy ?? 0}',
+        ),
+        Text(
+          'Analyzer/submitted/callbacks: ${value?.analyzerFrames ?? 0} / ${value?.inferenceSubmitted ?? 0} / ${value?.resultCallbacks ?? 0}',
+        ),
+        Text(
+          'Pose/no-pose/errors: ${value?.resultsWithPose ?? 0} / ${value?.resultsWithoutPose ?? 0} / ${value?.errorCallbacks ?? 0}',
+        ),
+        Text('Callback age: ${value?.lastCallbackAgeMs ?? '-'} ms'),
+        Text('Last error: ${value?.lastError ?? 'none'}'),
+      ],
+    );
+  }
+
+  String _metric(double? value, {int digits = 2}) =>
+      value?.toStringAsFixed(digits) ?? '-';
 }

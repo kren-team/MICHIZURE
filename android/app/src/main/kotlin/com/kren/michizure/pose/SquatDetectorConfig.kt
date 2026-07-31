@@ -23,6 +23,7 @@ data class SquatDetectorConfig(
     val calibrationMaximumHipDriftRatio: Double = 0.03,
     val calibrationMaximumKneeDriftDeg: Double = 8.0,
     val standingKneeDeg: Double = 155.0,
+    val standingMaximumHipDropRatio: Double = 0.12,
     val standingKneeBaselineToleranceDeg: Double = 12.0,
     val standingConfirmationMs: Long = 250,
     val descendingKneeDeg: Double = 150.0,

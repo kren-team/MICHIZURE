@@ -78,6 +78,8 @@ class SquatMethodHandler(
                 result.success(manager.statePayload())
             SquatContract.METHOD_RUN_DEBUG_POSE_FIXTURE ->
                 runDebugPoseFixture(result)
+            SquatContract.METHOD_SET_DEBUG_THUMBNAIL ->
+                setDebugThumbnail(call.arguments, result)
             else -> result.notImplemented()
         }
     }
@@ -127,6 +129,27 @@ class SquatMethodHandler(
                 )
             }
         }
+    }
+
+    private fun setDebugThumbnail(
+        arguments: Any?,
+        result: MethodChannel.Result,
+    ) {
+        if (!isDebuggable) {
+            result.notImplemented()
+            return
+        }
+        val enabled = (arguments as? Map<*, *>)?.get("enabled") as? Boolean
+        if (enabled == null) {
+            result.error(
+                SquatContract.ERROR_CONTRACT_MISMATCH,
+                "The debug thumbnail payload is invalid.",
+                SquatContract.versioned(),
+            )
+            return
+        }
+        manager.setDebugThumbnailEnabled(enabled)
+        result.success(SquatContract.versioned(mapOf("enabled" to enabled)))
     }
 
     private fun requestPermission(result: MethodChannel.Result) {

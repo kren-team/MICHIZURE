@@ -55,6 +55,7 @@ class SquatCameraContainer(
         }
     internal val guideOverlayView = SquatGuideOverlayView(context)
     private var lastGuideTimestampMs = Long.MIN_VALUE
+    private var debugThumbnailEnabled = false
 
     init {
         background = ColorDrawable(Color.BLACK)
@@ -111,7 +112,7 @@ class SquatCameraContainer(
     }
 
     internal fun updateDebugThumbnail(bitmap: Bitmap) {
-        if (!isDebuggable) return
+        if (!isDebuggable || !debugThumbnailEnabled) return
         val nowMs = SystemClock.elapsedRealtime()
         if (nowMs - lastDebugThumbnailMs < DEBUG_THUMBNAIL_INTERVAL_MS) return
         lastDebugThumbnailMs = nowMs
@@ -123,6 +124,12 @@ class SquatCameraContainer(
                 true,
             )
         post { guideOverlayView.updateDebugThumbnail(thumbnail) }
+    }
+
+    internal fun setDebugThumbnailEnabled(enabled: Boolean) {
+        if (!isDebuggable) return
+        debugThumbnailEnabled = enabled
+        if (!enabled) post { guideOverlayView.clearDebugThumbnail() }
     }
 
     internal fun clearGuide() {
@@ -191,6 +198,12 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     fun updateDebugThumbnail(next: Bitmap) {
         debugThumbnail?.takeIf { !it.isRecycled }?.recycle()
         debugThumbnail = next
+        invalidate()
+    }
+
+    fun clearDebugThumbnail() {
+        debugThumbnail?.takeIf { !it.isRecycled }?.recycle()
+        debugThumbnail = null
         invalidate()
     }
 

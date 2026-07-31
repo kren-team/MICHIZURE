@@ -186,6 +186,22 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.trackingStatus = SquatPoseTrackingStatus.noPose,
     this.pipelineStatus = SquatPosePipelineStatus.initializing,
     this.delegate,
+    this.rawKneeAngle,
+    this.previousState,
+    this.lastTransitionReason,
+    this.lastResetReason,
+    this.frameDtMs,
+    this.validPoseAgeMs,
+    this.effectiveValidPoseFps = 0,
+    this.calibrationSampleCount = 0,
+    this.calibrationStatus = 'waitingForStanding',
+    this.bottomReached = false,
+    this.standingConfirmationDurationMs = 0,
+    this.bottomConfirmationDurationMs = 0,
+    this.returnStandingDurationMs = 0,
+    this.currentRepDurationMs,
+    this.standingThresholdDeg = 155,
+    this.bottomThresholdDeg = 120,
     this.sampleCount = 0,
     this.analyzerFrames = 0,
     this.inferenceSubmitted = 0,
@@ -196,6 +212,10 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.lastCallbackAgeMs,
     this.activeDelegate,
     this.lastError,
+    this.analyzerInputFps = 0,
+    this.inferenceSubmittedFps = 0,
+    this.resultCallbackFps = 0,
+    this.validPoseFps = 0,
     this.actualAnalysisFps = 0,
     this.droppedBeforePreprocessing = 0,
     this.rejectedAsBusy = 0,
@@ -220,11 +240,27 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final double? rightKneeConfidence;
   final double? rightAnkleConfidence;
   final double? kneeAngle;
+  final double? rawKneeAngle;
   final double? normalizedHipDrop;
   final double? kneeAngularVelocity;
   final double? hipVerticalVelocity;
   final SquatDetectorState state;
+  final SquatDetectorState? previousState;
+  final String? lastTransitionReason;
   final String? latestRejectReason;
+  final String? lastResetReason;
+  final int? frameDtMs;
+  final int? validPoseAgeMs;
+  final double effectiveValidPoseFps;
+  final int calibrationSampleCount;
+  final String calibrationStatus;
+  final bool bottomReached;
+  final int standingConfirmationDurationMs;
+  final int bottomConfirmationDurationMs;
+  final int returnStandingDurationMs;
+  final int? currentRepDurationMs;
+  final double standingThresholdDeg;
+  final double bottomThresholdDeg;
   final int analysisLatencyMs;
   final int acceptedReps;
   final int rejectedAttempts;
@@ -241,6 +277,10 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final int? lastCallbackAgeMs;
   final SquatInferenceDelegate? activeDelegate;
   final String? lastError;
+  final double analyzerInputFps;
+  final double inferenceSubmittedFps;
+  final double resultCallbackFps;
+  final double validPoseFps;
   final double actualAnalysisFps;
   final int droppedBeforePreprocessing;
   final int rejectedAsBusy;

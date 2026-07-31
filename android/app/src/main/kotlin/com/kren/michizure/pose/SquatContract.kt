@@ -13,6 +13,7 @@ object SquatContract {
     const val METHOD_STOP_SESSION = "stopSession"
     const val METHOD_GET_SESSION_STATE = "getSessionState"
     const val METHOD_RUN_DEBUG_POSE_FIXTURE = "runDebugPoseFixture"
+    const val METHOD_SET_DEBUG_THUMBNAIL = "setDebugPoseThumbnailEnabled"
 
     const val ERROR_CONTRACT_MISMATCH = "channelContractMismatch"
     const val ERROR_CAMERA_PERMISSION_DENIED = "cameraPermissionDenied"

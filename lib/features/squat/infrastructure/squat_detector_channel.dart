@@ -181,12 +181,28 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'rightHipConfidence',
         'rightKneeConfidence',
         'rightAnkleConfidence',
+        'rawKneeAngle',
         'kneeAngle',
         'normalizedHipDrop',
         'kneeAngularVelocity',
         'hipVerticalVelocity',
         'state',
+        'previousState',
+        'lastTransitionReason',
         'latestRejectReason',
+        'lastResetReason',
+        'frameDtMs',
+        'validPoseAgeMs',
+        'effectiveValidPoseFps',
+        'calibrationSampleCount',
+        'calibrationStatus',
+        'bottomReached',
+        'standingConfirmationDurationMs',
+        'bottomConfirmationDurationMs',
+        'returnStandingDurationMs',
+        'currentRepDurationMs',
+        'standingThresholdDeg',
+        'bottomThresholdDeg',
         'analysisLatencyMs',
         'acceptedReps',
         'rejectedAttempts',
@@ -201,6 +217,10 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'lastCallbackAgeMs',
         'activeDelegate',
         'lastError',
+        'analyzerInputFps',
+        'inferenceSubmittedFps',
+        'resultCallbackFps',
+        'validPoseFps',
         'actualAnalysisFps',
         'droppedBeforePreprocessing',
         'rejectedAsBusy',
@@ -268,11 +288,17 @@ final class MethodChannelSquatDetector implements SquatDetector {
   ) {
     final poseDetected = raw['poseDetected'];
     final latestRejectReason = raw['latestRejectReason'];
+    final lastTransitionReason = raw['lastTransitionReason'];
+    final lastResetReason = raw['lastResetReason'];
+    final calibrationStatus = raw['calibrationStatus'];
     if (poseDetected is! bool ||
-        (latestRejectReason != null &&
-            (latestRejectReason is! String ||
-                latestRejectReason.isEmpty ||
-                latestRejectReason.length > 64))) {
+        !_isNullableDiagnosticCode(latestRejectReason) ||
+        !_isNullableDiagnosticCode(lastTransitionReason) ||
+        !_isNullableDiagnosticCode(lastResetReason) ||
+        calibrationStatus is! String ||
+        calibrationStatus.isEmpty ||
+        calibrationStatus.length > 64 ||
+        raw['bottomReached'] is! bool) {
       throw const SquatDetectorFailure(
         SquatDetectorFailureReason.malformedEvent,
       );
@@ -298,12 +324,46 @@ final class MethodChannelSquatDetector implements SquatDetector {
       rightHipConfidence: _nullableDouble(raw, 'rightHipConfidence'),
       rightKneeConfidence: _nullableDouble(raw, 'rightKneeConfidence'),
       rightAnkleConfidence: _nullableDouble(raw, 'rightAnkleConfidence'),
+      rawKneeAngle: _nullableDouble(raw, 'rawKneeAngle'),
       kneeAngle: _nullableDouble(raw, 'kneeAngle'),
       normalizedHipDrop: _nullableDouble(raw, 'normalizedHipDrop'),
       kneeAngularVelocity: _nullableDouble(raw, 'kneeAngularVelocity'),
       hipVerticalVelocity: _nullableDouble(raw, 'hipVerticalVelocity'),
       state: _state(_string(raw, 'state')),
+      previousState: switch (raw['previousState']) {
+        null => null,
+        final String value => _state(value),
+        _ => throw const SquatDetectorFailure(
+          SquatDetectorFailureReason.malformedEvent,
+        ),
+      },
+      lastTransitionReason: lastTransitionReason as String?,
       latestRejectReason: latestRejectReason as String?,
+      lastResetReason: lastResetReason as String?,
+      frameDtMs: _nullableInt(raw, 'frameDtMs'),
+      validPoseAgeMs: _nullableNonNegativeInt(raw, 'validPoseAgeMs'),
+      effectiveValidPoseFps: _nonNegativeDouble(raw, 'effectiveValidPoseFps'),
+      calibrationSampleCount: _nonNegativeInt(raw, 'calibrationSampleCount'),
+      calibrationStatus: calibrationStatus,
+      bottomReached: raw['bottomReached'] as bool,
+      standingConfirmationDurationMs: _nonNegativeInt(
+        raw,
+        'standingConfirmationDurationMs',
+      ),
+      bottomConfirmationDurationMs: _nonNegativeInt(
+        raw,
+        'bottomConfirmationDurationMs',
+      ),
+      returnStandingDurationMs: _nonNegativeInt(
+        raw,
+        'returnStandingDurationMs',
+      ),
+      currentRepDurationMs: _nullableNonNegativeInt(
+        raw,
+        'currentRepDurationMs',
+      ),
+      standingThresholdDeg: _nonNegativeDouble(raw, 'standingThresholdDeg'),
+      bottomThresholdDeg: _nonNegativeDouble(raw, 'bottomThresholdDeg'),
       analysisLatencyMs: _nonNegativeInt(raw, 'analysisLatencyMs'),
       acceptedReps: _nonNegativeInt(raw, 'acceptedReps'),
       rejectedAttempts: _nonNegativeInt(raw, 'rejectedAttempts'),
@@ -318,6 +378,10 @@ final class MethodChannelSquatDetector implements SquatDetector {
       lastCallbackAgeMs: _nullableNonNegativeInt(raw, 'lastCallbackAgeMs'),
       activeDelegate: _delegate(raw['activeDelegate']),
       lastError: _nullableErrorCode(raw['lastError']),
+      analyzerInputFps: _nonNegativeDouble(raw, 'analyzerInputFps'),
+      inferenceSubmittedFps: _nonNegativeDouble(raw, 'inferenceSubmittedFps'),
+      resultCallbackFps: _nonNegativeDouble(raw, 'resultCallbackFps'),
+      validPoseFps: _nonNegativeDouble(raw, 'validPoseFps'),
       actualAnalysisFps: _nonNegativeDouble(raw, 'actualAnalysisFps'),
       droppedBeforePreprocessing: _nonNegativeInt(
         raw,
@@ -441,6 +505,21 @@ final class MethodChannelSquatDetector implements SquatDetector {
     }
     return value;
   }
+
+  int? _nullableInt(Map<dynamic, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) return null;
+    if (value is! int) {
+      throw const SquatDetectorFailure(
+        SquatDetectorFailureReason.malformedEvent,
+      );
+    }
+    return value;
+  }
+
+  bool _isNullableDiagnosticCode(Object? value) =>
+      value == null ||
+      (value is String && value.isNotEmpty && value.length <= 64);
 
   double _nonNegativeDouble(Map<dynamic, dynamic> map, String key) {
     final value = map[key];

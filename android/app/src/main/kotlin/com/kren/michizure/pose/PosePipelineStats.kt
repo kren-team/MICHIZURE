@@ -5,7 +5,10 @@ import java.util.ArrayDeque
 class PosePipelineStats(
     private val maxSamples: Int = 180,
 ) {
+    private val analyzerTimesNs = ArrayDeque<Long>()
     private val submitTimesNs = ArrayDeque<Long>()
+    private val callbackTimesNs = ArrayDeque<Long>()
+    private val validPoseTimesNs = ArrayDeque<Long>()
     private val preprocessingMs = ArrayDeque<Long>()
     private val inferenceMs = ArrayDeque<Long>()
     private val pipelineMs = ArrayDeque<Long>()
@@ -27,8 +30,10 @@ class PosePipelineStats(
     private var noPoseCount = 0L
 
     @Synchronized
-    fun recordAnalyzerFrame() {
+    fun recordAnalyzerFrame(timestampNs: Long) {
         analyzerFrames += 1
+        analyzerTimesNs.addLast(timestampNs)
+        trim(analyzerTimesNs)
     }
 
     @Synchronized
@@ -61,10 +66,17 @@ class PosePipelineStats(
     fun recordResult(
         sample: PoseLatencySample,
         poseDetected: Boolean,
+        validPose: Boolean,
     ) {
         resultCallbacks += 1
         activeDelegateCallbacks += 1
         lastCallbackNs = sample.inferenceCallbackNs
+        callbackTimesNs.addLast(sample.inferenceCallbackNs)
+        trim(callbackTimesNs)
+        if (validPose) {
+            validPoseTimesNs.addLast(sample.inferenceCallbackNs)
+            trim(validPoseTimesNs)
+        }
         resultCount += 1
         if (poseDetected) {
             resultsWithPose += 1
@@ -104,18 +116,7 @@ class PosePipelineStats(
 
     @Synchronized
     fun snapshot(nowNs: Long = System.nanoTime()): PosePipelineMetrics {
-        val durationNs =
-            if (submitTimesNs.size < 2) {
-                0L
-            } else {
-                submitTimesNs.last() - submitTimesNs.first()
-            }
-        val fps =
-            if (durationNs <= 0) {
-                0.0
-            } else {
-                (submitTimesNs.size - 1) * NANOS_PER_SECOND.toDouble() / durationNs
-            }
+        val submittedFps = fps(submitTimesNs)
         return PosePipelineMetrics(
             sampleCount = inferenceMs.size,
             analyzerFrames = analyzerFrames,
@@ -129,7 +130,11 @@ class PosePipelineStats(
             lastError = lastError,
             activeDelegateSubmissions = activeDelegateSubmissions,
             activeDelegateCallbacks = activeDelegateCallbacks,
-            actualAnalysisFps = fps,
+            analyzerInputFps = fps(analyzerTimesNs),
+            inferenceSubmittedFps = submittedFps,
+            resultCallbackFps = fps(callbackTimesNs),
+            validPoseFps = fps(validPoseTimesNs),
+            actualAnalysisFps = submittedFps,
             droppedBeforePreprocessing = droppedBeforePreprocessing,
             rejectedAsBusy = rejectedAsBusy,
             resultCount = resultCount,
@@ -145,7 +150,10 @@ class PosePipelineStats(
 
     @Synchronized
     fun reset() {
+        analyzerTimesNs.clear()
         submitTimesNs.clear()
+        callbackTimesNs.clear()
+        validPoseTimesNs.clear()
         preprocessingMs.clear()
         inferenceMs.clear()
         pipelineMs.clear()
@@ -174,6 +182,16 @@ class PosePipelineStats(
 
     private fun <T> trim(values: ArrayDeque<T>) {
         while (values.size > maxSamples) values.removeFirst()
+    }
+
+    private fun fps(values: ArrayDeque<Long>): Double {
+        if (values.size < 2) return 0.0
+        val durationNs = values.last() - values.first()
+        return if (durationNs <= 0) {
+            0.0
+        } else {
+            (values.size - 1) * NANOS_PER_SECOND.toDouble() / durationNs
+        }
     }
 
     private fun percentile(

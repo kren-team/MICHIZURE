@@ -45,6 +45,28 @@ void main() {
     expect(find.byKey(const Key('squat-lab-fixture-result')), findsOneWidget);
     expect(find.textContaining('true / 1 / true-true-true'), findsOneWidget);
   });
+
+  testWidgets('debug input thumbnail is off until explicitly enabled', (
+    tester,
+  ) async {
+    final detector = _FakeLabDetector();
+    final thumbnail = _FakeThumbnailGateway();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [squatDetectorProvider.overrideWithValue(detector)],
+        child: MaterialApp(home: SquatLabScreen(thumbnailGateway: thumbnail)),
+      ),
+    );
+    await tester.pump();
+
+    final toggle = find.byKey(const Key('squat-lab-thumbnail-toggle'));
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    await tester.tap(toggle);
+    await tester.pump();
+
+    expect(thumbnail.values, [true]);
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+  });
 }
 
 final class _FakeLabDetector implements SquatDetector {
@@ -85,4 +107,11 @@ final class _FakeFixtureGateway implements DebugPoseFixtureGateway {
       errorCode: null,
     );
   }
+}
+
+final class _FakeThumbnailGateway implements DebugPoseThumbnailGateway {
+  final values = <bool>[];
+
+  @override
+  Future<void> setEnabled(bool enabled) async => values.add(enabled);
 }

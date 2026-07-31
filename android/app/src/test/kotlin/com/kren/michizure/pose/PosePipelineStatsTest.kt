@@ -9,6 +9,7 @@ class PosePipelineStatsTest {
         val stats = PosePipelineStats(maxSamples = 3)
         repeat(4) { index ->
             val submitted = index * 100_000_000L
+            stats.recordAnalyzerFrame(submitted)
             stats.recordSubmitted(
                 timestampNs = submitted,
                 preprocessingDurationMs = 2,
@@ -25,6 +26,7 @@ class PosePipelineStatsTest {
                         nativeEventDispatchedNs = null,
                     ),
                 poseDetected = index != 2,
+                validPose = index != 2,
             )
         }
 
@@ -32,6 +34,10 @@ class PosePipelineStatsTest {
 
         assertEquals(3, snapshot.sampleCount)
         assertEquals(10.0, snapshot.actualAnalysisFps, 0.001)
+        assertEquals(10.0, snapshot.analyzerInputFps, 0.001)
+        assertEquals(10.0, snapshot.inferenceSubmittedFps, 0.001)
+        assertEquals(9.90, snapshot.resultCallbackFps, 0.01)
+        assertEquals(6.60, snapshot.validPoseFps, 0.01)
         assertEquals(12L, snapshot.inferenceP50Ms)
         assertEquals(12L, snapshot.inferenceP95Ms)
         assertEquals(17L, snapshot.nativePipelineP50Ms)
@@ -70,6 +76,7 @@ class PosePipelineStatsTest {
                     nativeEventDispatchedNs = null,
                 ),
             poseDetected = false,
+            validPose = false,
         )
 
         val afterNoPoseCallback = stats.snapshot(nowNs = 3_100_000_000)

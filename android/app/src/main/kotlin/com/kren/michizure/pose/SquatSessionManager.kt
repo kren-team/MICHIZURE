@@ -46,11 +46,19 @@ class SquatSessionManager(
     private val diagnosticEmitTimesMs = ArrayDeque<Long>()
     private val latenciesMs = ArrayDeque<Long>()
     private var delegate: PoseDelegate? = null
+    private var debugThumbnailEnabled = false
 
     @Synchronized
     fun attachPreview(view: SquatCameraContainer) {
         previewView = view
+        view.setDebugThumbnailEnabled(debugThumbnailEnabled)
         startSourceIfReady()
+    }
+
+    @Synchronized
+    fun setDebugThumbnailEnabled(enabled: Boolean) {
+        debugThumbnailEnabled = enabled
+        previewView?.setDebugThumbnailEnabled(enabled)
     }
 
     @Synchronized
@@ -298,12 +306,33 @@ class SquatSessionManager(
                 "rightHipConfidence" to diagnostics?.rightHipConfidence,
                 "rightKneeConfidence" to diagnostics?.rightKneeConfidence,
                 "rightAnkleConfidence" to diagnostics?.rightAnkleConfidence,
+                "rawKneeAngle" to diagnostics?.rawKneeAngleDeg,
                 "kneeAngle" to diagnostics?.kneeAngleDeg,
                 "normalizedHipDrop" to diagnostics?.normalizedHipDrop,
                 "kneeAngularVelocity" to diagnostics?.kneeAngularVelocity,
                 "hipVerticalVelocity" to diagnostics?.hipVerticalVelocity,
                 "state" to (update?.state ?: machine.state).wireValue,
+                "previousState" to diagnostics?.previousState?.wireValue,
+                "lastTransitionReason" to diagnostics?.lastTransitionReason,
                 "latestRejectReason" to diagnostics?.latestRejectReason,
+                "lastResetReason" to diagnostics?.lastResetReason,
+                "frameDtMs" to diagnostics?.frameDtMs,
+                "validPoseAgeMs" to diagnostics?.validPoseAgeMs,
+                "effectiveValidPoseFps" to (diagnostics?.effectiveValidPoseFps ?: 0.0),
+                "calibrationSampleCount" to (diagnostics?.calibrationSampleCount ?: 0),
+                "calibrationStatus" to (diagnostics?.calibrationStatus ?: "waitingForStanding"),
+                "bottomReached" to (diagnostics?.bottomReached ?: false),
+                "standingConfirmationDurationMs" to
+                    (diagnostics?.standingConfirmationDurationMs ?: 0),
+                "bottomConfirmationDurationMs" to
+                    (diagnostics?.bottomConfirmationDurationMs ?: 0),
+                "returnStandingDurationMs" to
+                    (diagnostics?.returnStandingDurationMs ?: 0),
+                "currentRepDurationMs" to diagnostics?.currentRepDurationMs,
+                "standingThresholdDeg" to
+                    (diagnostics?.standingThresholdDeg ?: detectorConfig.standingKneeDeg),
+                "bottomThresholdDeg" to
+                    (diagnostics?.bottomThresholdDeg ?: detectorConfig.bottomKneeDeg),
                 "analysisLatencyMs" to (latencyMs ?: 0),
                 "acceptedReps" to (update?.repSequence ?: machine.repSequence),
                 "rejectedAttempts" to (diagnostics?.rejectedAttempts ?: 0),
@@ -317,6 +346,10 @@ class SquatSessionManager(
                 "lastCallbackAgeMs" to metrics.lastCallbackAgeMs,
                 "activeDelegate" to activeDelegate.wireValue,
                 "lastError" to metrics.lastError,
+                "analyzerInputFps" to metrics.analyzerInputFps,
+                "inferenceSubmittedFps" to metrics.inferenceSubmittedFps,
+                "resultCallbackFps" to metrics.resultCallbackFps,
+                "validPoseFps" to metrics.validPoseFps,
                 "actualAnalysisFps" to metrics.actualAnalysisFps,
                 "droppedBeforePreprocessing" to metrics.droppedBeforePreprocessing,
                 "rejectedAsBusy" to metrics.rejectedAsBusy,
