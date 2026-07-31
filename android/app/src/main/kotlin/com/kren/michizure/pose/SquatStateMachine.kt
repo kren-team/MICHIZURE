@@ -15,6 +15,7 @@ class SquatStateMachine(
     isEmulator: Boolean = false,
 ) {
     private val poseLossResetMs = config.poseLossResetMs(isEmulator)
+    private val calibrationTimeoutMs = config.calibrationTimeoutMs(isEmulator)
     var state: SquatState = SquatState.CALIBRATING
         private set
     var repSequence: Int = 0
@@ -29,10 +30,14 @@ class SquatStateMachine(
 
     private var calibrationStartedMs: Long? = null
     private var calibrationSide: PoseSide? = null
-    private val calibrationHipYs = ArrayDeque<Double>()
-    private val calibrationLegLengths = ArrayDeque<Double>()
-    private val calibrationKnees = ArrayDeque<Double>()
+    private val calibrationCandidates = ArrayDeque<StandingCandidate>()
     private var calibrationStatus = WAITING_FOR_STANDING
+    private var provisionalStandingCandidate: StandingCandidate? = null
+    private var calibrationQualityPath: CalibrationQualityPath? = null
+    private var lastCalibrationRejectReason: String? = null
+    private var candidateBufferPreserved = false
+    private var autoCalibratedOnDescent = false
+    private var standingBaselineSource: String? = null
     private var standingHipY = 0.0
     private var standingLegLength = 1.0
     private var standingKneeAngle = 180.0
@@ -81,6 +86,7 @@ class SquatStateMachine(
         return when (result) {
             is PoseFeatureResult.Invalid -> processInvalid(result)
             is PoseFeatureResult.Valid -> processValid(result)
+            is PoseFeatureResult.CalibrationCandidate -> processCalibrationCandidate(result)
         }
     }
 
@@ -105,10 +111,17 @@ class SquatStateMachine(
 
     private fun processInvalid(result: PoseFeatureResult.Invalid): SquatDetectorUpdate {
         latestRejectReason = result.rejectReason
+        if (state == SquatState.CALIBRATING) {
+            if (calibrationStartedMs == null) calibrationStartedMs = result.timestampMs
+            lastCalibrationRejectReason = result.rejectReason
+            candidateBufferPreserved = hasCalibrationCandidate()
+        }
         val lastValid = lastValidTimestampMs
         if (lastValid != null && result.timestampMs - lastValid > poseLossResetMs) {
             rejectActiveCycle(REJECT_POSE_LOST)
             resetToCalibrating(RESET_POSE_LOSS_TIMEOUT)
+        } else if (state == SquatState.CALIBRATING) {
+            expireCalibrationIfNeeded(result.timestampMs)
         }
         lastDiagnostics =
             diagnostics(
@@ -124,7 +137,38 @@ class SquatStateMachine(
     }
 
     private fun processValid(result: PoseFeatureResult.Valid): SquatDetectorUpdate {
-        val sample = result.sample
+        return processUsableSample(
+            sample = result.sample,
+            quality = result.quality,
+            qualityPath = CalibrationQualityPath.NORMAL,
+        )
+    }
+
+    private fun processCalibrationCandidate(
+        result: PoseFeatureResult.CalibrationCandidate,
+    ): SquatDetectorUpdate {
+        if (state != SquatState.CALIBRATING) {
+            return processInvalid(
+                PoseFeatureResult.Invalid(
+                    timestampMs = result.timestampMs,
+                    warning = result.warning,
+                    quality = result.quality,
+                    rejectReason = result.rejectReason,
+                ),
+            )
+        }
+        return processUsableSample(
+            sample = result.sample,
+            quality = result.quality,
+            qualityPath = result.qualityPath,
+        )
+    }
+
+    private fun processUsableSample(
+        sample: PoseFeatureSample,
+        quality: PoseQualityMetrics,
+        qualityPath: CalibrationQualityPath,
+    ): SquatDetectorUpdate {
         var validGapMs = lastValidTimestampMs?.let { sample.timestampMs - it }
         if (validGapMs != null && validGapMs > poseLossResetMs) {
             rejectActiveCycle(REJECT_POSE_LOST)
@@ -157,7 +201,7 @@ class SquatStateMachine(
 
         val detectorUpdate =
             when (state) {
-                SquatState.CALIBRATING -> calibrate(sample)
+                SquatState.CALIBRATING -> calibrate(sample, qualityPath)
                 SquatState.STANDING -> fromStanding(sample)
                 SquatState.DESCENDING -> fromDescending(sample)
                 SquatState.BOTTOM -> fromBottom(sample, kneeVelocity, hipVelocity)
@@ -165,7 +209,7 @@ class SquatStateMachine(
             }
         lastDiagnostics =
             diagnostics(
-                quality = result.quality,
+                quality = quality,
                 filteredKnee = sample.kneeAngleDeg,
                 rawKnee = sample.rawKneeAngleDeg,
                 hipDrop = normalizedHipDrop(sample),
@@ -176,44 +220,92 @@ class SquatStateMachine(
         return detectorUpdate.copy(diagnostics = lastDiagnostics)
     }
 
-    private fun calibrate(sample: PoseFeatureSample): SquatDetectorUpdate {
+    private fun calibrate(
+        sample: PoseFeatureSample,
+        qualityPath: CalibrationQualityPath,
+    ): SquatDetectorUpdate {
+        if (calibrationStartedMs == null) calibrationStartedMs = sample.timestampMs
+        pruneCalibrationWindow(sample.timestampMs)
+        val provisional = provisionalStandingCandidate?.sample?.kneeAngleDeg
+        if (provisional != null &&
+            provisional - sample.kneeAngleDeg >= config.calibrationAutoDescentDeltaDeg
+        ) {
+            finalizeCalibration(AUTO_CALIBRATED_ON_DESCENT)
+            autoCalibratedOnDescent = true
+            val hipDrop = ((sample.hipY - standingHipY) / standingLegLength).coerceAtLeast(0.0)
+            beginCycle(sample, hipDrop)
+            currentBottomEvidence().path?.let { path ->
+                return confirmBottom(sample, path)
+            }
+            transition(SquatState.DESCENDING, sample.timestampMs, AUTO_CALIBRATED_ON_DESCENT)
+            latestRejectReason = REJECT_NO_BOTTOM_EVIDENCE
+            return update()
+        }
+
         if (calibrationSide != null && calibrationSide != sample.selectedSide) {
-            resetCalibration()
-            lastResetReason = RESET_CALIBRATION_SIDE_CHANGED
+            calibrationStatus = CALIBRATION_COLLECTING
+            lastCalibrationRejectReason = REJECT_CALIBRATION_SIDE_CHANGED
+            candidateBufferPreserved = hasCalibrationCandidate()
+            expireCalibrationIfNeeded(sample.timestampMs)
+            latestRejectReason = REJECT_CALIBRATION_SIDE_CHANGED
+            return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
         }
         calibrationSide = sample.selectedSide
-        if (sample.kneeAngleDeg < config.calibrationStandingMinimumKneeDeg) {
+        if (sample.kneeAngleDeg < config.calibrationAuxiliaryStandingMinimumKneeDeg) {
             calibrationStatus = WAITING_FOR_STANDING
             expireCalibrationIfNeeded(sample.timestampMs)
             latestRejectReason = WAITING_FOR_STANDING
+            lastCalibrationRejectReason = WAITING_FOR_STANDING
+            candidateBufferPreserved = hasCalibrationCandidate()
             return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
         }
 
-        val started = calibrationStartedMs ?: sample.timestampMs.also { calibrationStartedMs = it }
-        addCalibrationSample(sample)
-        calibrationStatus = CALIBRATION_COLLECTING
-        val legMedian = median(calibrationLegLengths)
-        val hipJitter = robustSpread(calibrationHipYs) / max(legMedian, EPSILON)
-        val kneeJitter = robustSpread(calibrationKnees)
-        val stable =
-            hipJitter <= config.calibrationMaximumHipDriftRatio &&
-                kneeJitter <= config.calibrationMaximumKneeDriftDeg
-        val enoughSamples = calibrationKnees.size >= config.calibrationMinimumSamples
-        val observedLongEnough = sample.timestampMs - started >= config.calibrationObservationMs
-
-        if (enoughSamples && observedLongEnough && stable) {
-            standingHipY = median(calibrationHipYs)
-            standingLegLength = legMedian
-            standingKneeAngle = median(calibrationKnees)
-            baselineJitter = max(hipJitter, kneeJitter / 180.0)
-            calibrationStatus = CALIBRATION_COMPLETE
-            latestRejectReason = null
-            transition(SquatState.STANDING, sample.timestampMs, CALIBRATION_COMPLETE)
-            return update()
-        }
-        if (!stable) {
+        if (isCalibrationMotionOutlier(sample)) {
             calibrationStatus = CALIBRATION_UNSTABLE
             latestRejectReason = REJECT_CALIBRATION_MOTION
+            lastCalibrationRejectReason = REJECT_CALIBRATION_MOTION
+            candidateBufferPreserved = hasCalibrationCandidate()
+            expireCalibrationIfNeeded(sample.timestampMs)
+            return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
+        }
+
+        addCalibrationSample(sample, qualityPath)
+        calibrationStatus = CALIBRATION_COLLECTING
+        calibrationQualityPath = qualityPath
+        candidateBufferPreserved = false
+        lastCalibrationRejectReason = null
+        if (sample.kneeAngleDeg >= config.calibrationProvisionalStandingMinimumKneeDeg) {
+            val candidate = calibrationCandidates.last()
+            if ((provisionalStandingCandidate?.sample?.kneeAngleDeg ?: Double.NEGATIVE_INFINITY) <
+                sample.kneeAngleDeg
+            ) {
+                provisionalStandingCandidate = candidate
+            }
+        }
+
+        val enoughSamples = calibrationCandidates.size >= config.calibrationMinimumSamples
+        val angleRange = calibrationAngleRange()
+        if (enoughSamples &&
+            angleRange != null &&
+            angleRange <= config.calibrationMaximumAngleRangeDeg
+        ) {
+            val source =
+                if (calibrationCandidates.size == config.calibrationMinimumSamples) {
+                    TWO_SAMPLE_MEDIAN
+                } else {
+                    MULTI_SAMPLE_MEDIAN
+                }
+            finalizeCalibration(source)
+            transition(
+                SquatState.STANDING,
+                sample.timestampMs,
+                if (source == TWO_SAMPLE_MEDIAN) {
+                    CALIBRATED_FROM_TWO_SAMPLES
+                } else {
+                    CALIBRATED_FROM_MULTI_SAMPLES
+                },
+            )
+            return update()
         }
         expireCalibrationIfNeeded(sample.timestampMs)
         return update(PoseQualityWarning.HOLD_STILL_TO_CALIBRATE)
@@ -236,6 +328,7 @@ class SquatStateMachine(
             return update()
         }
 
+        autoCalibratedOnDescent = false
         beginCycle(sample, hipDrop)
         currentBottomEvidence().path?.let { path ->
             return confirmBottom(sample, path)
@@ -437,12 +530,14 @@ class SquatStateMachine(
     }
 
     private fun isStrongReturnStanding(sample: PoseFeatureSample): Boolean =
-        sample.kneeAngleDeg >= thresholds().returnStandingAngle
+        sample.kneeAngleDeg >= thresholds().returnStandingAngle ||
+            (sample.kneeAngleDeg >= config.returnStandingAbsoluteKneeDeg &&
+                sample.kneeAngleDeg - minimumKnee >= config.returnStandingMinimumRecoveryDeg)
 
     private fun isReturnStanding(sample: PoseFeatureSample): Boolean {
         val hipDrop = normalizedHipDrop(sample) ?: Double.POSITIVE_INFINITY
         val thresholds = thresholds()
-        return sample.kneeAngleDeg >= thresholds.returnStandingAngle ||
+        return isStrongReturnStanding(sample) ||
             (sample.kneeAngleDeg >= thresholds.returnStandingRelaxedAngle &&
                 hipDrop <= config.returnStandingMaximumHipDropRatio &&
                 upwardMovementObserved)
@@ -453,23 +548,118 @@ class SquatStateMachine(
         return (sample.hipY - standingHipY) / standingLegLength
     }
 
-    private fun addCalibrationSample(sample: PoseFeatureSample) {
-        calibrationHipYs.addLast(sample.hipY)
-        calibrationLegLengths.addLast(sample.legLength)
-        calibrationKnees.addLast(sample.kneeAngleDeg)
-        while (calibrationKnees.size > config.calibrationTargetSamples) {
-            calibrationHipYs.removeFirst()
-            calibrationLegLengths.removeFirst()
-            calibrationKnees.removeFirst()
+    private fun addCalibrationSample(
+        sample: PoseFeatureSample,
+        qualityPath: CalibrationQualityPath,
+    ) {
+        calibrationCandidates.addLast(
+            StandingCandidate(
+                sample = sample,
+                qualityPath = qualityPath,
+            ),
+        )
+        while (calibrationCandidates.size > config.calibrationTargetSamples) {
+            calibrationCandidates.removeFirst()
         }
+    }
+
+    private fun pruneCalibrationWindow(timestampMs: Long) {
+        while (calibrationCandidates.isNotEmpty() &&
+            timestampMs - calibrationCandidates.first().sample.timestampMs >
+            config.calibrationWindowMs
+        ) {
+            calibrationCandidates.removeFirst()
+            candidateBufferPreserved = true
+        }
+    }
+
+    private fun isCalibrationMotionOutlier(sample: PoseFeatureSample): Boolean {
+        if (sample.kneeAngleDeg >= config.calibrationStrongStandingMinimumKneeDeg) return false
+        val center = calibrationMedianAngle() ?: return false
+        val hipCenter = median(calibrationCandidates.map { it.sample.hipY })
+        val legCenter = median(calibrationCandidates.map { it.sample.legLength })
+        val hipDrift = abs(sample.hipY - hipCenter) / max(legCenter, EPSILON)
+        return abs(sample.kneeAngleDeg - center) > config.calibrationMaximumAngleRangeDeg ||
+            hipDrift > config.calibrationMaximumHipDriftRatio
+    }
+
+    private fun finalizeCalibration(source: String) {
+        val sourceCandidates =
+            calibrationCandidates.ifEmpty {
+                listOfNotNull(provisionalStandingCandidate)
+            }
+        val selected =
+            sourceCandidates
+                .sortedByDescending { it.sample.kneeAngleDeg }
+                .take(config.calibrationPreferredSamples.coerceAtMost(sourceCandidates.size))
+        check(selected.isNotEmpty())
+        val hips = selected.map { it.sample.hipY }
+        val legs = selected.map { it.sample.legLength }
+        val knees = selected.map { it.sample.kneeAngleDeg }
+        standingHipY = median(hips)
+        standingLegLength = median(legs)
+        standingKneeAngle = median(knees)
+        val hipJitter = robustSpread(hips) / max(standingLegLength, EPSILON)
+        val kneeJitter = robustSpread(knees)
+        baselineJitter = max(hipJitter, kneeJitter / 180.0)
+        calibrationQualityPath =
+            selected.firstOrNull { it.qualityPath != CalibrationQualityPath.NORMAL }?.qualityPath
+                ?: CalibrationQualityPath.NORMAL
+        calibrationStatus = CALIBRATION_COMPLETE
+        standingBaselineSource = source
+        provisionalStandingCandidate = selected.first()
+        latestRejectReason = null
+        lastCalibrationRejectReason = null
+    }
+
+    private fun calibrationMedianAngle(): Double? =
+        calibrationCandidates
+            .map { it.sample.kneeAngleDeg }
+            .takeIf { it.isNotEmpty() }
+            ?.let(::median)
+
+    private fun hasCalibrationCandidate(): Boolean =
+        calibrationCandidates.isNotEmpty() || provisionalStandingCandidate != null
+
+    private fun calibrationAngleRange(): Double? {
+        if (calibrationCandidates.isEmpty()) return null
+        val knees = calibrationCandidates.map { it.sample.kneeAngleDeg }
+        return knees.max() - knees.min()
     }
 
     private fun expireCalibrationIfNeeded(timestampMs: Long) {
         val started = calibrationStartedMs ?: return
-        if (timestampMs - started <= config.calibrationTimeoutMs) return
-        resetCalibration()
-        calibrationStatus = CALIBRATION_TIMED_OUT
-        lastResetReason = RESET_CALIBRATION_TIMEOUT
+        if (timestampMs - started <= calibrationTimeoutMs) return
+        val strongCandidate =
+            calibrationCandidates.any {
+                it.sample.kneeAngleDeg >= config.calibrationStrongStandingMinimumKneeDeg
+            } ||
+                (provisionalStandingCandidate?.sample?.kneeAngleDeg ?: 0.0) >=
+                config.calibrationStrongStandingMinimumKneeDeg
+        when {
+            strongCandidate -> {
+                finalizeCalibration(TIMEOUT_PROVISIONAL)
+                calibrationStatus = CALIBRATION_COMPLETE
+                candidateBufferPreserved = true
+                lastResetReason = CALIBRATION_TIMEOUT_USED_PROVISIONAL
+                transition(
+                    SquatState.STANDING,
+                    timestampMs,
+                    CALIBRATION_TIMEOUT_USED_PROVISIONAL,
+                )
+            }
+            calibrationCandidates.isNotEmpty() || provisionalStandingCandidate != null -> {
+                calibrationStartedMs = timestampMs
+                calibrationStatus = CALIBRATION_EXTENDED
+                candidateBufferPreserved = true
+                lastResetReason = CALIBRATION_TIMEOUT_EXTENDED
+            }
+            else -> {
+                resetCalibration()
+                calibrationStatus = CALIBRATION_TIMED_OUT
+                lastResetReason = CALIBRATION_TIMEOUT_NO_CANDIDATE
+            }
+        }
     }
 
     private fun recordValidPoseTime(timestampMs: Long) {
@@ -520,10 +710,14 @@ class SquatStateMachine(
     private fun resetCalibration() {
         calibrationStartedMs = null
         calibrationSide = null
-        calibrationHipYs.clear()
-        calibrationLegLengths.clear()
-        calibrationKnees.clear()
+        calibrationCandidates.clear()
         calibrationStatus = WAITING_FOR_STANDING
+        provisionalStandingCandidate = null
+        calibrationQualityPath = null
+        lastCalibrationRejectReason = null
+        candidateBufferPreserved = false
+        autoCalibratedOnDescent = false
+        standingBaselineSource = null
     }
 
     private fun clearCycle(clearAttemptMetrics: Boolean) {
@@ -551,7 +745,7 @@ class SquatStateMachine(
         hipVelocity: Double?,
         timestampMs: Long,
     ): SquatFrameDiagnostics {
-        val calibrated = calibrationStatus == CALIBRATION_COMPLETE || state != SquatState.CALIBRATING
+        val calibrated = standingBaselineSource != null || state != SquatState.CALIBRATING
         val thresholds = thresholds()
         return SquatFrameDiagnostics(
             poseDetected = quality.poseDetected,
@@ -576,8 +770,25 @@ class SquatStateMachine(
             frameDtMs = currentFrameDtMs,
             validPoseAgeMs = lastValidTimestampMs?.let { (timestampMs - it).coerceAtLeast(0) },
             effectiveValidPoseFps = effectiveValidPoseFps(),
-            calibrationSampleCount = calibrationKnees.size,
+            calibrationSampleCount = calibrationCandidates.size,
             calibrationStatus = calibrationStatus,
+            strongStandingCandidateCount =
+                calibrationCandidates.count {
+                    it.sample.kneeAngleDeg >= config.calibrationStrongStandingMinimumKneeDeg
+                },
+            provisionalStandingAngleDeg = provisionalStandingCandidate?.sample?.kneeAngleDeg,
+            calibrationMedianAngleDeg = calibrationMedianAngle(),
+            calibrationAngleRangeDeg = calibrationAngleRange(),
+            calibrationWindowAgeMs =
+                calibrationCandidates.firstOrNull()?.sample?.timestampMs?.let {
+                    (timestampMs - it).coerceAtLeast(0)
+                },
+            calibrationTimeoutMs = calibrationTimeoutMs,
+            calibrationQualityPath = calibrationQualityPath,
+            lastCalibrationRejectReason = lastCalibrationRejectReason,
+            candidateBufferPreserved = candidateBufferPreserved,
+            autoCalibratedOnDescent = autoCalibratedOnDescent,
+            standingBaselineSource = standingBaselineSource,
             bottomReached = bottomReached,
             standingConfirmationDurationMs = 0,
             bottomConfirmationDurationMs = 0,
@@ -647,6 +858,17 @@ class SquatStateMachine(
             effectiveValidPoseFps = 0.0,
             calibrationSampleCount = 0,
             calibrationStatus = WAITING_FOR_STANDING,
+            strongStandingCandidateCount = 0,
+            provisionalStandingAngleDeg = null,
+            calibrationMedianAngleDeg = null,
+            calibrationAngleRangeDeg = null,
+            calibrationWindowAgeMs = null,
+            calibrationTimeoutMs = calibrationTimeoutMs,
+            calibrationQualityPath = null,
+            lastCalibrationRejectReason = null,
+            candidateBufferPreserved = false,
+            autoCalibratedOnDescent = false,
+            standingBaselineSource = null,
             bottomReached = false,
             standingConfirmationDurationMs = 0,
             bottomConfirmationDurationMs = 0,
@@ -689,6 +911,11 @@ class SquatStateMachine(
         return median(values.map { abs(it - center) }) * MAD_TO_SIGMA
     }
 
+    private data class StandingCandidate(
+        val sample: PoseFeatureSample,
+        val qualityPath: CalibrationQualityPath,
+    )
+
     private companion object {
         const val EPSILON = 1e-6
         const val FPS_WINDOW_MS = 3_000L
@@ -711,15 +938,25 @@ class SquatStateMachine(
         const val REJECT_DUPLICATE_TIMESTAMP = "REJECT_DUPLICATE_TIMESTAMP"
         const val REJECT_POSE_LOST = "REJECT_POSE_LOST"
         const val REJECT_CALIBRATION_MOTION = "REJECT_CALIBRATION_MOTION"
+        const val REJECT_CALIBRATION_SIDE_CHANGED = "REJECT_CALIBRATION_SIDE_CHANGED"
         const val RESET_POSE_LOSS_TIMEOUT = "RESET_POSE_LOSS_TIMEOUT"
         const val RESET_REP_TIMEOUT = "RESET_REP_TIMEOUT"
         const val RESET_SESSION = "RESET_SESSION"
-        const val RESET_CALIBRATION_SIDE_CHANGED = "RESET_CALIBRATION_SIDE_CHANGED"
-        const val RESET_CALIBRATION_TIMEOUT = "RESET_CALIBRATION_TIMEOUT"
         const val RESET_TO_CALIBRATING = "RESET_TO_CALIBRATING"
         const val CALIBRATION_COLLECTING = "COLLECTING"
         const val CALIBRATION_COMPLETE = "COMPLETE"
         const val CALIBRATION_UNSTABLE = "UNSTABLE"
         const val CALIBRATION_TIMED_OUT = "TIMED_OUT"
+        const val CALIBRATION_EXTENDED = "EXTENDED"
+        const val CALIBRATED_FROM_TWO_SAMPLES = "CALIBRATED_FROM_TWO_SAMPLES"
+        const val CALIBRATED_FROM_MULTI_SAMPLES = "CALIBRATED_FROM_MULTI_SAMPLES"
+        const val AUTO_CALIBRATED_ON_DESCENT = "AUTO_CALIBRATED_ON_DESCENT"
+        const val CALIBRATION_TIMEOUT_NO_CANDIDATE = "CALIBRATION_TIMEOUT_NO_CANDIDATE"
+        const val CALIBRATION_TIMEOUT_USED_PROVISIONAL =
+            "CALIBRATION_TIMEOUT_USED_PROVISIONAL"
+        const val CALIBRATION_TIMEOUT_EXTENDED = "CALIBRATION_TIMEOUT_EXTENDED"
+        const val MULTI_SAMPLE_MEDIAN = "MULTI_SAMPLE_MEDIAN"
+        const val TWO_SAMPLE_MEDIAN = "TWO_SAMPLE_MEDIAN"
+        const val TIMEOUT_PROVISIONAL = "TIMEOUT_PROVISIONAL"
     }
 }

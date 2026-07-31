@@ -90,6 +90,12 @@ data class PoseFeatureSample(
     val selectedSide: PoseSide,
 )
 
+enum class CalibrationQualityPath(val wireValue: String) {
+    NORMAL("NORMAL"),
+    ANGLE_CONFIDENCE_FALLBACK("ANGLE_CONFIDENCE_FALLBACK"),
+    ANGLE_SIZE_FALLBACK("ANGLE_SIZE_FALLBACK"),
+}
+
 sealed interface PoseFeatureResult {
     val timestampMs: Long
     val quality: PoseQualityMetrics
@@ -97,6 +103,17 @@ sealed interface PoseFeatureResult {
     data class Valid(
         val sample: PoseFeatureSample,
         override val quality: PoseQualityMetrics = PoseQualityMetrics.EMPTY,
+    ) : PoseFeatureResult {
+        override val timestampMs: Long
+            get() = sample.timestampMs
+    }
+
+    data class CalibrationCandidate(
+        val sample: PoseFeatureSample,
+        val qualityPath: CalibrationQualityPath,
+        val warning: PoseQualityWarning,
+        val rejectReason: String,
+        override val quality: PoseQualityMetrics,
     ) : PoseFeatureResult {
         override val timestampMs: Long
             get() = sample.timestampMs
@@ -143,6 +160,17 @@ data class SquatFrameDiagnostics(
     val effectiveValidPoseFps: Double,
     val calibrationSampleCount: Int,
     val calibrationStatus: String,
+    val strongStandingCandidateCount: Int,
+    val provisionalStandingAngleDeg: Double?,
+    val calibrationMedianAngleDeg: Double?,
+    val calibrationAngleRangeDeg: Double?,
+    val calibrationWindowAgeMs: Long?,
+    val calibrationTimeoutMs: Long,
+    val calibrationQualityPath: CalibrationQualityPath?,
+    val lastCalibrationRejectReason: String?,
+    val candidateBufferPreserved: Boolean,
+    val autoCalibratedOnDescent: Boolean,
+    val standingBaselineSource: String?,
     val bottomReached: Boolean,
     val standingConfirmationDurationMs: Long,
     val bottomConfirmationDurationMs: Long,

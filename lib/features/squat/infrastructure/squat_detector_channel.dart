@@ -196,6 +196,17 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'effectiveValidPoseFps',
         'calibrationSampleCount',
         'calibrationStatus',
+        'strongStandingCandidateCount',
+        'provisionalStandingAngle',
+        'calibrationMedianAngle',
+        'calibrationAngleRange',
+        'calibrationWindowAgeMs',
+        'calibrationTimeoutMs',
+        'calibrationQualityPath',
+        'lastCalibrationRejectReason',
+        'candidateBufferPreserved',
+        'autoCalibratedOnDescent',
+        'standingBaselineSource',
         'bottomReached',
         'standingConfirmationDurationMs',
         'bottomConfirmationDurationMs',
@@ -313,6 +324,9 @@ final class MethodChannelSquatDetector implements SquatDetector {
     final lastTransitionReason = raw['lastTransitionReason'];
     final lastResetReason = raw['lastResetReason'];
     final calibrationStatus = raw['calibrationStatus'];
+    final calibrationQualityPath = raw['calibrationQualityPath'];
+    final lastCalibrationRejectReason = raw['lastCalibrationRejectReason'];
+    final standingBaselineSource = raw['standingBaselineSource'];
     if (poseDetected is! bool ||
         !_isNullableDiagnosticCode(latestRejectReason) ||
         !_isNullableDiagnosticCode(lastTransitionReason) ||
@@ -320,6 +334,11 @@ final class MethodChannelSquatDetector implements SquatDetector {
         calibrationStatus is! String ||
         calibrationStatus.isEmpty ||
         calibrationStatus.length > 64 ||
+        !_isNullableDiagnosticCode(calibrationQualityPath) ||
+        !_isNullableDiagnosticCode(lastCalibrationRejectReason) ||
+        !_isNullableDiagnosticCode(standingBaselineSource) ||
+        raw['candidateBufferPreserved'] is! bool ||
+        raw['autoCalibratedOnDescent'] is! bool ||
         raw['bottomReached'] is! bool ||
         raw['downwardMovementObserved'] is! bool ||
         raw['upwardMovementObserved'] is! bool) {
@@ -369,6 +388,26 @@ final class MethodChannelSquatDetector implements SquatDetector {
       effectiveValidPoseFps: _nonNegativeDouble(raw, 'effectiveValidPoseFps'),
       calibrationSampleCount: _nonNegativeInt(raw, 'calibrationSampleCount'),
       calibrationStatus: calibrationStatus,
+      strongStandingCandidateCount: _nonNegativeInt(
+        raw,
+        'strongStandingCandidateCount',
+      ),
+      provisionalStandingAngle: _nullableDouble(
+        raw,
+        'provisionalStandingAngle',
+      ),
+      calibrationMedianAngle: _nullableDouble(raw, 'calibrationMedianAngle'),
+      calibrationAngleRange: _nullableDouble(raw, 'calibrationAngleRange'),
+      calibrationWindowAgeMs: _nullableNonNegativeInt(
+        raw,
+        'calibrationWindowAgeMs',
+      ),
+      calibrationTimeoutMs: _nonNegativeInt(raw, 'calibrationTimeoutMs'),
+      calibrationQualityPath: calibrationQualityPath as String?,
+      lastCalibrationRejectReason: lastCalibrationRejectReason as String?,
+      candidateBufferPreserved: raw['candidateBufferPreserved'] as bool,
+      autoCalibratedOnDescent: raw['autoCalibratedOnDescent'] as bool,
+      standingBaselineSource: standingBaselineSource as String?,
       bottomReached: raw['bottomReached'] as bool,
       standingConfirmationDurationMs: _nonNegativeInt(
         raw,

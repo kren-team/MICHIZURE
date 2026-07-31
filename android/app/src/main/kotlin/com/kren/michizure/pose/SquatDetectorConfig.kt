@@ -12,6 +12,8 @@ data class SquatDetectorConfig(
     val minPosePresenceConfidence: Float = 0.50f,
     val minPoseTrackingConfidence: Float = 0.50f,
     val minimumLandmarkConfidence: Double = 0.65,
+    val calibrationFallbackConfidence: Double = 0.22,
+    val calibrationCoordinateMarginRatio: Double = 0.25,
     val minimumLegLengthRatio: Double = 0.22,
     val maximumLegLengthRatio: Double = 1.50,
     val sideStickinessMs: Long = 500,
@@ -19,13 +21,19 @@ data class SquatDetectorConfig(
     val velocityResetGapMs: Long = 400,
     val emulatorPoseLossResetMs: Long = 4_000,
     val physicalPoseLossResetMs: Long = 2_000,
-    val calibrationObservationMs: Long = 2_000,
-    val calibrationTimeoutMs: Long = 3_000,
-    val calibrationMinimumSamples: Int = 6,
+    val calibrationWindowMs: Long = 8_000,
+    val emulatorCalibrationTimeoutMs: Long = 12_000,
+    val physicalCalibrationTimeoutMs: Long = 8_000,
+    val calibrationMinimumSamples: Int = 2,
+    val calibrationPreferredSamples: Int = 3,
     val calibrationTargetSamples: Int = 8,
-    val calibrationMaximumHipDriftRatio: Double = 0.03,
+    val calibrationMaximumHipDriftRatio: Double = 0.12,
     val calibrationMaximumKneeDriftDeg: Double = 8.0,
-    val calibrationStandingMinimumKneeDeg: Double = 155.0,
+    val calibrationAuxiliaryStandingMinimumKneeDeg: Double = 150.0,
+    val calibrationStrongStandingMinimumKneeDeg: Double = 160.0,
+    val calibrationProvisionalStandingMinimumKneeDeg: Double = 165.0,
+    val calibrationMaximumAngleRangeDeg: Double = 20.0,
+    val calibrationAutoDescentDeltaDeg: Double = 20.0,
     val standingMaximumHipDropRatio: Double = 0.12,
     val standingKneeBaselineDeltaDeg: Double = 25.0,
     val standingKneeMinimumDeg: Double = 135.0,
@@ -58,13 +66,15 @@ data class SquatDetectorConfig(
     val initialDownwardHipDropRatio: Double = 0.03,
     val tooDeepKneeDeg: Double = 55.0,
     val tooDeepHipDropRatio: Double = 0.20,
-    val returnStandingKneeBaselineDeltaDeg: Double = 28.0,
+    val returnStandingKneeBaselineDeltaDeg: Double = 25.0,
     val returnStandingKneeMinimumDeg: Double = 130.0,
     val returnStandingKneeMaximumDeg: Double = 155.0,
     val returnStandingRelaxedKneeBaselineDeltaDeg: Double = 35.0,
     val returnStandingRelaxedKneeMinimumDeg: Double = 125.0,
     val returnStandingRelaxedKneeMaximumDeg: Double = 150.0,
     val returnStandingMaximumHipDropRatio: Double = 0.18,
+    val returnStandingAbsoluteKneeDeg: Double = 155.0,
+    val returnStandingMinimumRecoveryDeg: Double = 30.0,
     val returnStandingConfirmationMs: Long = 100,
     val minimumRepDurationMs: Long = 400,
     val maximumRepDurationMs: Long = 12_000,
@@ -81,6 +91,9 @@ data class SquatDetectorConfig(
 
     fun poseLossResetMs(isEmulator: Boolean): Long =
         if (isEmulator) emulatorPoseLossResetMs else physicalPoseLossResetMs
+
+    fun calibrationTimeoutMs(isEmulator: Boolean): Long =
+        if (isEmulator) emulatorCalibrationTimeoutMs else physicalCalibrationTimeoutMs
 
     fun thresholdsFor(standingKneeAngle: Double): SquatCalibrationThresholds =
         SquatCalibrationThresholds(
@@ -162,7 +175,7 @@ data class SquatDetectorConfig(
     }
 
     companion object {
-        const val VERSION = "mediapipe-lite-multi-evidence-v8"
+        const val VERSION = "mediapipe-lite-calibration-fallback-v9"
         const val MODEL_ASSET = "pose_landmarker_lite.task"
     }
 }

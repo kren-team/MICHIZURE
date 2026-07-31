@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
+import java.util.Locale
 
 data class NativeSquatSession(
     val squatSessionId: String,
@@ -269,7 +270,12 @@ class SquatSessionManager(
                         "detectorType" to "mediapipe",
                         "detectorVersion" to SquatDetectorConfig.VERSION,
                         "frameObservedElapsedMs" to
-                            (feature as? PoseFeatureResult.Valid)?.sample?.timestampMs,
+                            when (feature) {
+                                is PoseFeatureResult.Valid -> feature.sample.timestampMs
+                                is PoseFeatureResult.CalibrationCandidate ->
+                                    feature.sample.timestampMs
+                                is PoseFeatureResult.Invalid -> null
+                            },
                         "uiEmittedElapsedMs" to elapsedMs(),
                         "analysisLatencyMs" to latencyMs,
                     ),
@@ -333,6 +339,22 @@ class SquatSessionManager(
                 "effectiveValidPoseFps" to (diagnostics?.effectiveValidPoseFps ?: 0.0),
                 "calibrationSampleCount" to (diagnostics?.calibrationSampleCount ?: 0),
                 "calibrationStatus" to (diagnostics?.calibrationStatus ?: "waitingForStanding"),
+                "strongStandingCandidateCount" to
+                    (diagnostics?.strongStandingCandidateCount ?: 0),
+                "provisionalStandingAngle" to diagnostics?.provisionalStandingAngleDeg,
+                "calibrationMedianAngle" to diagnostics?.calibrationMedianAngleDeg,
+                "calibrationAngleRange" to diagnostics?.calibrationAngleRangeDeg,
+                "calibrationWindowAgeMs" to diagnostics?.calibrationWindowAgeMs,
+                "calibrationTimeoutMs" to
+                    (diagnostics?.calibrationTimeoutMs ?:
+                        detectorConfig.calibrationTimeoutMs(runtimeEnvironment.isEmulator)),
+                "calibrationQualityPath" to diagnostics?.calibrationQualityPath?.wireValue,
+                "lastCalibrationRejectReason" to diagnostics?.lastCalibrationRejectReason,
+                "candidateBufferPreserved" to
+                    (diagnostics?.candidateBufferPreserved ?: false),
+                "autoCalibratedOnDescent" to
+                    (diagnostics?.autoCalibratedOnDescent ?: false),
+                "standingBaselineSource" to diagnostics?.standingBaselineSource,
                 "bottomReached" to (diagnostics?.bottomReached ?: false),
                 "standingConfirmationDurationMs" to
                     (diagnostics?.standingConfirmationDurationMs ?: 0),
@@ -473,7 +495,19 @@ class SquatSessionManager(
         }
         if (update.repCompleted && update.repSequence > lastLoggedRepSequence) {
             lastLoggedRepSequence = update.repSequence
-            Log.i(SQUAT_REP_TAG, "REP_ACCEPTED sequence=${update.repSequence}")
+            val diagnostics = update.diagnostics
+            Log.i(
+                SQUAT_REP_TAG,
+                String.format(
+                    Locale.US,
+                    "REP_ACCEPTED sequence=%d standing=%.1f minKnee=%.1f maxBend=%.1f evidence=%s",
+                    update.repSequence,
+                    diagnostics.calibratedStandingKneeAngleDeg ?: -1.0,
+                    diagnostics.minimumAttemptKneeAngleDeg ?: -1.0,
+                    diagnostics.kneeBendDeltaDeg ?: -1.0,
+                    diagnostics.bottomEvidencePath?.wireValue ?: "NONE",
+                ),
+            )
         }
         val diagnostics = update.diagnostics
         val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }

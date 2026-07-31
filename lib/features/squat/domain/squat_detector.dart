@@ -197,6 +197,17 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.effectiveValidPoseFps = 0,
     this.calibrationSampleCount = 0,
     this.calibrationStatus = 'waitingForStanding',
+    this.strongStandingCandidateCount = 0,
+    this.provisionalStandingAngle,
+    this.calibrationMedianAngle,
+    this.calibrationAngleRange,
+    this.calibrationWindowAgeMs,
+    this.calibrationTimeoutMs = 0,
+    this.calibrationQualityPath,
+    this.lastCalibrationRejectReason,
+    this.candidateBufferPreserved = false,
+    this.autoCalibratedOnDescent = false,
+    this.standingBaselineSource,
     this.bottomReached = false,
     this.standingConfirmationDurationMs = 0,
     this.bottomConfirmationDurationMs = 0,
@@ -278,6 +289,17 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final double effectiveValidPoseFps;
   final int calibrationSampleCount;
   final String calibrationStatus;
+  final int strongStandingCandidateCount;
+  final double? provisionalStandingAngle;
+  final double? calibrationMedianAngle;
+  final double? calibrationAngleRange;
+  final int? calibrationWindowAgeMs;
+  final int calibrationTimeoutMs;
+  final String? calibrationQualityPath;
+  final String? lastCalibrationRejectReason;
+  final bool candidateBufferPreserved;
+  final bool autoCalibratedOnDescent;
+  final String? standingBaselineSource;
   final bool bottomReached;
   final int standingConfirmationDurationMs;
   final int bottomConfirmationDurationMs;

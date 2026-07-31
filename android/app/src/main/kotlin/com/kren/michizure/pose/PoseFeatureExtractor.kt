@@ -67,11 +67,19 @@ class PoseFeatureExtractor(
                 "lowerBodyGeometryInvalid",
             )
         }
-        val validLeft =
-            left?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
-        val validRight =
-            right?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
+        val validLeft = left?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
+        val validRight = right?.takeIf { it.confidence >= config.minimumLandmarkConfidence }
         if (validLeft == null && validRight == null) {
+            val fallback = selectCalibrationFallback(pose, left, right)
+            if (fallback != null) {
+                return calibrationCandidate(
+                    pose = pose,
+                    selected = fallback,
+                    path = CalibrationQualityPath.ANGLE_CONFIDENCE_FALLBACK,
+                    warning = PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
+                    reason = "lowerBodyConfidenceLow",
+                )
+            }
             return invalid(
                 pose,
                 PoseQualityWarning.LOW_LIGHT_OR_CONFIDENCE,
@@ -84,6 +92,17 @@ class PoseFeatureExtractor(
         val quality = quality(pose, selected.side, PoseTrackingStatus.VALID)
         val legLengthRatio = selected.legLength / pose.imageHeight.toDouble()
         if (legLengthRatio < config.minimumLegLengthRatio) {
+            if (selected.kneeAngle >= config.calibrationStrongStandingMinimumKneeDeg &&
+                selected.isInsideCalibrationBounds(pose)
+            ) {
+                return calibrationCandidate(
+                    pose = pose,
+                    selected = selected,
+                    path = CalibrationQualityPath.ANGLE_SIZE_FALLBACK,
+                    warning = PoseQualityWarning.MOVE_CLOSER,
+                    reason = "lowerBodyTooSmall",
+                )
+            }
             return invalid(
                 pose,
                 PoseQualityWarning.MOVE_CLOSER,
@@ -191,8 +210,59 @@ class PoseFeatureExtractor(
             hipY = hip.y,
             legLength = legLength,
             confidence = confidence,
+            confidencePassCount =
+                listOf(hip, knee, ankle).count {
+                    it.confidence >= config.calibrationFallbackConfidence
+                },
+            hip = hip,
+            knee = knee,
+            ankle = ankle,
             side = side,
         )
+    }
+
+    private fun selectCalibrationFallback(
+        pose: LowerBodyPose,
+        left: SideMeasurement?,
+        right: SideMeasurement?,
+    ): SideMeasurement? =
+        listOfNotNull(left, right)
+            .filter {
+                it.kneeAngle >= config.calibrationAuxiliaryStandingMinimumKneeDeg &&
+                    it.confidencePassCount >= 2 &&
+                    it.isInsideCalibrationBounds(pose)
+            }
+            .maxByOrNull { it.confidence }
+
+    private fun calibrationCandidate(
+        pose: LowerBodyPose,
+        selected: SideMeasurement,
+        path: CalibrationQualityPath,
+        warning: PoseQualityWarning,
+        reason: String,
+    ) = PoseFeatureResult.CalibrationCandidate(
+        sample =
+            PoseFeatureSample(
+                timestampMs = pose.timestampMs,
+                kneeAngleDeg = selected.kneeAngle,
+                hipY = selected.hipY / pose.imageHeight,
+                legLength = selected.legLength / pose.imageHeight,
+                confidence = selected.confidence,
+                selectedSide = selected.side,
+            ),
+        qualityPath = path,
+        warning = warning,
+        rejectReason = reason,
+        quality = quality(pose, selected.side, PoseTrackingStatus.CONFIDENCE_INSUFFICIENT),
+    )
+
+    private fun SideMeasurement.isInsideCalibrationBounds(pose: LowerBodyPose): Boolean {
+        val xMargin = pose.imageWidth * config.calibrationCoordinateMarginRatio
+        val yMargin = pose.imageHeight * config.calibrationCoordinateMarginRatio
+        return listOf(hip, knee, ankle).all {
+            it.x in -xMargin..(pose.imageWidth + xMargin) &&
+                it.y in -yMargin..(pose.imageHeight + yMargin)
+        }
     }
 
     private fun quality(
@@ -246,6 +316,10 @@ class PoseFeatureExtractor(
         val hipY: Double,
         val legLength: Double,
         val confidence: Double,
+        val confidencePassCount: Int,
+        val hip: PosePoint,
+        val knee: PosePoint,
+        val ankle: PosePoint,
         val side: PoseSide,
     )
 }
