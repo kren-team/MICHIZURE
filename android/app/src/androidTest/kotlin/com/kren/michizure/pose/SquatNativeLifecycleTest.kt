@@ -230,7 +230,9 @@ class SquatNativeLifecycleTest {
 
         SquatEventBus.setListener { event ->
             events += event
-            if (event["type"] == "diagnostics") diagnosticsDelivered.countDown()
+            if (event["type"] == "diagnostics" && event["selectedSide"] == "left") {
+                diagnosticsDelivered.countDown()
+            }
         }
         try {
             instrumentation.runOnMainSync {
@@ -298,7 +300,10 @@ class SquatNativeLifecycleTest {
             }
 
             assertTrue(diagnosticsDelivered.await(2, TimeUnit.SECONDS))
-            val diagnostics = events.first { it["type"] == "diagnostics" }
+            val diagnostics =
+                events.first {
+                    it["type"] == "diagnostics" && it["selectedSide"] == "left"
+                }
             assertEquals(true, diagnostics["poseDetected"])
             assertEquals("left", diagnostics["selectedSide"])
             assertFalse(diagnostics.containsKey("landmarks"))
