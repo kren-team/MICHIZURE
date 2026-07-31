@@ -70,7 +70,10 @@
 - [ ] 胸の下〜足首guide、斜め30〜45度または横向きの案内
 - [ ] PreviewとNative guideが同じportrait 3:4 bounds内
 - [ ] debug diagnosticsでpose / side / confidence / feature / reject reasonを確認
-- [ ] delegateがGPUまたはCPU fallbackとして1回だけ確定
+- [ ] EmulatorはCPU固定。物理端末はGPUまたはCPU fallbackとして1回だけ確定
+- [ ] analyzer / submit / callbackが増加し、inference latencyが0ms固定ではない
+- [ ] callback待機とcallbackあり・poseなしが別表示
+- [ ] debug既知画像でcallback、pose 1件以上、hip/knee/ankleを確認
 - [ ] diagnosticsが4 FPS以下、analysisがGPU 12 FPS / CPU 8 FPS近傍
 - [ ] 直立calibration
 - [ ] 正常1 squatを1回だけcount
