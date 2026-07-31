@@ -241,6 +241,8 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.actualAnalysisHeight,
     this.droppedBeforePreprocessing = 0,
     this.rejectedAsBusy = 0,
+    this.convertedBitmapCount = 0,
+    this.rotationBitmapCount = 0,
     this.resultCount = 0,
     this.noPoseCount = 0,
     this.preprocessingP50Ms,
@@ -326,6 +328,8 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final int? actualAnalysisHeight;
   final int droppedBeforePreprocessing;
   final int rejectedAsBusy;
+  final int convertedBitmapCount;
+  final int rotationBitmapCount;
   final int resultCount;
   final int noPoseCount;
   final int? preprocessingP50Ms;

@@ -30,6 +30,8 @@ class PosePipelineStats(
     private var lastError: String? = null
     private var droppedBeforePreprocessing = 0L
     private var rejectedAsBusy = 0L
+    private var convertedBitmapCount = 0L
+    private var rotationBitmapCount = 0L
     private var resultCount = 0L
     private var noPoseCount = 0L
 
@@ -60,6 +62,16 @@ class PosePipelineStats(
     @Synchronized
     fun recordRejectedAsBusy() {
         rejectedAsBusy += 1
+    }
+
+    @Synchronized
+    fun recordConvertedBitmap() {
+        convertedBitmapCount += 1
+    }
+
+    @Synchronized
+    fun recordRotationBitmap() {
+        rotationBitmapCount += 1
     }
 
     @Synchronized
@@ -157,6 +169,8 @@ class PosePipelineStats(
             actualAnalysisFps = submittedFps,
             droppedBeforePreprocessing = droppedBeforePreprocessing,
             rejectedAsBusy = rejectedAsBusy,
+            convertedBitmapCount = convertedBitmapCount,
+            rotationBitmapCount = rotationBitmapCount,
             resultCount = resultCount,
             noPoseCount = noPoseCount,
             preprocessingP50Ms = percentile(preprocessingMs, 0.50),
@@ -191,6 +205,8 @@ class PosePipelineStats(
         lastError = null
         droppedBeforePreprocessing = 0
         rejectedAsBusy = 0
+        convertedBitmapCount = 0
+        rotationBitmapCount = 0
         resultCount = 0
         noPoseCount = 0
         requestedAnalysisWidth = 0

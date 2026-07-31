@@ -296,6 +296,9 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
           'Throttle/busy drop: ${value?.droppedBeforePreprocessing ?? 0} / ${value?.rejectedAsBusy ?? 0}',
         ),
         Text(
+          'Bitmap converted / rotated: ${value?.convertedBitmapCount ?? 0} / ${value?.rotationBitmapCount ?? 0}',
+        ),
+        Text(
           'Analyzer/submitted/callbacks: ${value?.analyzerFrames ?? 0} / ${value?.inferenceSubmitted ?? 0} / ${value?.resultCallbacks ?? 0}',
         ),
         Text(

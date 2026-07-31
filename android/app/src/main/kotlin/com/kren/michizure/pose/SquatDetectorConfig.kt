@@ -3,9 +3,9 @@ package com.kren.michizure.pose
 data class SquatDetectorConfig(
     val requestedAnalysisWidth: Int = 320,
     val requestedAnalysisHeight: Int = 240,
-    val targetGpuAnalysisFps: Int = 12,
+    val targetGpuAnalysisFps: Int = 10,
     val targetCpuAnalysisFps: Int = 8,
-    val targetEmulatorAnalysisFps: Int = 6,
+    val targetEmulatorAnalysisFps: Int = 4,
     val diagnosticUiFps: Int = 4,
     val preferGpuDelegate: Boolean = true,
     val minPoseDetectionConfidence: Float = 0.50f,

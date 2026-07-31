@@ -382,6 +382,8 @@ class SquatSessionManager(
                 "actualAnalysisHeight" to metrics.actualAnalysisHeight,
                 "droppedBeforePreprocessing" to metrics.droppedBeforePreprocessing,
                 "rejectedAsBusy" to metrics.rejectedAsBusy,
+                "convertedBitmapCount" to metrics.convertedBitmapCount,
+                "rotationBitmapCount" to metrics.rotationBitmapCount,
                 "resultCount" to metrics.resultCount,
                 "noPoseCount" to metrics.noPoseCount,
                 "preprocessingP50Ms" to metrics.preprocessingP50Ms,

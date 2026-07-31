@@ -92,9 +92,13 @@ class PosePipelineStatsTest {
         val stats = PosePipelineStats()
         stats.recordDroppedBeforePreprocessing()
         stats.recordRejectedAsBusy()
+        stats.recordConvertedBitmap()
+        stats.recordRotationBitmap()
 
         assertEquals(1, stats.snapshot().droppedBeforePreprocessing)
         assertEquals(1, stats.snapshot().rejectedAsBusy)
+        assertEquals(1, stats.snapshot().convertedBitmapCount)
+        assertEquals(1, stats.snapshot().rotationBitmapCount)
 
         stats.reset()
 

@@ -124,6 +124,8 @@ void main() {
         requestedAnalysisHeight: 240,
         actualAnalysisWidth: 320,
         actualAnalysisHeight: 240,
+        convertedBitmapCount: 7,
+        rotationBitmapCount: 6,
       ),
     );
     await tester.pump();
@@ -152,6 +154,10 @@ void main() {
     );
     expect(
       find.textContaining('Analysis requested / actual: 320×240 / 320×240'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Bitmap converted / rotated: 7 / 6'),
       findsOneWidget,
     );
   });

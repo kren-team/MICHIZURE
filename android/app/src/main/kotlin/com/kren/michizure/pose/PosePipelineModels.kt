@@ -79,6 +79,8 @@ data class PosePipelineMetrics(
     val actualAnalysisFps: Double = 0.0,
     val droppedBeforePreprocessing: Long = 0,
     val rejectedAsBusy: Long = 0,
+    val convertedBitmapCount: Long = 0,
+    val rotationBitmapCount: Long = 0,
     val resultCount: Long = 0,
     val noPoseCount: Long = 0,
     val preprocessingP50Ms: Long? = null,
