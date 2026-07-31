@@ -17,20 +17,30 @@ void main() {
       expect(settings.emulatorHost, '10.0.2.2');
     });
 
-    test(
-      'release build without live configuration fails with a typed error',
-      () {
-        expect(
-          () => FirebaseBootstrapSettings.resolve(
-            isDebug: false,
-            platform: RuntimePlatform.android,
-          ),
-          throwsA(isA<MissingLiveFirebaseConfiguration>()),
-        );
-      },
-    );
+    test('profile build can explicitly use Firebase emulators', () {
+      final settings = FirebaseBootstrapSettings.resolve(
+        isDebug: false,
+        useFirebaseEmulators: true,
+        platform: RuntimePlatform.android,
+      );
 
-    test('release build accepts explicit live options without an emulator', () {
+      expect(settings.environment, AppEnvironment.firebaseEmulator);
+      expect(settings.options.projectId, demoFirebaseProjectId);
+      expect(settings.emulatorHost, '10.0.2.2');
+    });
+
+    test('profile build without emulator or live configuration fails', () {
+      expect(
+        () => FirebaseBootstrapSettings.resolve(
+          isDebug: false,
+          useFirebaseEmulators: false,
+          platform: RuntimePlatform.android,
+        ),
+        throwsA(isA<MissingLiveFirebaseConfiguration>()),
+      );
+    });
+
+    test('explicit live options are used when emulators are disabled', () {
       const liveOptions = FirebaseOptions(
         apiKey: 'live-api-key',
         appId: 'live-app-id',
@@ -40,6 +50,7 @@ void main() {
 
       final settings = FirebaseBootstrapSettings.resolve(
         isDebug: false,
+        useFirebaseEmulators: false,
         platform: RuntimePlatform.android,
         liveOptions: liveOptions,
       );

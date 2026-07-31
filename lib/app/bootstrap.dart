@@ -40,6 +40,7 @@ final class FirebaseBootstrapSettings {
   static FirebaseBootstrapSettings resolve({
     required bool isDebug,
     required RuntimePlatform platform,
+    bool? useFirebaseEmulators,
     FirebaseOptions? liveOptions,
     String emulatorHost = '10.0.2.2',
   }) {
@@ -47,7 +48,7 @@ final class FirebaseBootstrapSettings {
       throw UnsupportedError('MICHIZURE supports Android only.');
     }
 
-    if (isDebug) {
+    if (useFirebaseEmulators ?? isDebug) {
       return FirebaseBootstrapSettings(
         environment: AppEnvironment.firebaseEmulator,
         options: demoFirebaseOptions,
@@ -161,6 +162,10 @@ final class AppBootstrap {
 }
 
 FirebaseBootstrapSettings currentFirebaseBootstrapSettings() {
+  const useFirebaseEmulators = bool.fromEnvironment(
+    'USE_FIREBASE_EMULATORS',
+    defaultValue: kDebugMode,
+  );
   const emulatorHost = String.fromEnvironment(
     'MICHIZURE_FIREBASE_EMULATOR_HOST',
     defaultValue: '10.0.2.2',
@@ -169,6 +174,7 @@ FirebaseBootstrapSettings currentFirebaseBootstrapSettings() {
   return FirebaseBootstrapSettings.resolve(
     isDebug: kDebugMode,
     platform: RuntimePlatform.android,
+    useFirebaseEmulators: useFirebaseEmulators,
     liveOptions: liveFirebaseOptionsFromDartDefines(),
     emulatorHost: emulatorHost,
   );
