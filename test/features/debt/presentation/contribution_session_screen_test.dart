@@ -155,15 +155,24 @@ void main() {
   });
 
   testWidgets(
-    'keeps one native 3:4 camera container across detector state updates',
+    'keeps the native camera element across rep and contribution updates',
     (tester) async {
-      Widget buildView(SquatDetectorState detectorState) {
+      final request = contributionRequest();
+      final confirmed = ContributionDelivery(
+        request: request,
+        status: ContributionSyncStatus.confirmed,
+      );
+      Widget buildView({
+        required SquatDetectorState detectorState,
+        required Debt debt,
+        required ContributionControllerState contributionState,
+      }) {
         return ProviderScope(
           child: MaterialApp(
             home: Scaffold(
               body: ContributionSessionView(
-                debt: _debt(),
-                state: const ContributionControllerState.idle(),
+                debt: debt,
+                state: contributionState,
                 squatState: SquatSessionState(
                   status: SquatSessionStatus.running,
                   permission: CameraPermissionState.granted,
@@ -184,7 +193,13 @@ void main() {
         );
       }
 
-      await tester.pumpWidget(buildView(SquatDetectorState.calibrating));
+      await tester.pumpWidget(
+        buildView(
+          detectorState: SquatDetectorState.calibrating,
+          debt: _debt(),
+          contributionState: const ContributionControllerState.idle(),
+        ),
+      );
 
       final previewFinder = find.byKey(const Key('pose-preview'));
       final nativeFinder = find.byKey(
@@ -194,15 +209,30 @@ void main() {
       expect(nativeFinder, findsOneWidget);
       final previewSize = tester.getSize(previewFinder);
       expect(previewSize.width / previewSize.height, closeTo(3 / 4, 0.001));
-      final originalAndroidView = tester.widget<AndroidView>(nativeFinder);
+      final originalAndroidViewElement = tester.element(nativeFinder);
 
-      await tester.pumpWidget(buildView(SquatDetectorState.standing));
-      expect(find.text('次の動作: スクワットを開始してください'), findsOneWidget);
-      expect(
-        identical(
-          originalAndroidView,
-          tester.widget<AndroidView>(nativeFinder),
+      await tester.pumpWidget(
+        buildView(
+          detectorState: SquatDetectorState.standing,
+          debt: _debt(completedReps: 1),
+          contributionState: ContributionControllerState(
+            isRestoring: false,
+            isSubmitting: true,
+            detectedCount: 1,
+            pendingCount: 0,
+            confirmedCount: 1,
+            rejectedCount: 0,
+            lastDelivery: confirmed,
+          ),
         ),
+      );
+      expect(find.text('次の動作: スクワットを開始してください'), findsOneWidget);
+      expect(find.text('残り 9 回'), findsOneWidget);
+      expect(find.text('1回の返済がサーバーで確定しました。'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(nativeFinder, findsOneWidget);
+      expect(
+        identical(originalAndroidViewElement, tester.element(nativeFinder)),
         isTrue,
       );
     },
@@ -455,7 +485,7 @@ void main() {
   });
 }
 
-Debt _debt() {
+Debt _debt({int completedReps = 0}) {
   return Debt(
     id: 'debt-1',
     groupId: 'group-1',
@@ -464,7 +494,7 @@ Debt _debt() {
     memberCountAtFailure: 1,
     repsPerMember: 10,
     totalReps: 10,
-    completedReps: 0,
+    completedReps: completedReps,
     status: DebtStatus.active,
     createdAt: DateTime.utc(2026),
     lockExpiresAt: DateTime.utc(2026, 1, 1, 1),

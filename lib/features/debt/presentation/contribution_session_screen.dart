@@ -27,6 +27,8 @@ final class ContributionSessionScreen extends ConsumerStatefulWidget {
 
 final class _ContributionSessionScreenState
     extends ConsumerState<ContributionSessionScreen> {
+  DebtSnapshot<Debt?>? _lastDebtSnapshot;
+
   @override
   void dispose() {
     unawaited(ref.read(squatSessionControllerProvider.notifier).stop());
@@ -38,6 +40,13 @@ final class _ContributionSessionScreenState
     final debt = ref.watch(debtProvider(widget.debtId));
     final syncState = ref.watch(contributionControllerProvider);
     final squatState = ref.watch(squatSessionControllerProvider);
+    final latestSnapshot = debt.value;
+    if (latestSnapshot?.value != null) {
+      _lastDebtSnapshot = latestSnapshot;
+    }
+    final visibleSnapshot = latestSnapshot?.value != null
+        ? latestSnapshot
+        : (debt.isLoading ? _lastDebtSnapshot : null);
     ref.listen(debtProvider(widget.debtId), (_, next) {
       final terminal = next.value?.value;
       if (terminal != null && terminal.isTerminal) {
@@ -50,45 +59,46 @@ final class _ContributionSessionScreenState
     });
     return Scaffold(
       appBar: AppBar(title: const Text('スクワットで返済')),
-      body: debt.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) => Center(
-          child: Text(
-            debtFailureMessage(error),
-            key: const Key('contribution-session-error'),
-          ),
-        ),
-        data: (snapshot) {
-          final value = snapshot.value;
-          if (value == null) {
-            return const Center(child: Text('負債が見つかりません。'));
-          }
-          return ContributionSessionView(
-            debt: value,
-            state: syncState,
-            squatState: squatState,
-            isFromCache: snapshot.isFromCache,
-            hasPendingWrites: snapshot.hasPendingWrites,
-            showNativePreview: true,
-            onRequestPermission: () => ref
-                .read(squatSessionControllerProvider.notifier)
-                .requestPermission(),
-            onOpenSettings: () => ref
-                .read(squatSessionControllerProvider.notifier)
-                .openAppSettings(),
-            onStart: () => ref
-                .read(squatSessionControllerProvider.notifier)
-                .start(debtId: value.id, remainingReps: value.remainingReps),
-            onStop: () =>
-                ref.read(squatSessionControllerProvider.notifier).stop(),
-            onRetry: syncState.pendingCount > 0
-                ? () => ref
-                      .read(contributionControllerProvider.notifier)
-                      .retryPending()
-                : null,
-          );
-        },
-      ),
+      body: visibleSnapshot != null
+          ? _buildSession(visibleSnapshot, syncState, squatState)
+          : debt.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stackTrace) => Center(
+                child: Text(
+                  debtFailureMessage(error),
+                  key: const Key('contribution-session-error'),
+                ),
+              ),
+              data: (_) => const Center(child: Text('負債が見つかりません。')),
+            ),
+    );
+  }
+
+  Widget _buildSession(
+    DebtSnapshot<Debt?> snapshot,
+    ContributionControllerState syncState,
+    SquatSessionState squatState,
+  ) {
+    final debt = snapshot.value!;
+    return ContributionSessionView(
+      debt: debt,
+      state: syncState,
+      squatState: squatState,
+      isFromCache: snapshot.isFromCache,
+      hasPendingWrites: snapshot.hasPendingWrites,
+      showNativePreview: true,
+      onRequestPermission: () =>
+          ref.read(squatSessionControllerProvider.notifier).requestPermission(),
+      onOpenSettings: () =>
+          ref.read(squatSessionControllerProvider.notifier).openAppSettings(),
+      onStart: () => ref
+          .read(squatSessionControllerProvider.notifier)
+          .start(debtId: debt.id, remainingReps: debt.remainingReps),
+      onStop: () => ref.read(squatSessionControllerProvider.notifier).stop(),
+      onRetry: syncState.pendingCount > 0
+          ? () =>
+                ref.read(contributionControllerProvider.notifier).retryPending()
+          : null,
     );
   }
 }
@@ -176,6 +186,7 @@ final class ContributionSessionView extends StatelessWidget {
           ),
         const SizedBox(height: 16),
         _SquatControls(
+          key: const ValueKey('persistent-squat-controls'),
           debt: debt,
           state: squatState,
           showNativePreview: showNativePreview,
@@ -222,6 +233,7 @@ final class _SquatControls extends StatelessWidget {
     this.onOpenSettings,
     this.onStart,
     this.onStop,
+    super.key,
   });
 
   final Debt debt;
