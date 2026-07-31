@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/presentation/auth_failure_message.dart';
 import '../../debt/application/debt_lock_release_controller.dart';
@@ -56,14 +58,14 @@ final class _GroupOnboardingView extends ConsumerWidget {
               children: [
                 const Text('仲間とスクワット負債を返済するグループを作成するか、招待コードで参加してください。'),
                 const SizedBox(height: 24),
-                FilledButton.icon(
-                  key: const Key('group-create-route-button'),
+                MichizurePrimaryButton(
+                  buttonKey: const Key('group-create-route-button'),
                   onPressed: () {
                     ref.read(groupControllerProvider.notifier).clearResult();
                     context.go('/group/create');
                   },
                   icon: const Icon(Icons.group_add),
-                  label: const Text('グループを作成'),
+                  child: const Text('グループを作成'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -179,16 +181,29 @@ final class _GroupDashboardViewState
     );
 
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
-        Text(
-          '${profileGreeting(displayName)}、おかえりなさい',
-          style: Theme.of(context).textTheme.headlineSmall,
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(MichizureSpacing.card),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${profileGreeting(displayName)}、おかえりなさい',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  group.name,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text('${group.memberCount} / ${Group.maximumMemberCount} 人'),
+              ],
+            ),
+          ),
         ),
-        const SizedBox(height: 4),
-        Text(group.name, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text('${group.memberCount} / ${Group.maximumMemberCount} 人'),
         const SizedBox(height: 16),
         _NextActionCard(
           guidance: guidance,
@@ -241,13 +256,13 @@ final class _GroupDashboardViewState
           label: const Text('アプリ封印状態'),
         ),
         const SizedBox(height: 8),
-        FilledButton.icon(
-          key: const Key('group-invite-route-button'),
+        MichizurePrimaryButton(
+          buttonKey: const Key('group-invite-route-button'),
           onPressed: command.isLoading
               ? null
               : () => context.go('/group/invite'),
           icon: const Icon(Icons.share),
-          label: const Text('招待コードを発行'),
+          child: const Text('招待コードを発行'),
         ),
         const SizedBox(height: 24),
         Text('メンバー', style: Theme.of(context).textTheme.titleLarge),
@@ -396,28 +411,37 @@ final class _NextActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       key: const Key('home-next-action-card'),
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('次にすること', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 6),
-            Text(
-              guidance.title,
-              key: const Key('home-next-action-title'),
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 6),
-            Text(guidance.description),
-            const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('home-next-action-button'),
-              onPressed: onPressed,
-              child: Text(guidance.title),
-            ),
-          ],
+      child: DecoratedBox(
+        decoration: const BoxDecoration(gradient: MichizureGradients.subtle),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: MichizureStatusPill(
+                  label: '次にすること',
+                  icon: Icons.bolt_rounded,
+                  color: MichizureColors.pink,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                guidance.title,
+                key: const Key('home-next-action-title'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              Text(guidance.description),
+              const SizedBox(height: 18),
+              MichizurePrimaryButton(
+                buttonKey: const Key('home-next-action-button'),
+                onPressed: onPressed,
+                child: Text(guidance.title),
+              ),
+            ],
+          ),
         ),
       ),
     );

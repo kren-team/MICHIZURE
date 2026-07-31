@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../../enforcement/application/device_setup_controller.dart';
 import '../../enforcement/presentation/selected_apps_summary.dart';
 import '../application/task_command_controller.dart';
@@ -51,7 +53,7 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('約束を始める')),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(MichizureSpacing.page),
         children: [
           Form(
             key: _formKey,
@@ -115,8 +117,8 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
             ),
           ],
           const SizedBox(height: 24),
-          FilledButton.icon(
-            key: const Key('task-start-button'),
+          MichizurePrimaryButton(
+            buttonKey: const Key('task-start-button'),
             onPressed:
                 command.isLoading ||
                     authUser == null ||
@@ -131,7 +133,7 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.play_arrow),
-            label: const Text('約束を開始'),
+            child: const Text('約束を開始'),
           ),
         ],
       ),

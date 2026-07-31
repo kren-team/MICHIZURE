@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../application/handle_native_task_event.dart';
 import '../application/task_command_controller.dart';
 import '../domain/task_failure.dart';
@@ -143,91 +145,92 @@ final class _RunningTaskView extends StatelessWidget {
     final error = command.whenOrNull(error: (error, stackTrace) => error);
     return Scaffold(
       appBar: AppBar(title: const Text('約束を実行中')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  task.content,
-                  key: const Key('running-task-content'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  _formatRemaining(remaining),
-                  key: const Key('running-task-countdown'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.displayMedium,
-                ),
-                const SizedBox(height: 8),
-                const Text('終了予定時刻から残り時間を計算しています', textAlign: TextAlign.center),
-                const SizedBox(height: 8),
-                const Text(
-                  '別のアプリへ移動すると、この約束は失敗になります。',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Icon(
-                          guard.phase == TaskGuardPhase.monitoring
-                              ? Icons.shield
-                              : guard.phase == TaskGuardPhase.retryNeeded
-                              ? Icons.warning_amber
-                              : Icons.sync,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _guardStatusMessage(guard.phase, remaining),
-                            key: const Key('task-guard-status'),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(MichizureSpacing.page),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    task.content,
+                    key: const Key('running-task-content'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 24),
+                  MichizureMetricCard(
+                    label: '残り時間',
+                    value: _formatRemaining(remaining),
+                    valueKey: const Key('running-task-countdown'),
+                    icon: Icons.timer_outlined,
+                    description: '終了予定時刻から残り時間を計算しています',
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '別のアプリへ移動すると、この約束は失敗になります。',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            guard.phase == TaskGuardPhase.monitoring
+                                ? Icons.shield
+                                : guard.phase == TaskGuardPhase.retryNeeded
+                                ? Icons.warning_amber
+                                : Icons.sync,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _guardStatusMessage(guard.phase, remaining),
+                              key: const Key('task-guard-status'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                if (guard.phase == TaskGuardPhase.retryNeeded) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _guardFailureMessage(guard.failure),
-                    key: const Key('task-guard-error'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                  if (guard.phase == TaskGuardPhase.retryNeeded) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _guardFailureMessage(guard.failure),
+                      key: const Key('task-guard-error'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
-                  ),
-                  FilledButton(
-                    key: const Key('task-guard-retry-button'),
-                    onPressed: onRetryGuard,
-                    child: const Text('監視・同期を再試行'),
+                    MichizurePrimaryButton(
+                      buttonKey: const Key('task-guard-retry-button'),
+                      onPressed: onRetryGuard,
+                      child: const Text('監視・同期を再試行'),
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      taskFailureMessage(error),
+                      key: const Key('running-task-error'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  OutlinedButton(
+                    key: const Key('task-abort-button'),
+                    onPressed: command.isLoading ? null : onAbort,
+                    child: const Text('失敗として中断'),
                   ),
                 ],
-                if (error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    taskFailureMessage(error),
-                    key: const Key('running-task-error'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                OutlinedButton(
-                  key: const Key('task-abort-button'),
-                  onPressed: command.isLoading ? null : onAbort,
-                  child: const Text('失敗として中断'),
-                ),
-              ],
+              ),
             ),
           ),
         ),

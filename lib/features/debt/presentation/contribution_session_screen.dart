@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../../squat/application/squat_session_controller.dart';
 import '../../squat/domain/squat_detector.dart';
 import '../../squat/infrastructure/squat_detector_channel.dart';
@@ -122,25 +124,54 @@ final class ContributionSessionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
         Text(
           '返済中の負債: ${_shortId(debt.id)}',
           key: const Key('selected-debt-id'),
         ),
         const SizedBox(height: 12),
-        Text(
-          '残り ${debt.remainingReps} 回',
-          key: const Key('contribution-session-remaining'),
-          style: Theme.of(context).textTheme.headlineMedium,
+        MichizureMetricCard(
+          label: 'スクワット返済',
+          value: '残り ${debt.remainingReps} 回',
+          valueKey: const Key('contribution-session-remaining'),
+          icon: Icons.fitness_center,
+          child: MichizureStatusPill(
+            label: debt.status == DebtStatus.active ? '返済中' : '終了',
+            icon: debt.status == DebtStatus.active
+                ? Icons.directions_run
+                : Icons.check_circle_outline,
+            color: debt.status == DebtStatus.active
+                ? MichizureColors.pink
+                : MichizureColors.success,
+          ),
         ),
-        Text('状態: ${debt.status == DebtStatus.active ? '返済中' : '終了'}'),
         if (isFromCache || hasPendingWrites)
           const Card(
             child: ListTile(
               leading: Icon(Icons.cloud_off),
               title: Text('同期確定前の情報が含まれます'),
               subtitle: Text('接続後、サーバーで確定した回数へ更新されます。'),
+            ),
+          ),
+        if (state.lastDelivery case final delivery?)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              _deliveryMessage(delivery.status, delivery.failure?.reason),
+              key: const Key('contribution-delivery-message'),
+              style: delivery.status == ContributionSyncStatus.rejected
+                  ? TextStyle(color: Theme.of(context).colorScheme.error)
+                  : null,
+            ),
+          ),
+        if (onRetry != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton(
+              key: const Key('contribution-retry-button'),
+              onPressed: onRetry,
+              child: const Text('送信を再試行'),
             ),
           ),
         const SizedBox(height: 16),
@@ -177,26 +208,6 @@ final class ContributionSessionView extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 12),
             child: LinearProgressIndicator(),
           ),
-        if (state.lastDelivery case final delivery?)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Text(
-              _deliveryMessage(delivery.status, delivery.failure?.reason),
-              key: const Key('contribution-delivery-message'),
-              style: delivery.status == ContributionSyncStatus.rejected
-                  ? TextStyle(color: Theme.of(context).colorScheme.error)
-                  : null,
-            ),
-          ),
-        if (onRetry != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton(
-              key: const Key('contribution-retry-button'),
-              onPressed: onRetry,
-              child: const Text('送信を再試行'),
-            ),
-          ),
       ],
     );
   }
@@ -232,8 +243,8 @@ final class _SquatControls extends StatelessWidget {
     if (state.permission == CameraPermissionState.permanentlyDenied) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: FilledButton(
-          key: const Key('open-camera-settings'),
+        child: MichizurePrimaryButton(
+          buttonKey: const Key('open-camera-settings'),
           onPressed: onOpenSettings,
           child: const Text('設定でカメラを許可'),
         ),
@@ -242,8 +253,8 @@ final class _SquatControls extends StatelessWidget {
     if (state.permission != CameraPermissionState.granted) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: FilledButton(
-          key: const Key('request-camera-permission'),
+        child: MichizurePrimaryButton(
+          buttonKey: const Key('request-camera-permission'),
           onPressed: state.status == SquatSessionStatus.requestingPermission
               ? null
               : onRequestPermission,
@@ -254,13 +265,13 @@ final class _SquatControls extends StatelessWidget {
     if (!state.isRunning) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: FilledButton.icon(
-          key: const Key('start-squat-session'),
+        child: MichizurePrimaryButton(
+          buttonKey: const Key('start-squat-session'),
           onPressed: state.status == SquatSessionStatus.starting
               ? null
               : onStart,
           icon: const Icon(Icons.camera_alt),
-          label: const Text('スクワット返済を開始'),
+          child: const Text('スクワット返済を開始'),
         ),
       );
     }

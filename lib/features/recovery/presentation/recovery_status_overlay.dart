@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/presentation/app_theme.dart';
 import '../application/recovery_controller.dart';
 import '../domain/recovery.dart';
 
@@ -35,38 +36,50 @@ final class _RecoveryStatusOverlayState
         else if (warning != null && warning != _dismissedWarning)
           SafeArea(
             bottom: false,
-            child: Card(
-              key: const Key('recovery-status-card'),
-              margin: const EdgeInsets.all(12),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      state.phase == RecoveryPhase.degraded
-                          ? Icons.cloud_off
-                          : Icons.sync_problem,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Card(
+                  key: const Key('recovery-status-card'),
+                  color: MichizureColors.elevatedSurface,
+                  margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 2, 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          state.phase == RecoveryPhase.degraded
+                              ? Icons.cloud_off_outlined
+                              : Icons.sync_problem,
+                          color: MichizureColors.warning,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _message(state.phase),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                        TextButton(
+                          key: const Key('recovery-retry-button'),
+                          onPressed:
+                              widget.onRetry ??
+                              () => ref
+                                  .read(recoveryControllerProvider.notifier)
+                                  .recover(RecoveryTrigger.manualRetry),
+                          child: const Text('再試行'),
+                        ),
+                        IconButton(
+                          key: const Key('recovery-close-button'),
+                          tooltip: '閉じる',
+                          onPressed: () => setState(() {
+                            _dismissedWarning = warning;
+                          }),
+                          icon: const Icon(Icons.close, size: 20),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_message(state.phase))),
-                    TextButton(
-                      key: const Key('recovery-retry-button'),
-                      onPressed:
-                          widget.onRetry ??
-                          () => ref
-                              .read(recoveryControllerProvider.notifier)
-                              .recover(RecoveryTrigger.manualRetry),
-                      child: const Text('再試行'),
-                    ),
-                    IconButton(
-                      key: const Key('recovery-close-button'),
-                      tooltip: '閉じる',
-                      onPressed: () => setState(() {
-                        _dismissedWarning = warning;
-                      }),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

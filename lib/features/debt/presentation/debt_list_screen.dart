@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../../group/domain/group_member.dart';
 import '../application/debt_expiration_controller.dart';
 import '../domain/debt.dart';
@@ -93,7 +95,7 @@ final class _DebtList extends StatelessWidget {
       for (final member in members) member.userId: member.displayName,
     };
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
         if (snapshot.isFromCache)
           const Card(
@@ -125,18 +127,49 @@ final class _DebtList extends StatelessWidget {
           )
         else
           ...snapshot.value.map(
-            (debt) => Card(
-              key: Key('debt-card-${debt.id}'),
-              child: ListTile(
-                leading: const Icon(Icons.fitness_center),
-                title: Text(names[debt.failedUserId] ?? 'グループメンバー'),
-                subtitle: Text(
-                  '残り ${debt.remainingReps} 回 / ${debt.totalReps} 回'
-                  '\n発生 ${_formatDateTime(debt.createdAt)}'
-                  '\n期限 ${_formatDateTime(debt.lockExpiresAt)}',
+            (debt) => Padding(
+              padding: const EdgeInsets.only(bottom: MichizureSpacing.item),
+              child: Card(
+                key: Key('debt-card-${debt.id}'),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(MichizureRadii.card),
+                  onTap: () => context.go('/debts/${debt.id}'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(MichizureSpacing.card),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.fitness_center),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                names[debt.failedUserId] ?? 'グループメンバー',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          '残り ${debt.remainingReps} 回 / ${debt.totalReps} 回',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(
+                                color: MichizureColors.pink,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '発生 ${_formatDateTime(debt.createdAt)}'
+                          '  ・  期限 ${_formatDateTime(debt.lockExpiresAt)}',
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.go('/debts/${debt.id}'),
               ),
             ),
           ),
@@ -176,11 +209,9 @@ final class _CenteredMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(message, textAlign: TextAlign.center),
-      ),
+    return MichizureEmptyState(
+      message: message,
+      icon: Icons.fitness_center_outlined,
     );
   }
 }

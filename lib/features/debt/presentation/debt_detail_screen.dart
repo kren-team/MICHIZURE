@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../../group/domain/group_member.dart';
 import '../domain/debt.dart';
 import 'debt_failure_message.dart';
@@ -71,21 +73,27 @@ final class _DebtDetail extends StatelessWidget {
       for (final member in members) member.userId: member.displayName,
     };
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
         if (isFromCache)
           const Text('オフラインの保存済みデータです。', key: Key('debt-detail-cache-banner')),
-        Text(
-          names[debt.failedUserId] ?? 'グループメンバー',
-          style: Theme.of(context).textTheme.titleLarge,
+        MichizureMetricCard(
+          label: names[debt.failedUserId] ?? 'グループメンバー',
+          value: '残り ${debt.remainingReps} 回',
+          valueKey: const Key('debt-detail-remaining'),
+          icon: Icons.fitness_center,
+          description: '合計 ${debt.totalReps} 回 / 完了 ${debt.completedReps} 回',
+          child: MichizureStatusPill(
+            label: _statusLabel(debt.status),
+            icon: debt.status == DebtStatus.active
+                ? Icons.sync
+                : Icons.check_circle_outline,
+            color: debt.status == DebtStatus.active
+                ? MichizureColors.pink
+                : MichizureColors.success,
+          ),
         ),
         const SizedBox(height: 12),
-        Text(
-          '残り ${debt.remainingReps} 回',
-          key: const Key('debt-detail-remaining'),
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        Text('合計 ${debt.totalReps} 回 / 完了 ${debt.completedReps} 回'),
         Text('状態: ${_statusLabel(debt.status)}'),
         Text('発生: ${_formatDateTime(debt.createdAt)}'),
         Text('封印期限: ${_formatDateTime(debt.lockExpiresAt)}'),
@@ -107,11 +115,11 @@ final class _DebtDetail extends StatelessWidget {
           ),
         const SizedBox(height: 16),
         if (debt.status == DebtStatus.active)
-          FilledButton.icon(
-            key: const Key('debt-repay-action'),
+          MichizurePrimaryButton(
+            buttonKey: const Key('debt-repay-action'),
             onPressed: () => context.go('/debts/${debt.id}/repay'),
             icon: const Icon(Icons.directions_run),
-            label: const Text('この負債を返済する'),
+            child: const Text('この負債を返済する'),
           ),
       ],
     );
