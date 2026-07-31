@@ -7,10 +7,10 @@ package com.kren.michizure.pose
 class SyntheticLandmarkPoseSource {
     fun oneValidRep(startTimestampMs: Long = 0): List<PoseFeatureResult> {
         val frames = mutableListOf<PoseFeatureResult>()
-        repeat(11) { index ->
-            frames += sample(startTimestampMs + index * 100, 170.0, 0.25)
+        CALIBRATION_OFFSETS_MS.forEach { offsetMs ->
+            frames += sample(startTimestampMs + offsetMs, 170.0, 0.25)
         }
-        val movementStart = startTimestampMs + 1_100
+        val movementStart = startTimestampMs + 2_300
         frames += sample(movementStart, 145.0, 0.29)
         frames += sample(movementStart + 100, 140.0, 0.30)
         frames += sample(movementStart + 200, 120.0, 0.32)
@@ -37,4 +37,9 @@ class SyntheticLandmarkPoseSource {
             selectedSide = PoseSide.LEFT,
         ),
     )
+
+    private companion object {
+        val CALIBRATION_OFFSETS_MS =
+            listOf(0L, 300L, 600L, 900L, 1_200L, 1_500L, 1_800L, 2_100L)
+    }
 }
