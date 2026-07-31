@@ -275,6 +275,9 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
           'Input / submit / callback / valid FPS: ${value?.analyzerInputFps.toStringAsFixed(1) ?? '-'} / ${value?.inferenceSubmittedFps.toStringAsFixed(1) ?? '-'} / ${value?.resultCallbackFps.toStringAsFixed(1) ?? '-'} / ${value?.validPoseFps.toStringAsFixed(1) ?? '-'}',
         ),
         Text(
+          'Analysis requested / actual: ${value?.requestedAnalysisWidth ?? '-'}×${value?.requestedAnalysisHeight ?? '-'} / ${value?.actualAnalysisWidth ?? '-'}×${value?.actualAnalysisHeight ?? '-'}',
+        ),
+        Text(
           'Preprocess p50/p95: ${value?.preprocessingP50Ms ?? '-'} / ${value?.preprocessingP95Ms ?? '-'} ms',
         ),
         Text(

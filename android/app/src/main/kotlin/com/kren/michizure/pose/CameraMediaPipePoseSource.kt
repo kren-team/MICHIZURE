@@ -14,6 +14,7 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionFilter
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -188,13 +189,29 @@ class CameraMediaPipePoseSource(
                 .also {
                 it.surfaceProvider = previewView.surfaceProvider
             }
+        val requestedSize = Size(config.requestedAnalysisWidth, config.requestedAnalysisHeight)
+        stats.recordRequestedAnalysisResolution(requestedSize.width, requestedSize.height)
         val resolutionSelector =
             ResolutionSelector.Builder()
                 .setResolutionStrategy(
                     ResolutionStrategy(
-                        Size(480, 640),
+                        requestedSize,
                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
                     ),
+                )
+                .setResolutionFilter(
+                    ResolutionFilter { supportedSizes, _ ->
+                        val ordered =
+                            AnalysisResolutionPolicy.order(
+                                supportedSizes.map { ImageDimensions(it.width, it.height) },
+                            )
+                        ordered.map { orderedSize ->
+                            supportedSizes.first { supported ->
+                                supported.width == orderedSize.width &&
+                                    supported.height == orderedSize.height
+                            }
+                        }
+                    },
                 )
                 .build()
         val analysis =
@@ -221,6 +238,7 @@ class CameraMediaPipePoseSource(
     private fun analyze(imageProxy: ImageProxy) {
         val analyzerReceivedNs = monotonicNs()
         var acquired = false
+        stats.recordActualAnalysisResolution(imageProxy.width, imageProxy.height)
         stats.recordAnalyzerFrame(analyzerReceivedNs)
         try {
             if (closed.get() || terminalPipelineFailure.get()) return

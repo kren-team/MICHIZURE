@@ -116,6 +116,10 @@ void main() {
         legScale: 0.5,
         baselineJitter: 0.01,
         calibrationSelectedSide: SquatPoseSide.left,
+        requestedAnalysisWidth: 320,
+        requestedAnalysisHeight: 240,
+        actualAnalysisWidth: 320,
+        actualAnalysisHeight: 240,
       ),
     );
     await tester.pump();
@@ -132,6 +136,10 @@ void main() {
     );
     expect(
       find.textContaining('Attempt min knee / max hip drop: 132.00 / 0.110'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Analysis requested / actual: 320×240 / 320×240'),
       findsOneWidget,
     );
   });

@@ -231,6 +231,10 @@ void main() {
       'resultCallbackFps': 9.5,
       'validPoseFps': 8.0,
       'actualAnalysisFps': 10.0,
+      'requestedAnalysisWidth': 320,
+      'requestedAnalysisHeight': 240,
+      'actualAnalysisWidth': 320,
+      'actualAnalysisHeight': 240,
       'droppedBeforePreprocessing': 12,
       'rejectedAsBusy': 2,
       'resultCount': 20,
@@ -263,6 +267,10 @@ void main() {
     expect(diagnostics.minimumAttemptKneeAngle, 132);
     expect(diagnostics.maximumAttemptHipDrop, 0.11);
     expect(diagnostics.calibrationSelectedSide, SquatPoseSide.left);
+    expect(diagnostics.requestedAnalysisWidth, 320);
+    expect(diagnostics.requestedAnalysisHeight, 240);
+    expect(diagnostics.actualAnalysisWidth, 320);
+    expect(diagnostics.actualAnalysisHeight, 240);
 
     expect(
       () => detector.parseEvent({

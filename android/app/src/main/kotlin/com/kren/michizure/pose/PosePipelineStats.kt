@@ -5,6 +5,10 @@ import java.util.ArrayDeque
 class PosePipelineStats(
     private val maxSamples: Int = 180,
 ) {
+    private var requestedAnalysisWidth = 0
+    private var requestedAnalysisHeight = 0
+    private var actualAnalysisWidth: Int? = null
+    private var actualAnalysisHeight: Int? = null
     private val analyzerTimesNs = ArrayDeque<Long>()
     private val submitTimesNs = ArrayDeque<Long>()
     private val callbackTimesNs = ArrayDeque<Long>()
@@ -28,6 +32,18 @@ class PosePipelineStats(
     private var rejectedAsBusy = 0L
     private var resultCount = 0L
     private var noPoseCount = 0L
+
+    @Synchronized
+    fun recordRequestedAnalysisResolution(width: Int, height: Int) {
+        requestedAnalysisWidth = width
+        requestedAnalysisHeight = height
+    }
+
+    @Synchronized
+    fun recordActualAnalysisResolution(width: Int, height: Int) {
+        actualAnalysisWidth = width
+        actualAnalysisHeight = height
+    }
 
     @Synchronized
     fun recordAnalyzerFrame(timestampNs: Long) {
@@ -118,6 +134,10 @@ class PosePipelineStats(
     fun snapshot(nowNs: Long = System.nanoTime()): PosePipelineMetrics {
         val submittedFps = fps(submitTimesNs)
         return PosePipelineMetrics(
+            requestedAnalysisWidth = requestedAnalysisWidth,
+            requestedAnalysisHeight = requestedAnalysisHeight,
+            actualAnalysisWidth = actualAnalysisWidth,
+            actualAnalysisHeight = actualAnalysisHeight,
             sampleCount = inferenceMs.size,
             analyzerFrames = analyzerFrames,
             inferenceSubmitted = inferenceSubmitted,
@@ -173,6 +193,10 @@ class PosePipelineStats(
         rejectedAsBusy = 0
         resultCount = 0
         noPoseCount = 0
+        requestedAnalysisWidth = 0
+        requestedAnalysisHeight = 0
+        actualAnalysisWidth = null
+        actualAnalysisHeight = null
     }
 
     private fun callbackAgeMs(nowNs: Long): Long? {

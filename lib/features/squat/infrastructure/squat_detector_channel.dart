@@ -231,6 +231,10 @@ final class MethodChannelSquatDetector implements SquatDetector {
         'resultCallbackFps',
         'validPoseFps',
         'actualAnalysisFps',
+        'requestedAnalysisWidth',
+        'requestedAnalysisHeight',
+        'actualAnalysisWidth',
+        'actualAnalysisHeight',
         'droppedBeforePreprocessing',
         'rejectedAsBusy',
         'resultCount',
@@ -414,6 +418,21 @@ final class MethodChannelSquatDetector implements SquatDetector {
       resultCallbackFps: _nonNegativeDouble(raw, 'resultCallbackFps'),
       validPoseFps: _nonNegativeDouble(raw, 'validPoseFps'),
       actualAnalysisFps: _nonNegativeDouble(raw, 'actualAnalysisFps'),
+      requestedAnalysisWidth: _nonNegativeInt(
+        raw,
+        'requestedAnalysisWidth',
+        fallback: 0,
+      ),
+      requestedAnalysisHeight: _nonNegativeInt(
+        raw,
+        'requestedAnalysisHeight',
+        fallback: 0,
+      ),
+      actualAnalysisWidth: _nullableNonNegativeInt(raw, 'actualAnalysisWidth'),
+      actualAnalysisHeight: _nullableNonNegativeInt(
+        raw,
+        'actualAnalysisHeight',
+      ),
       droppedBeforePreprocessing: _nonNegativeInt(
         raw,
         'droppedBeforePreprocessing',

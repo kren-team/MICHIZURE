@@ -226,6 +226,10 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.resultCallbackFps = 0,
     this.validPoseFps = 0,
     this.actualAnalysisFps = 0,
+    this.requestedAnalysisWidth = 0,
+    this.requestedAnalysisHeight = 0,
+    this.actualAnalysisWidth,
+    this.actualAnalysisHeight,
     this.droppedBeforePreprocessing = 0,
     this.rejectedAsBusy = 0,
     this.resultCount = 0,
@@ -300,6 +304,10 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final double resultCallbackFps;
   final double validPoseFps;
   final double actualAnalysisFps;
+  final int requestedAnalysisWidth;
+  final int requestedAnalysisHeight;
+  final int? actualAnalysisWidth;
+  final int? actualAnalysisHeight;
   final int droppedBeforePreprocessing;
   final int rejectedAsBusy;
   final int resultCount;

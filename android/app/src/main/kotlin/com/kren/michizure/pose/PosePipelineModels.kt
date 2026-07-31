@@ -56,6 +56,10 @@ data class PoseLatencySample(
 }
 
 data class PosePipelineMetrics(
+    val requestedAnalysisWidth: Int = 0,
+    val requestedAnalysisHeight: Int = 0,
+    val actualAnalysisWidth: Int? = null,
+    val actualAnalysisHeight: Int? = null,
     val sampleCount: Int = 0,
     val analyzerFrames: Long = 0,
     val inferenceSubmitted: Long = 0,
