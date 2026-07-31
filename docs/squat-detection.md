@@ -147,7 +147,7 @@ timestampは同一pipelineの`SystemClock.elapsedRealtimeNanos()`から単調増
 
 左右それぞれのhip / knee / ankle x/yへOne-Euro Filterを適用してからfeatureを計算する。初期値は`minCutoff=1.0`、`beta=0.02`、`derivativeCutoff=1.0`で、固定FPSを仮定せずtimestamp差を使う。左右は独立filterとし、side切替で別脚の履歴を混ぜない。逆順timestampはrejectし、400ms超gapではfilterの値・微分履歴だけをre-armしてFSM phaseとattempt extremaを維持する。session終了、またはEmulator 4,000ms / physical 2,000msを超えるpose lossでは全状態をresetする。
 
-FSM側でmedian / EMAを重ねず、attempt内のextremaと方向反転を低FPSのauthorityにする。設定値は`SquatDetectorConfig mediapipe-lite-multi-evidence-v8`へ集約する。
+FSM側でmedian / EMAを重ねず、attempt内のextremaと方向反転を低FPSのauthorityにする。設定値は`SquatDetectorConfig mediapipe-lite-calibration-fallback-v9`へ集約する。
 
 ## 8. Quality gate
 
@@ -161,7 +161,7 @@ FSM側でmedian / EMAを重ねず、attempt内のextremaと方向反転を低FPS
 | side stickiness | `500ms`、switch confidence margin `0.10` |
 | velocity continuity | gap `<=400ms`。超過時はvelocityのみ無効 |
 | pose loss reset | valid poseなし Emulator `>4,000ms` / physical `>2,000ms` |
-| calibration | 2秒観測、6〜8 sample、3秒timeout |
+| calibration | 8秒window、minimum 2 / preferred 3 sample、physical 8秒 / Emulator 12秒soft timeout |
 
 quality warning:
 
@@ -178,15 +178,17 @@ quality warning:
 
 ## 9. Calibration
 
-開始時に2秒程度の観測期間を取り、3秒以内に得た6〜8件の安定立位sampleからbaselineを作る。sampleは連続frameでなくてよく、一時的なcallback gapだけで全破棄しない。
+直立候補を最大8秒のwindowへ非連続に蓄積し、minimum 2件、preferred 3件の上位角度sampleからbaselineを作る。160°以上はstrong candidate、150°以上で同一側3点のfinite座標と角度が成立するsampleはauxiliary candidateとする。候補角度rangeが20°以内なら2件で完了でき、171.1° / 176.7°はmedian 173.9°でCalibration成功となる。
 
 calibration条件:
 
-- knee angle >= 155°
-- hip yの分散が小さい
-- knee angleの変動が8°以内
-- quality gate pass
-- 左右side selectionが安定
+- 通常quality gate pass、またはCalibration専用confidence / size fallback
+- 同一側hip / knee / ankleがfiniteで角度計算可能
+- strong candidateは単一のhip位置差やfilter微分より直立角度を優先
+- auxiliary candidateの単一motion outlierとside違いはそのsampleだけを無視
+- invalid / confidence不足 / size不足 / 長いframe gapで蓄積済み候補を消さない
+
+165°以上の1件はprovisional standingとして保持する。その角度から20°以上低下したsampleを得た場合は`AUTO_CALIBRATED_ON_DESCENT`としてbaselineを確定し、その下降sampleを同じattemptの開始・最小膝角度・下降観測へ引き継ぐ。timeoutはphysical 8秒 / Emulator 12秒で、strong candidateがあれば`TIMEOUT_PROVISIONAL`、auxiliaryだけならwindow延長、候補0件だけを完全resetする。候補全消去はsession resetまたは環境別pose-loss timeout超過に限定する。
 
 保存するsession-local baseline:
 
@@ -205,18 +207,18 @@ standingEnterAngle = clamp(S - 25°, 135°, 165°)
 standingRelaxedAngle = clamp(S - 32°, 130°, 158°)
 descendingStartAngle = clamp(S - 20°, 135°, 160°)
 bottomAngle = clamp(S - 24°, 135°, 150°)
-returnStandingAngle = clamp(S - 28°, 130°, 155°)
+returnStandingAngle = clamp(S - 25°, 130°, 155°)
 returnStandingRelaxedAngle = clamp(S - 35°, 125°, 150°)
 ```
 
-例えば`S=168°`では、strong standing / relaxed standing / descent / bottom / strong return / relaxed returnが`143° / 136° / 148° / 144° / 140° / 133°`となる。固定120°はProductionのBOTTOM authorityに使用しない。
+例えば`S=168°`では、strong standing / relaxed standing / descent / bottom / strong return / relaxed returnが`143° / 136° / 148° / 144° / 143° / 133°`となる。固定120°はProductionのBOTTOM authorityに使用しない。
 
 ## 10. 状態機械
 
 ```mermaid
 stateDiagram-v2
     [*] --> CALIBRATING
-    CALIBRATING --> STANDING: 2s / 6-8 stable samples
+    CALIBRATING --> STANDING: 2 samples OR provisional / descent
     STANDING --> DESCENDING: knee < S-20° OR hipDrop > 0.06
     STANDING --> BOTTOM: any bottom evidence path
     DESCENDING --> STANDING: shallow return / timeout
@@ -240,7 +242,7 @@ stateDiagram-v2
 | bottom B | knee bend `>=16°`かつhip drop `>=0.04` |
 | bottom C | hip drop `>=0.08`、下降→上昇反転、knee bend `>=8°` |
 | bottom exit | bottom到達後、knee増加またはhip drop減少。400ms超gap後はbottom位置からの退出でも再開 |
-| rep return | knee `>=S-28°`、またはknee `>=S-35°`かつhip drop `<=0.18`かつ上昇観測、stable 100ms。strong条件は低FPSで1 sample可 |
+| rep return | knee `>=S-25°`、またはknee `>=155°`かつattempt最小角度から30°以上回復。既存relaxed経路も維持し、strong条件は低FPSで1 sample可 |
 | full rep duration | 400〜12,000ms |
 | refractory | count後500ms |
 
@@ -354,7 +356,7 @@ offline:
 - debug Squat Labのthumbnailは初期状態OFF。明示ON時だけ、実際にImageAnalysisからMediaPipeへ渡す回転済みBitmapを1 FPS以下・幅120pxへ縮小してNative overlay内だけに表示する
 - thumbnail、fixture、landmarkは保存・network送信しない
 
-Squat Lab diagnosticsは最大4 FPSで、ImageAnalysis requested / actual resolution、analyzer / submit / callback / valid-pose FPS、preprocess / inference / native pipeline p50・p95、pre-throttle / busy drop、変換Bitmap数 / rotation Bitmap数、Calibration値、raw / filtered knee、attempt min knee / max hip drop / max knee bend、下降・上昇、BOTTOM score / path、phase、transition / reject / reset reason、frame dt、pose age、attempt durationを表示する。値の更新は`ValueNotifier`配下に限定し、AndroidViewやCamera sessionを再生成しない。debug Logcatは`SquatTrace`、`SquatRep`、`PosePerf`を使い、通常trace / performanceは最大5 FPS、rep / reject / resetはevent時に記録する。releaseでは出力しない。
+Squat Lab diagnosticsは最大4 FPSで、ImageAnalysis requested / actual resolution、analyzer / submit / callback / valid-pose FPS、preprocess / inference / native pipeline p50・p95、pre-throttle / busy drop、変換Bitmap数 / rotation Bitmap数、Calibration candidate / strong count / provisional / median / range / window / timeout / quality path / reject / buffer保持 / auto descent / baseline source、raw / filtered knee、attempt min knee / max hip drop / max knee bend、下降・上昇、BOTTOM score / path、phase、transition / reject / reset reason、frame dt、pose age、attempt durationを表示する。値の更新は`ValueNotifier`配下に限定し、AndroidViewやCamera sessionを再生成しない。debug Logcatは`SquatTrace`、`SquatRep`、`PosePerf`を使い、通常trace / performanceは最大5 FPS、rep / reject / resetはevent時に記録する。releaseでは出力しない。
 
 既知画像fixtureは2026-07-31にこのrepositoryの診断専用として生成した架空人物画像で、実ユーザーや第三者撮影物を含まない。debug source setだけに置き、release APKへ同梱しない。
 
@@ -485,7 +487,7 @@ Productionで精度不足が確認された場合、まずon-deviceの個人cali
 - CameraX `1.6.1`のfront優先 / rear fallback、独立した`Preview` + 320×240優先の`ImageAnalysis`、`STRATEGY_KEEP_ONLY_LATEST`を採用した。
 - MediaPipe Tasks Vision `1.0.0`と公式Pose Landmarker Lite bundleを使用する。
 - analyzerは専用single executor、事前FPS gate、pending 1件を使い、skip、result、error、stopの全経路でImageProxy / MPImageをreleaseする。
-- `SquatDetectorConfig.VERSION = mediapipe-lite-multi-evidence-v8`に環境別解析FPS / pose-loss timeout、Calibration相対threshold、BOTTOM score、One-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
+- `SquatDetectorConfig.VERSION = mediapipe-lite-calibration-fallback-v9`に環境別解析FPS / pose-loss / Calibration timeout、Calibration fallback、相対threshold、BOTTOM score、One-Euro parameterを集約した。adapter、filter、特徴量、calibration、FSMはCamera APIから分離したpure Kotlinである。
 - `squat_control/v1`、`squat_events/v1`、`pose_preview/v1`を実装した。Dart adapterはtype別field allowlistを検証し、画像・landmarkに相当するextra fieldを拒否する。
 - session IDは18 random bytesのhex、repはnativeのmonotonic sequenceを使用し、Firestore event IDはPhase 8の`${uid}_${squatSessionId}_${sequence}`へ変換する。
 - route離脱、ユーザー終了、terminal Debtではnative sessionを停止する。background / foregroundはCameraXのActivity lifecycle bindingへ従う。
