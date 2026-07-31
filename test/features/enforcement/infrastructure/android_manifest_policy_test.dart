@@ -73,13 +73,39 @@ void main() {
     final contributionScreen = File(
       'lib/features/debt/presentation/contribution_session_screen.dart',
     ).readAsStringSync();
+    final router = File('lib/app/router.dart').readAsStringSync();
+    final home = File(
+      'lib/features/group/presentation/group_home_screen.dart',
+    ).readAsStringSync();
+    final debugFixture = File(
+      'android/app/src/debug/assets/pose_fixture_generated.png',
+    );
+    final mainFixture = File(
+      'android/app/src/main/assets/pose_fixture_generated.png',
+    );
+    final debugFixtureRunner = File(
+      'android/app/src/debug/kotlin/com/kren/michizure/pose/'
+      'GeneratedPoseFixtureDiagnostics.kt',
+    );
 
     expect(appBuild, contains('com.google.mediapipe:tasks-vision:1.0.0'));
     expect(appBuild, isNot(contains('pose-detection')));
     expect(taskModels, hasLength(1));
     expect(taskModels.single.path, endsWith('pose_landmarker_lite.task'));
     expect(taskModels.single.lengthSync(), 5777746);
+    expect(debugFixture.existsSync(), isTrue);
+    expect(mainFixture.existsSync(), isFalse);
+    expect(debugFixtureRunner.existsSync(), isTrue);
     expect(contributionScreen, contains('if (kDebugMode)'));
+    expect(router, contains('if (kDebugMode)'));
+    expect(
+      router,
+      contains(
+        'path: debugSquatLabRoutePath,\n'
+        '          builder: (context, state) => const SquatLabScreen()',
+      ),
+    );
+    expect(home, contains('if (kDebugMode)\n      IconButton('));
   });
 
   test('demo target is isolated and requests no permission', () {

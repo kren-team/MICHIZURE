@@ -433,15 +433,17 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 1. Bでactive Debt詳細から「この負債を返済する」を開く。
 2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
 3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
-4. Preview、黒背景、角丸、native guideが同じ3:4領域に収まり、映像下の白い空白やguideだけのずれがないことを確認する。
-5. host webcamを使う場合は、みぞおちから膝下までをframeへ入れ、少し横向きで1秒以上直立する。
-6. 「姿勢判定を準備しています」の後、debug diagnosticsでdelegate、analysis FPS、drop / busy数、`no pose / hip missing / knee missing / confidence / valid`、選択side、hip/knee confidence、gap ratio、hip drop、reject reason、inference / pipeline p50・p95を確認する。
+4. host webcamを使う場合は胸の下から足首までをframeへ入れ、斜め30〜45度または横向きで2秒程度直立する。6〜8 valid sampleと`calibrationStatus=complete`を確認する。
+5. Emulatorでは`Delegate: CPU`であることを確認する。「姿勢判定を準備しています」の後、debug diagnosticsでanalyzer / submit / callback / valid-pose FPS、callback age、callback未到達とcallback到達・poseなしの区別、drop / busy数、選択side、hip/knee/ankle confidence、calibrated standing knee `S`、standing / descending / bottom / return threshold、raw/filtered knee angle、attempt最小膝角度、hip drop / attempt最大hip drop、前後phase、transition/reject/reset reason、confirmation時間、preprocess / inference / pipeline p50・p95を確認する。
+6. Squat Labの「既知画像でMediaPipeを確認」を1回実行し、callback=true、pose count 1以上、hip/knee/ankle=trueを確認する。これは推論配線の診断であり、実Camera精度やスクワット成功の代替ではない。
 7. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
-8. 正常スクワット3回がexactly 3 reps、浅い屈伸3回が0 repsであることを確認する。
+8. 浅い屈伸と途中で下降をやめる動作はcountされず、正常1 squatがexactly 1 repであることを確認する。
 9. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
 10. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
 
-Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。公式model cardはfull-body cropを推奨するため、みぞおち〜膝下の部分画角でのpose成立率も当日manual gateに含める。
+Camera画面では胸の下から足首までをportrait 3:4 guide内へ入れ、カメラへ斜め30〜45度または横向きになる。debug buildではHomeの「Squat Lab」からFirebase / Debtを使わずCamera→Pose→FSMだけを確認できる。Labのaccepted countはProduction Contributionではない。
+
+Emulator cameraで人体入力が安定しない場合、debug source setの数値synthetic sequenceをAndroid instrumentationで検証し、実際のCameraX/MediaPipe精度とp95はhost webcamまたは物理Androidで測定する。合成入力だけを性能達成の根拠にしない。manual gateではPreview/guideのbounds一致、ImageAnalysis requested / actual resolution、物理GPU 10 FPS / 物理CPU 8 FPS / Emulator CPU 4 FPS上限、正常3回=3、深い1回=1、少し浅め1回=1、明らかな浅い3回=0を記録する。単一の700msおよびEmulatorの2,500ms程度のcallback gapでphaseとattempt extremaが失われず、Emulator 4,000ms超 / physical 2,000ms超のpose lossではCALIBRATINGへ戻ることも確認する。`SquatTrace`でBOTTOM経路、`SquatRep`でREP_ACCEPTEDとduplicateなし、`PosePerf`でconversion / submit / callback頻度を確認する。
 
 camera permissionを再試験する場合はDevice Ownerやapp dataを消去せず、permission flagsだけを操作する。
 

@@ -30,28 +30,31 @@ enum class PoseSide(val wireValue: String) {
     RIGHT("right"),
 }
 
-enum class PoseTrackingStatus(val wireValue: String) {
-    NO_POSE("noPose"),
-    HIP_UNAVAILABLE("hipUnavailable"),
-    KNEE_UNAVAILABLE("kneeUnavailable"),
-    CONFIDENCE_INSUFFICIENT("confidenceInsufficient"),
-    VALID("valid"),
-}
-
 enum class PoseQualityWarning(val wireValue: String) {
     NO_POSE_DETECTED("noPoseDetected"),
     HIP_UNAVAILABLE("hipUnavailable"),
     KNEE_UNAVAILABLE("kneeUnavailable"),
+    ANKLE_UNAVAILABLE("ankleUnavailable"),
     MOVE_FARTHER_BACK("moveFartherBack"),
     MOVE_CLOSER("moveCloser"),
     LOW_LIGHT_OR_CONFIDENCE("lowLightOrConfidence"),
     HOLD_STILL_TO_CALIBRATE("holdStillToCalibrate"),
+    SQUAT_DEEPER("squatDeeper"),
+    TOO_DEEP("tooDeep"),
     CAMERA_UNAVAILABLE("cameraUnavailable"),
+}
+
+enum class PoseTrackingStatus(val wireValue: String) {
+    NO_POSE("noPose"),
+    HIP_UNAVAILABLE("hipUnavailable"),
+    KNEE_UNAVAILABLE("kneeUnavailable"),
+    ANKLE_UNAVAILABLE("ankleUnavailable"),
+    CONFIDENCE_INSUFFICIENT("confidenceInsufficient"),
+    VALID("valid"),
 }
 
 data class PoseQualityMetrics(
     val poseDetected: Boolean,
-    val trackingStatus: PoseTrackingStatus,
     val leftHipConfidence: Double?,
     val leftKneeConfidence: Double?,
     val leftAnkleConfidence: Double?,
@@ -59,12 +62,12 @@ data class PoseQualityMetrics(
     val rightKneeConfidence: Double?,
     val rightAnkleConfidence: Double?,
     val selectedSide: PoseSide?,
+    val trackingStatus: PoseTrackingStatus = PoseTrackingStatus.NO_POSE,
 ) {
     companion object {
         val EMPTY =
             PoseQualityMetrics(
                 poseDetected = false,
-                trackingStatus = PoseTrackingStatus.NO_POSE,
                 leftHipConfidence = null,
                 leftKneeConfidence = null,
                 leftAnkleConfidence = null,
@@ -72,14 +75,17 @@ data class PoseQualityMetrics(
                 rightKneeConfidence = null,
                 rightAnkleConfidence = null,
                 selectedSide = null,
+                trackingStatus = PoseTrackingStatus.NO_POSE,
             )
     }
 }
 
 data class PoseFeatureSample(
     val timestampMs: Long,
+    val kneeAngleDeg: Double,
+    val rawKneeAngleDeg: Double = kneeAngleDeg,
     val hipY: Double,
-    val kneeY: Double,
+    val legLength: Double,
     val confidence: Double,
     val selectedSide: PoseSide,
 )
@@ -114,7 +120,6 @@ enum class SquatState(val wireValue: String) {
 
 data class SquatFrameDiagnostics(
     val poseDetected: Boolean,
-    val trackingStatus: PoseTrackingStatus,
     val selectedSide: PoseSide?,
     val leftHipConfidence: Double?,
     val leftKneeConfidence: Double?,
@@ -122,10 +127,45 @@ data class SquatFrameDiagnostics(
     val rightHipConfidence: Double?,
     val rightKneeConfidence: Double?,
     val rightAnkleConfidence: Double?,
-    val normalizedVerticalGap: Double?,
+    val kneeAngleDeg: Double?,
+    val rawKneeAngleDeg: Double?,
     val normalizedHipDrop: Double?,
+    val kneeAngularVelocity: Double?,
+    val hipVerticalVelocity: Double?,
     val latestRejectReason: String?,
     val rejectedAttempts: Int,
+    val trackingStatus: PoseTrackingStatus,
+    val previousState: SquatState?,
+    val lastTransitionReason: String?,
+    val lastResetReason: String?,
+    val frameDtMs: Long?,
+    val validPoseAgeMs: Long?,
+    val effectiveValidPoseFps: Double,
+    val calibrationSampleCount: Int,
+    val calibrationStatus: String,
+    val bottomReached: Boolean,
+    val standingConfirmationDurationMs: Long,
+    val bottomConfirmationDurationMs: Long,
+    val returnStandingDurationMs: Long,
+    val currentRepDurationMs: Long?,
+    val calibratedStandingKneeAngleDeg: Double?,
+    val standingThresholdDeg: Double,
+    val descendingThresholdDeg: Double,
+    val bottomThresholdDeg: Double,
+    val returnStandingThresholdDeg: Double,
+    val minimumAttemptKneeAngleDeg: Double?,
+    val maximumAttemptHipDropRatio: Double?,
+    val kneeBendDeltaDeg: Double?,
+    val downwardMovementObserved: Boolean,
+    val upwardMovementObserved: Boolean,
+    val bottomEvidenceScore: Int,
+    val bottomEvidencePath: BottomEvidencePath?,
+    val attemptStartTimestampMs: Long?,
+    val lastValidPoseTimestampMs: Long?,
+    val baselineHipY: Double?,
+    val legScale: Double?,
+    val baselineJitter: Double?,
+    val calibrationSelectedSide: PoseSide?,
 )
 
 data class SquatDetectorUpdate(

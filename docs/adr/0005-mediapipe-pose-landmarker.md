@@ -5,6 +5,8 @@
 - Supersedes: [ADR 0004](0004-on-device-pose-detection.md) のProduction pose SDK部分
 - Amended by: [ADR 0006](0006-native-camera-guide-and-hip-knee-squat.md) のoverlay、quality gate、feature部分
 
+解析FPS、Native camera guide、FSM入力条件は[ADR 0007](0007-knee-angle-hip-drop-squat.md)で更新した。
+
 ## Context
 
 実Cameraの最終確認で、ML Kit Pose DetectionへCameraXの利用可能frameを明示的なFPS制限なしで投入し、5 sample medianとEMAを重ねた構成では、previewを含む端末操作が重く、lower-body入力から状態機械が実用的に進まなかった。debug diagnosticsも同じRiverpod stateへ最大5 FPSで入り、返済画面全体を再buildしていた。

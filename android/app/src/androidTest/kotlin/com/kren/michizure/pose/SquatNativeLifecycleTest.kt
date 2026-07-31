@@ -20,11 +20,37 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class SquatNativeLifecycleTest {
+    @Test
+    fun nativePreviewAndGuideShareExactlyTheSameThreeByFourBounds() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+        instrumentation.runOnMainSync {
+            val container = SquatCameraContainer(context)
+            val width = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY)
+            val height = View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY)
+            container.measure(width, height)
+            container.layout(0, 0, 300, 400)
+
+            assertEquals(300, container.previewView.width)
+            assertEquals(400, container.previewView.height)
+            assertEquals(300, container.guideOverlayView.width)
+            assertEquals(400, container.guideOverlayView.height)
+            assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
+            assertEquals(
+                PreviewView.ImplementationMode.COMPATIBLE,
+                container.previewView.implementationMode,
+            )
+        }
+    }
+
     @Test
     fun cameraPermissionIsDeclaredAndMediaPipeLiteModelInitializes() {
         val context =
@@ -56,33 +82,28 @@ class SquatNativeLifecycleTest {
     }
 
     @Test
-    fun nativePreviewAndGuideShareExactlyTheSameThreeByFourBounds() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
+    fun generatedDebugFixtureProducesCallbackPoseAndLowerBodyLandmarks() {
         val context =
             ApplicationProvider.getApplicationContext<android.content.Context>()
-        lateinit var container: SquatCameraContainer
-        instrumentation.runOnMainSync {
-            container = SquatCameraContainer(context)
-            container.measure(
-                View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
-            )
-            container.layout(0, 0, 300, 400)
-            assertEquals(300, container.measuredWidth)
-            assertEquals(400, container.measuredHeight)
-            assertEquals(container.left, container.previewView.left)
-            assertEquals(container.top, container.previewView.top)
-            assertEquals(container.right, container.previewView.right)
-            assertEquals(container.bottom, container.previewView.bottom)
-            assertEquals(container.left, container.guideOverlayView.left)
-            assertEquals(container.top, container.guideOverlayView.top)
-            assertEquals(container.right, container.guideOverlayView.right)
-            assertEquals(container.bottom, container.guideOverlayView.bottom)
-            assertEquals(
-                PreviewView.ImplementationMode.COMPATIBLE,
-                container.previewView.implementationMode,
-            )
-            assertEquals(PreviewView.ScaleType.FIT_CENTER, container.previewView.scaleType)
+        val completed = CountDownLatch(1)
+        val result = AtomicReference<PoseFixtureDiagnosticResult?>()
+        val diagnostics = GeneratedPoseFixtureDiagnostics(context)
+        try {
+            diagnostics.run {
+                result.set(it)
+                completed.countDown()
+            }
+
+            assertTrue(completed.await(8, TimeUnit.SECONDS))
+            val actual = requireNotNull(result.get())
+            assertTrue(actual.callbackDelivered)
+            assertTrue(actual.poseCount >= 1)
+            assertTrue(actual.hipAvailable)
+            assertTrue(actual.kneeAvailable)
+            assertTrue(actual.ankleAvailable)
+            assertEquals(null, actual.errorCode)
+        } finally {
+            diagnostics.close()
         }
     }
 
@@ -99,7 +120,7 @@ class SquatNativeLifecycleTest {
         instrumentation.runOnMainSync {
             owner.resume()
             manager =
-                SquatSessionManager(owner) { _, _, onReady, _, _ ->
+                SquatSessionManager(owner) { _, _, onReady, _, _, _ ->
                     object : PoseSource {
                         override fun start() {
                             starts += 1
@@ -166,7 +187,7 @@ class SquatNativeLifecycleTest {
             instrumentation.runOnMainSync {
                 owner.resume()
                 manager =
-                    SquatSessionManager(owner) { _, _, _, _, onFailure ->
+                    SquatSessionManager(owner) { _, _, _, _, _, onFailure ->
                         object : PoseSource {
                             override fun start() {
                                 onFailure("cameraUnavailable")
@@ -205,29 +226,48 @@ class SquatNativeLifecycleTest {
             ApplicationProvider.getApplicationContext<android.content.Context>()
         val owner = TestLifecycleOwner()
         val diagnosticsDelivered = CountDownLatch(1)
-        val events = mutableListOf<Map<String, Any?>>()
+        val events = CopyOnWriteArrayList<Map<String, Any?>>()
+        lateinit var reportValidStatus: () -> Unit
         lateinit var manager: SquatSessionManager
 
         SquatEventBus.setListener { event ->
             events += event
-            if (event["type"] == "diagnostics") diagnosticsDelivered.countDown()
+            if (
+                event["type"] == "diagnostics" &&
+                    event["selectedSide"] == "left" &&
+                    event["poseDetected"] == true
+            ) {
+                diagnosticsDelivered.countDown()
+            }
         }
         try {
             instrumentation.runOnMainSync {
                 owner.resume()
                 manager =
-                    SquatSessionManager(owner) { _, _, onReady, onFrame, _ ->
+                    SquatSessionManager(owner) { _, _, onReady, onStatus, onFrame, _ ->
                         object : PoseSource {
                             override fun start() {
                                 onReady(PoseDelegate.CPU)
+                                reportValidStatus = {
+                                    onStatus(
+                                        PosePipelineStatusSnapshot(
+                                            status = PosePipelineStatus.VALID,
+                                            metrics =
+                                                PosePipelineMetrics(
+                                                    activeDelegate = PoseDelegate.CPU,
+                                                ),
+                                        ),
+                                    )
+                                }
                                 onFrame(
                                     PoseFrameDelivery(
                                         feature =
                                             PoseFeatureResult.Valid(
                                                 PoseFeatureSample(
                                                     timestampMs = 1_000,
+                                                    kneeAngleDeg = 174.0,
                                                     hipY = 0.25,
-                                                    kneeY = 0.50,
+                                                    legLength = 0.50,
                                                     confidence = 0.90,
                                                     selectedSide = PoseSide.LEFT,
                                                 ),
@@ -268,8 +308,15 @@ class SquatNativeLifecycleTest {
                 )
             }
 
+            Thread.sleep(250)
+            reportValidStatus()
             assertTrue(diagnosticsDelivered.await(2, TimeUnit.SECONDS))
-            val diagnostics = events.first { it["type"] == "diagnostics" }
+            val diagnostics =
+                events.first {
+                    it["type"] == "diagnostics" &&
+                        it["selectedSide"] == "left" &&
+                        it["poseDetected"] == true
+                }
             assertEquals(true, diagnostics["poseDetected"])
             assertEquals("left", diagnostics["selectedSide"])
             assertFalse(diagnostics.containsKey("landmarks"))

@@ -82,6 +82,46 @@ void main() {
     expect(state.detectorDelegate, SquatInferenceDelegate.gpu);
   });
 
+  test('native pipeline status is the guidance source of truth', () async {
+    final detector = FakeSquatDetector();
+    final container = _container(detector, FakeContributionRepository());
+    addTearDown(() async {
+      container.dispose();
+      await detector.close();
+    });
+    final controller = container.read(squatSessionControllerProvider.notifier);
+    await _settle();
+    await controller.start(debtId: 'debt-a', remainingReps: 3);
+
+    detector.emit(
+      SquatPipelineStatusChanged(
+        eventId: '$sessionId-awaiting',
+        occurredAt: DateTime.utc(2026, 7, 30),
+        squatSessionId: sessionId,
+        status: SquatPosePipelineStatus.awaitingResult,
+      ),
+    );
+    await _settle();
+    expect(
+      container.read(squatSessionControllerProvider).pipelineStatus,
+      SquatPosePipelineStatus.awaitingResult,
+    );
+
+    detector.emit(
+      SquatPipelineStatusChanged(
+        eventId: '$sessionId-no-pose',
+        occurredAt: DateTime.utc(2026, 7, 30),
+        squatSessionId: sessionId,
+        status: SquatPosePipelineStatus.noPose,
+      ),
+    );
+    await _settle();
+    expect(
+      container.read(squatSessionControllerProvider).pipelineStatus,
+      SquatPosePipelineStatus.noPose,
+    );
+  });
+
   test('offline accepted rep converges into the Phase 8 Outbox', () async {
     final detector = FakeSquatDetector();
     final repository = FakeContributionRepository()
@@ -188,7 +228,7 @@ void main() {
           occurredAt: DateTime.utc(2026),
           squatSessionId: sessionId,
           poseDetected: true,
-          trackingStatus: SquatTrackingStatus.valid,
+          trackingStatus: SquatPoseTrackingStatus.valid,
           selectedSide: SquatPoseSide.right,
           leftHipConfidence: null,
           leftKneeConfidence: null,
@@ -196,8 +236,10 @@ void main() {
           rightHipConfidence: 0.90,
           rightKneeConfidence: 0.91,
           rightAnkleConfidence: 0.92,
-          normalizedVerticalGap: 0.60,
+          kneeAngle: 130,
           normalizedHipDrop: 0.10,
+          kneeAngularVelocity: -20,
+          hipVerticalVelocity: 0.08,
           state: SquatDetectorState.descending,
           latestRejectReason: null,
           analysisLatencyMs: 70,

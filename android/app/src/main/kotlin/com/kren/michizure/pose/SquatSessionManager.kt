@@ -2,6 +2,7 @@ package com.kren.michizure.pose
 
 import android.content.pm.ApplicationInfo
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.LifecycleOwner
 import java.util.ArrayDeque
 
@@ -12,18 +13,22 @@ data class NativeSquatSession(
 
 class SquatSessionManager(
     private val lifecycleOwner: LifecycleOwner,
+    private val runtimeEnvironment: AndroidRuntimeEnvironment =
+        AndroidRuntimeEnvironment.current(),
     private val sourceFactory: (
         SquatCameraContainer,
         LifecycleOwner,
         (PoseDelegate) -> Unit,
+        (PosePipelineStatusSnapshot) -> Unit,
         (PoseFrameDelivery) -> PoseFrameCompletion,
         (String) -> Unit,
-    ) -> PoseSource = { container, owner, onReady, onFrame, onFailure ->
+    ) -> PoseSource = { view, owner, onReady, onStatus, onFrame, onFailure ->
         CameraMediaPipePoseSource(
-            context = container.context.applicationContext,
+            context = view.context.applicationContext,
             lifecycleOwner = owner,
-            cameraContainer = container,
+            cameraContainer = view,
             onReady = onReady,
+            onStatus = onStatus,
             onFrame = onFrame,
             onFailure = onFailure,
         )
@@ -31,30 +36,45 @@ class SquatSessionManager(
 ) : AutoCloseable {
     private val detectorConfig = SquatDetectorConfig()
     private var session: NativeSquatSession? = null
-    private var cameraContainer: SquatCameraContainer? = null
+    private var previewView: SquatCameraContainer? = null
     private var source: PoseSource? = null
-    private var machine = SquatStateMachine(detectorConfig)
+    private var machine = SquatStateMachine(detectorConfig, runtimeEnvironment.isEmulator)
     private var lastState: SquatState? = null
     private var lastWarning: PoseQualityWarning? = null
+    private var lastPipelineStatus: PosePipelineStatus? = null
+    private var pipelineStatus = PosePipelineStatus.INITIALIZING
+    private var lastUpdate: SquatDetectorUpdate? = null
     private var lastDiagnosticsEmitMs = Long.MIN_VALUE
     private var lastDiagnosticsPayload: Map<String, Any?>? = null
     private val diagnosticEmitTimesMs = ArrayDeque<Long>()
     private val latenciesMs = ArrayDeque<Long>()
     private var delegate: PoseDelegate? = null
+    private var debugThumbnailEnabled = false
+    private var lastTraceLogMs = Long.MIN_VALUE
+    private var lastPerfLogMs = Long.MIN_VALUE
+    private var lastLoggedRepSequence = 0
+    private var lastLoggedRejectKey: String? = null
+    private var lastLoggedResetKey: String? = null
 
     @Synchronized
-    fun attachPreview(container: SquatCameraContainer) {
-        cameraContainer = container
+    fun attachPreview(view: SquatCameraContainer) {
+        previewView = view
+        view.setDebugThumbnailEnabled(debugThumbnailEnabled)
         startSourceIfReady()
     }
 
     @Synchronized
-    fun detachPreview(container: SquatCameraContainer) {
-        if (cameraContainer !== container) return
-        cameraContainer = null
+    fun setDebugThumbnailEnabled(enabled: Boolean) {
+        debugThumbnailEnabled = enabled
+        previewView?.setDebugThumbnailEnabled(enabled)
+    }
+
+    @Synchronized
+    fun detachPreview(view: SquatCameraContainer) {
+        if (previewView !== view) return
+        previewView = null
         source?.close()
         source = null
-        container.clearGuide()
     }
 
     @Synchronized
@@ -66,14 +86,18 @@ class SquatSessionManager(
         }
         check(current == null) { "A different squat session is already active" }
         session = newSession
-        machine = SquatStateMachine(detectorConfig)
+        machine = SquatStateMachine(detectorConfig, runtimeEnvironment.isEmulator)
         lastState = null
         lastWarning = null
+        lastPipelineStatus = null
+        pipelineStatus = PosePipelineStatus.INITIALIZING
+        lastUpdate = null
         latenciesMs.clear()
         diagnosticEmitTimesMs.clear()
         lastDiagnosticsEmitMs = Long.MIN_VALUE
         lastDiagnosticsPayload = null
         delegate = null
+        resetDebugLogState()
         emit(
             type = "calibrating",
             values =
@@ -99,11 +123,15 @@ class SquatSessionManager(
         machine.reset()
         lastState = null
         lastWarning = null
+        lastPipelineStatus = null
+        pipelineStatus = PosePipelineStatus.INITIALIZING
+        lastUpdate = null
         latenciesMs.clear()
         diagnosticEmitTimesMs.clear()
         lastDiagnosticsEmitMs = Long.MIN_VALUE
         lastDiagnosticsPayload = null
         delegate = null
+        resetDebugLogState()
         return true
     }
 
@@ -116,6 +144,7 @@ class SquatSessionManager(
                 "squatSessionId" to current?.squatSessionId,
                 "debtId" to current?.debtId,
                 "detectorState" to machine.state.wireValue,
+                "pipelineStatus" to pipelineStatus.wireValue,
                 "repSequence" to machine.repSequence,
                 "latencyP95Ms" to latencyP95(),
             ),
@@ -125,13 +154,14 @@ class SquatSessionManager(
     @Synchronized
     private fun startSourceIfReady() {
         session ?: return
-        val container = cameraContainer ?: return
+        val view = previewView ?: return
         if (source != null) return
         source =
             sourceFactory(
-                container,
+                view,
                 lifecycleOwner,
                 ::onDetectorReady,
+                ::onPipelineStatus,
                 ::onFrame,
                 ::onDetectorFailure,
             ).also { it.start() }
@@ -154,15 +184,43 @@ class SquatSessionManager(
     }
 
     @Synchronized
+    private fun onPipelineStatus(snapshot: PosePipelineStatusSnapshot) {
+        val current = session ?: return
+        pipelineStatus = snapshot.status
+        logPosePerformance(snapshot.metrics)
+        if (snapshot.status != lastPipelineStatus) {
+            lastPipelineStatus = snapshot.status
+            emit(
+                type = "pipelineStatusChanged",
+                values =
+                    mapOf(
+                        "squatSessionId" to current.squatSessionId,
+                        "status" to snapshot.status.wireValue,
+                    ),
+            )
+        }
+        emitDiagnosticsIfDue(
+            current = current,
+            update = lastUpdate,
+            latencyMs = null,
+            metrics = snapshot.metrics,
+        )
+    }
+
+    @Synchronized
     private fun onFrame(delivery: PoseFrameDelivery): PoseFrameCompletion {
         val current =
             session
                 ?: return PoseFrameCompletion(
                     stateMachineCompletedNs = elapsedNs(),
                     nativeEventDispatchedNs = null,
+                    state = machine.state,
+                    trackingStatus = PoseTrackingStatus.NO_POSE,
                 )
         val feature = delivery.feature
         val update = machine.process(feature)
+        lastUpdate = update
+        logSquatFrame(update, delivery.metrics)
         val stateMachineCompletedNs = elapsedNs()
         val latency =
             delivery.latency.copy(
@@ -221,62 +279,134 @@ class SquatSessionManager(
             stateMachineCompletedNs = stateMachineCompletedNs,
             nativeEventDispatchedNs = lastDispatchNs,
             state = update.state,
-            selectedSide = update.diagnostics.selectedSide,
             trackingStatus = update.diagnostics.trackingStatus,
         )
     }
 
     private fun emitDiagnosticsIfDue(
         current: NativeSquatSession,
-        update: SquatDetectorUpdate,
-        latencyMs: Long,
+        update: SquatDetectorUpdate?,
+        latencyMs: Long?,
         metrics: PosePipelineMetrics,
     ) {
         val debugBuild =
-            cameraContainer?.context?.applicationInfo?.flags
+            previewView?.context?.applicationInfo?.flags
                 ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
         if (!debugBuild) return
         val now = elapsedMs()
         if (lastDiagnosticsEmitMs != Long.MIN_VALUE &&
             now - lastDiagnosticsEmitMs < detectorConfig.diagnosticIntervalMs &&
-            !update.repCompleted
+            update?.repCompleted != true
         ) {
             return
         }
-        val diagnostics = update.diagnostics
+        val diagnostics = update?.diagnostics
+        val activeDelegate = metrics.activeDelegate ?: delegate ?: return
+        val trackingStatus =
+            diagnostics?.trackingStatus ?: pipelineStatus.toTrackingStatus()
         val values =
             mapOf(
                 "squatSessionId" to current.squatSessionId,
-                "delegate" to delegate?.wireValue,
-                "poseDetected" to diagnostics.poseDetected,
-                "trackingStatus" to diagnostics.trackingStatus.wireValue,
-                "selectedSide" to diagnostics.selectedSide?.wireValue,
-                "leftHipConfidence" to diagnostics.leftHipConfidence,
-                "leftKneeConfidence" to diagnostics.leftKneeConfidence,
-                "leftAnkleConfidence" to diagnostics.leftAnkleConfidence,
-                "rightHipConfidence" to diagnostics.rightHipConfidence,
-                "rightKneeConfidence" to diagnostics.rightKneeConfidence,
-                "rightAnkleConfidence" to diagnostics.rightAnkleConfidence,
-                "normalizedVerticalGap" to diagnostics.normalizedVerticalGap,
-                "normalizedHipDrop" to diagnostics.normalizedHipDrop,
-                "state" to update.state.wireValue,
-                "latestRejectReason" to diagnostics.latestRejectReason,
-                "analysisLatencyMs" to latencyMs,
-                "acceptedReps" to update.repSequence,
-                "rejectedAttempts" to diagnostics.rejectedAttempts,
+                "delegate" to activeDelegate.wireValue,
+                "pipelineStatus" to pipelineStatus.wireValue,
+                "poseDetected" to pipelineStatus.poseDetected,
+                "trackingStatus" to trackingStatus.wireValue,
+                "selectedSide" to diagnostics?.selectedSide?.wireValue,
+                "leftHipConfidence" to diagnostics?.leftHipConfidence,
+                "leftKneeConfidence" to diagnostics?.leftKneeConfidence,
+                "leftAnkleConfidence" to diagnostics?.leftAnkleConfidence,
+                "rightHipConfidence" to diagnostics?.rightHipConfidence,
+                "rightKneeConfidence" to diagnostics?.rightKneeConfidence,
+                "rightAnkleConfidence" to diagnostics?.rightAnkleConfidence,
+                "rawKneeAngle" to diagnostics?.rawKneeAngleDeg,
+                "kneeAngle" to diagnostics?.kneeAngleDeg,
+                "normalizedHipDrop" to diagnostics?.normalizedHipDrop,
+                "kneeAngularVelocity" to diagnostics?.kneeAngularVelocity,
+                "hipVerticalVelocity" to diagnostics?.hipVerticalVelocity,
+                "state" to (update?.state ?: machine.state).wireValue,
+                "previousState" to diagnostics?.previousState?.wireValue,
+                "lastTransitionReason" to diagnostics?.lastTransitionReason,
+                "latestRejectReason" to diagnostics?.latestRejectReason,
+                "lastResetReason" to diagnostics?.lastResetReason,
+                "frameDtMs" to diagnostics?.frameDtMs,
+                "validPoseAgeMs" to diagnostics?.validPoseAgeMs,
+                "effectiveValidPoseFps" to (diagnostics?.effectiveValidPoseFps ?: 0.0),
+                "calibrationSampleCount" to (diagnostics?.calibrationSampleCount ?: 0),
+                "calibrationStatus" to (diagnostics?.calibrationStatus ?: "waitingForStanding"),
+                "bottomReached" to (diagnostics?.bottomReached ?: false),
+                "standingConfirmationDurationMs" to
+                    (diagnostics?.standingConfirmationDurationMs ?: 0),
+                "bottomConfirmationDurationMs" to
+                    (diagnostics?.bottomConfirmationDurationMs ?: 0),
+                "returnStandingDurationMs" to
+                    (diagnostics?.returnStandingDurationMs ?: 0),
+                "currentRepDurationMs" to diagnostics?.currentRepDurationMs,
+                "calibratedStandingKneeAngle" to
+                    diagnostics?.calibratedStandingKneeAngleDeg,
+                "standingThresholdDeg" to
+                    (diagnostics?.standingThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).standingEnterAngle),
+                "descendingThresholdDeg" to
+                    (diagnostics?.descendingThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).descendingStartAngle),
+                "bottomThresholdDeg" to
+                    (diagnostics?.bottomThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).bottomAngle),
+                "returnStandingThresholdDeg" to
+                    (diagnostics?.returnStandingThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).returnStandingAngle),
+                "minimumAttemptKneeAngle" to diagnostics?.minimumAttemptKneeAngleDeg,
+                "maximumAttemptHipDrop" to diagnostics?.maximumAttemptHipDropRatio,
+                "kneeBendDelta" to diagnostics?.kneeBendDeltaDeg,
+                "downwardMovementObserved" to
+                    (diagnostics?.downwardMovementObserved ?: false),
+                "upwardMovementObserved" to
+                    (diagnostics?.upwardMovementObserved ?: false),
+                "bottomEvidenceScore" to (diagnostics?.bottomEvidenceScore ?: 0),
+                "bottomEvidencePath" to diagnostics?.bottomEvidencePath?.wireValue,
+                "attemptStartTimestampMs" to diagnostics?.attemptStartTimestampMs,
+                "lastValidPoseTimestampMs" to diagnostics?.lastValidPoseTimestampMs,
+                "baselineHipY" to diagnostics?.baselineHipY,
+                "legScale" to diagnostics?.legScale,
+                "baselineJitter" to diagnostics?.baselineJitter,
+                "calibrationSelectedSide" to diagnostics?.calibrationSelectedSide?.wireValue,
+                "analysisLatencyMs" to (latencyMs ?: 0),
+                "acceptedReps" to (update?.repSequence ?: machine.repSequence),
+                "rejectedAttempts" to (diagnostics?.rejectedAttempts ?: 0),
                 "sampleCount" to metrics.sampleCount,
+                "analyzerFrames" to metrics.analyzerFrames,
+                "inferenceSubmitted" to metrics.inferenceSubmitted,
+                "resultCallbacks" to metrics.resultCallbacks,
+                "resultsWithPose" to metrics.resultsWithPose,
+                "resultsWithoutPose" to metrics.resultsWithoutPose,
+                "errorCallbacks" to metrics.errorCallbacks,
+                "lastCallbackAgeMs" to metrics.lastCallbackAgeMs,
+                "activeDelegate" to activeDelegate.wireValue,
+                "lastError" to metrics.lastError,
+                "analyzerInputFps" to metrics.analyzerInputFps,
+                "inferenceSubmittedFps" to metrics.inferenceSubmittedFps,
+                "resultCallbackFps" to metrics.resultCallbackFps,
+                "validPoseFps" to metrics.validPoseFps,
                 "actualAnalysisFps" to metrics.actualAnalysisFps,
+                "requestedAnalysisWidth" to metrics.requestedAnalysisWidth,
+                "requestedAnalysisHeight" to metrics.requestedAnalysisHeight,
+                "actualAnalysisWidth" to metrics.actualAnalysisWidth,
+                "actualAnalysisHeight" to metrics.actualAnalysisHeight,
                 "droppedBeforePreprocessing" to metrics.droppedBeforePreprocessing,
                 "rejectedAsBusy" to metrics.rejectedAsBusy,
+                "convertedBitmapCount" to metrics.convertedBitmapCount,
+                "rotationBitmapCount" to metrics.rotationBitmapCount,
                 "resultCount" to metrics.resultCount,
                 "noPoseCount" to metrics.noPoseCount,
+                "preprocessingP50Ms" to metrics.preprocessingP50Ms,
+                "preprocessingP95Ms" to metrics.preprocessingP95Ms,
                 "inferenceP50Ms" to metrics.inferenceP50Ms,
                 "inferenceP95Ms" to metrics.inferenceP95Ms,
                 "nativePipelineP50Ms" to metrics.nativePipelineP50Ms,
                 "nativePipelineP95Ms" to metrics.nativePipelineP95Ms,
                 "diagnosticEventFps" to diagnosticEventFps(now) + 1,
             )
-        if (values == lastDiagnosticsPayload && !update.repCompleted) return
+        if (values == lastDiagnosticsPayload && update?.repCompleted != true) return
         lastDiagnosticsEmitMs = now
         lastDiagnosticsPayload = values
         diagnosticEmitTimesMs.addLast(now)
@@ -333,6 +463,59 @@ class SquatSessionManager(
 
     private fun elapsedNs(): Long = SystemClock.elapsedRealtimeNanos()
 
+    private fun logSquatFrame(update: SquatDetectorUpdate, metrics: PosePipelineMetrics) {
+        if (!isDebugBuild()) return
+        val now = elapsedMs()
+        val intervalMs = 1_000L / detectorConfig.debugTraceFps
+        if (lastTraceLogMs == Long.MIN_VALUE || now - lastTraceLogMs >= intervalMs) {
+            lastTraceLogMs = now
+            Log.d(SQUAT_TRACE_TAG, SquatDebugTraceFormatter.trace(update, metrics))
+        }
+        if (update.repCompleted && update.repSequence > lastLoggedRepSequence) {
+            lastLoggedRepSequence = update.repSequence
+            Log.i(SQUAT_REP_TAG, "REP_ACCEPTED sequence=${update.repSequence}")
+        }
+        val diagnostics = update.diagnostics
+        val reject = diagnostics.latestRejectReason?.takeIf { it.startsWith("REJECT_") }
+        val rejectKey = reject?.let { "$it:${diagnostics.rejectedAttempts}" }
+        if (rejectKey != null && rejectKey != lastLoggedRejectKey) {
+            lastLoggedRejectKey = rejectKey
+            Log.i(SQUAT_REP_TAG, reject)
+        }
+        val reset = diagnostics.lastResetReason
+        val resetKey = reset?.let { "$it:${diagnostics.rejectedAttempts}" }
+        if (resetKey != null && resetKey != lastLoggedResetKey) {
+            lastLoggedResetKey = resetKey
+            Log.i(SQUAT_REP_TAG, reset)
+        }
+        if ((diagnostics.frameDtMs ?: 0) > detectorConfig.velocityResetGapMs &&
+            diagnostics.attemptStartTimestampMs != null
+        ) {
+            Log.i(SQUAT_REP_TAG, "ATTEMPT_PRESERVED_FRAME_GAP")
+        }
+    }
+
+    private fun logPosePerformance(metrics: PosePipelineMetrics) {
+        if (!isDebugBuild()) return
+        val now = elapsedMs()
+        val intervalMs = 1_000L / detectorConfig.debugTraceFps
+        if (lastPerfLogMs != Long.MIN_VALUE && now - lastPerfLogMs < intervalMs) return
+        lastPerfLogMs = now
+        Log.d(POSE_PERF_TAG, SquatDebugTraceFormatter.performance(metrics))
+    }
+
+    private fun isDebugBuild(): Boolean =
+        previewView?.context?.applicationInfo?.flags
+            ?.and(ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    private fun resetDebugLogState() {
+        lastTraceLogMs = Long.MIN_VALUE
+        lastPerfLogMs = Long.MIN_VALUE
+        lastLoggedRepSequence = 0
+        lastLoggedRejectKey = null
+        lastLoggedResetKey = null
+    }
+
     private fun diagnosticEventFps(nowMs: Long): Double {
         while (diagnosticEmitTimesMs.isNotEmpty() &&
             nowMs - diagnosticEmitTimesMs.first() > 1_000
@@ -344,11 +527,36 @@ class SquatSessionManager(
 
     override fun close() {
         stop(null)
-        cameraContainer = null
+        previewView = null
     }
 
     companion object {
         private const val MAX_LATENCY_SAMPLES = 300
         private const val MAX_DIAGNOSTIC_EMIT_SAMPLES = 8
+        private const val SQUAT_TRACE_TAG = "SquatTrace"
+        private const val SQUAT_REP_TAG = "SquatRep"
+        private const val POSE_PERF_TAG = "PosePerf"
     }
 }
+
+private val PosePipelineStatus.poseDetected: Boolean
+    get() =
+        this != PosePipelineStatus.INITIALIZING &&
+            this != PosePipelineStatus.AWAITING_RESULT &&
+            this != PosePipelineStatus.NO_POSE &&
+            this != PosePipelineStatus.FAILED
+
+private fun PosePipelineStatus.toTrackingStatus(): PoseTrackingStatus =
+    when (this) {
+        PosePipelineStatus.INITIALIZING,
+        PosePipelineStatus.AWAITING_RESULT,
+        PosePipelineStatus.NO_POSE,
+        PosePipelineStatus.FAILED,
+        -> PoseTrackingStatus.NO_POSE
+        PosePipelineStatus.HIP_UNAVAILABLE -> PoseTrackingStatus.HIP_UNAVAILABLE
+        PosePipelineStatus.KNEE_UNAVAILABLE -> PoseTrackingStatus.KNEE_UNAVAILABLE
+        PosePipelineStatus.ANKLE_UNAVAILABLE -> PoseTrackingStatus.ANKLE_UNAVAILABLE
+        PosePipelineStatus.CONFIDENCE_INSUFFICIENT ->
+            PoseTrackingStatus.CONFIDENCE_INSUFFICIENT
+        PosePipelineStatus.VALID -> PoseTrackingStatus.VALID
+    }

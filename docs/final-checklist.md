@@ -67,15 +67,25 @@
 
 - [ ] Bで対象負債を明示選択
 - [ ] `webcam0`をfrontへ割り当ててCamera previewを確認
-- [ ] Preview / guide / 黒背景 / 角丸が同じ3:4 bounds内
-- [ ] みぞおち〜膝下guide、no pose / hip / knee / confidence warning
-- [ ] debug diagnosticsでpose / side / confidence / gap ratio / hip drop / reject reasonを確認
-- [ ] delegateがGPUまたはCPU fallbackとして1回だけ確定
-- [ ] diagnosticsが5 FPS以下、analysisがGPU 15 FPS / CPU 10 FPS近傍
-- [ ] 直立calibration
+- [ ] 胸の下〜足首guide、斜め30〜45度または横向きの案内
+- [ ] PreviewとNative guideが同じportrait 3:4 bounds内
+- [ ] debug diagnosticsでpose / side / confidence / feature / reject reasonを確認
+- [ ] EmulatorはCPU固定。物理端末はGPUまたはCPU fallbackとして1回だけ確定
+- [ ] analyzer / submit / callbackが増加し、inference latencyが0ms固定ではない
+- [ ] callback待機とcallbackあり・poseなしが別表示
+- [ ] debug既知画像でcallback、pose 1件以上、hip/knee/ankleを確認
+- [ ] diagnosticsが4 FPS以下、analysisが物理GPU 10 FPS / 物理CPU 8 FPS / Emulator CPU 4 FPS上限
+- [ ] 2秒・6〜8 valid sampleで直立calibration
+- [ ] calibrated standing knee angle `S`とbaseline hip / leg scale / jitter / sideを記録
+- [ ] ImageAnalysis requested / actualが320×240優先で、Preview boundsが維持されることを確認
+- [ ] `bottomAngle=clamp(S-24°, 135°, 150°)`とstanding / returnのstrong・relaxed thresholdを確認
+- [ ] knee bend、max hip drop、下降/上昇、BOTTOM score / path、前後phase、reason、frame dtを記録
 - [ ] 正常3 squatをexactly 3回count
+- [ ] 深いsquat 1回をexactly 1回count
 - [ ] 浅い屈伸3回を0回としてreject
+- [ ] 途中で下降をやめて戻る動作を0回としてreject
 - [ ] 複数squatで二重countなし
+- [ ] attemptの最小膝角度、最大hip drop、通過phaseを記録
 - [ ] pending / confirmedを区別
 - [ ] 最終repでDebt completed
 - [ ] Aのobligation release

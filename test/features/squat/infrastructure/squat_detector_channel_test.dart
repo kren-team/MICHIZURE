@@ -173,6 +173,7 @@ void main() {
       'squatSessionId': 'session-12345678',
       'poseDetected': true,
       'trackingStatus': 'valid',
+      'pipelineStatus': 'valid',
       'selectedSide': 'left',
       'leftHipConfidence': 0.90,
       'leftKneeConfidence': 0.91,
@@ -180,20 +181,75 @@ void main() {
       'rightHipConfidence': null,
       'rightKneeConfidence': null,
       'rightAnkleConfidence': null,
-      'normalizedVerticalGap': 0.62,
+      'rawKneeAngle': 121.5,
+      'kneeAngle': 120.0,
       'normalizedHipDrop': 0.13,
+      'kneeAngularVelocity': -21.0,
+      'hipVerticalVelocity': 0.12,
       'state': 'descending',
+      'previousState': 'standing',
+      'lastTransitionReason': 'descentConfirmed',
       'latestRejectReason': null,
+      'lastResetReason': null,
+      'frameDtMs': 100,
+      'validPoseAgeMs': 0,
+      'effectiveValidPoseFps': 8.0,
+      'calibrationSampleCount': 8,
+      'calibrationStatus': 'complete',
+      'bottomReached': false,
+      'standingConfirmationDurationMs': 0,
+      'bottomConfirmationDurationMs': 0,
+      'returnStandingDurationMs': 0,
+      'currentRepDurationMs': 250,
+      'calibratedStandingKneeAngle': 168.0,
+      'standingThresholdDeg': 143.0,
+      'descendingThresholdDeg': 148.0,
+      'bottomThresholdDeg': 144.0,
+      'returnStandingThresholdDeg': 140.0,
+      'minimumAttemptKneeAngle': 132.0,
+      'maximumAttemptHipDrop': 0.11,
+      'kneeBendDelta': 36.0,
+      'downwardMovementObserved': true,
+      'upwardMovementObserved': false,
+      'bottomEvidenceScore': 5,
+      'bottomEvidencePath': 'KNEE_ONLY',
+      'attemptStartTimestampMs': 750,
+      'lastValidPoseTimestampMs': 1_000,
+      'baselineHipY': 0.25,
+      'legScale': 0.50,
+      'baselineJitter': 0.01,
+      'calibrationSelectedSide': 'left',
       'analysisLatencyMs': 80,
       'acceptedReps': 1,
       'rejectedAttempts': 0,
       'delegate': 'cpu',
       'sampleCount': 20,
+      'analyzerFrames': 40,
+      'inferenceSubmitted': 22,
+      'resultCallbacks': 20,
+      'resultsWithPose': 17,
+      'resultsWithoutPose': 3,
+      'errorCallbacks': 0,
+      'lastCallbackAgeMs': 25,
+      'activeDelegate': 'cpu',
+      'lastError': null,
+      'analyzerInputFps': 30.0,
+      'inferenceSubmittedFps': 10.0,
+      'resultCallbackFps': 9.5,
+      'validPoseFps': 8.0,
       'actualAnalysisFps': 10.0,
+      'requestedAnalysisWidth': 320,
+      'requestedAnalysisHeight': 240,
+      'actualAnalysisWidth': 320,
+      'actualAnalysisHeight': 240,
       'droppedBeforePreprocessing': 12,
       'rejectedAsBusy': 2,
+      'convertedBitmapCount': 7,
+      'rotationBitmapCount': 7,
       'resultCount': 20,
       'noPoseCount': 3,
+      'preprocessingP50Ms': 4,
+      'preprocessingP95Ms': 8,
       'inferenceP50Ms': 45,
       'inferenceP95Ms': 80,
       'nativePipelineP50Ms': 55,
@@ -205,8 +261,32 @@ void main() {
     final diagnostics = event as SquatDetectorDiagnostics;
     expect(diagnostics.selectedSide, SquatPoseSide.left);
     expect(diagnostics.leftKneeConfidence, 0.91);
-    expect(diagnostics.trackingStatus, SquatTrackingStatus.valid);
-    expect(diagnostics.normalizedVerticalGap, 0.62);
+    expect(diagnostics.trackingStatus, SquatPoseTrackingStatus.valid);
+    expect(diagnostics.kneeAngle, 120);
+    expect(diagnostics.rawKneeAngle, 121.5);
+    expect(diagnostics.previousState, SquatDetectorState.standing);
+    expect(diagnostics.lastTransitionReason, 'descentConfirmed');
+    expect(diagnostics.calibrationSampleCount, 8);
+    expect(diagnostics.validPoseFps, 8);
+    expect(diagnostics.calibratedStandingKneeAngle, 168);
+    expect(diagnostics.standingThresholdDeg, 143);
+    expect(diagnostics.descendingThresholdDeg, 148);
+    expect(diagnostics.bottomThresholdDeg, 144);
+    expect(diagnostics.returnStandingThresholdDeg, 140);
+    expect(diagnostics.minimumAttemptKneeAngle, 132);
+    expect(diagnostics.maximumAttemptHipDrop, 0.11);
+    expect(diagnostics.kneeBendDelta, 36);
+    expect(diagnostics.downwardMovementObserved, isTrue);
+    expect(diagnostics.upwardMovementObserved, isFalse);
+    expect(diagnostics.bottomEvidenceScore, 5);
+    expect(diagnostics.bottomEvidencePath, SquatBottomEvidencePath.kneeOnly);
+    expect(diagnostics.attemptStartTimestampMs, 750);
+    expect(diagnostics.lastValidPoseTimestampMs, 1000);
+    expect(diagnostics.calibrationSelectedSide, SquatPoseSide.left);
+    expect(diagnostics.requestedAnalysisWidth, 320);
+    expect(diagnostics.requestedAnalysisHeight, 240);
+    expect(diagnostics.actualAnalysisWidth, 320);
+    expect(diagnostics.actualAnalysisHeight, 240);
 
     expect(
       () => detector.parseEvent({
@@ -217,6 +297,7 @@ void main() {
         'squatSessionId': 'session-12345678',
         'poseDetected': true,
         'trackingStatus': 'valid',
+        'pipelineStatus': 'valid',
         'selectedSide': 'left',
         'leftHipConfidence': 0.90,
         'leftKneeConfidence': 0.91,
@@ -224,20 +305,71 @@ void main() {
         'rightHipConfidence': null,
         'rightKneeConfidence': null,
         'rightAnkleConfidence': null,
-        'normalizedVerticalGap': 0.62,
+        'rawKneeAngle': 121.5,
+        'kneeAngle': 120.0,
         'normalizedHipDrop': 0.13,
+        'kneeAngularVelocity': -21.0,
+        'hipVerticalVelocity': 0.12,
         'state': 'descending',
+        'previousState': 'standing',
+        'lastTransitionReason': 'descentConfirmed',
         'latestRejectReason': null,
+        'lastResetReason': null,
+        'frameDtMs': 100,
+        'validPoseAgeMs': 0,
+        'effectiveValidPoseFps': 8.0,
+        'calibrationSampleCount': 8,
+        'calibrationStatus': 'complete',
+        'bottomReached': false,
+        'standingConfirmationDurationMs': 0,
+        'bottomConfirmationDurationMs': 0,
+        'returnStandingDurationMs': 0,
+        'currentRepDurationMs': 250,
+        'calibratedStandingKneeAngle': 168.0,
+        'standingThresholdDeg': 143.0,
+        'descendingThresholdDeg': 148.0,
+        'bottomThresholdDeg': 144.0,
+        'returnStandingThresholdDeg': 140.0,
+        'minimumAttemptKneeAngle': 132.0,
+        'maximumAttemptHipDrop': 0.11,
+        'kneeBendDelta': 36.0,
+        'downwardMovementObserved': true,
+        'upwardMovementObserved': false,
+        'bottomEvidenceScore': 5,
+        'bottomEvidencePath': 'KNEE_ONLY',
+        'attemptStartTimestampMs': 750,
+        'lastValidPoseTimestampMs': 1_000,
+        'baselineHipY': 0.25,
+        'legScale': 0.50,
+        'baselineJitter': 0.01,
+        'calibrationSelectedSide': 'left',
         'analysisLatencyMs': 80,
         'acceptedReps': 1,
         'rejectedAttempts': 0,
         'delegate': 'cpu',
         'sampleCount': 20,
+        'analyzerFrames': 40,
+        'inferenceSubmitted': 22,
+        'resultCallbacks': 20,
+        'resultsWithPose': 17,
+        'resultsWithoutPose': 3,
+        'errorCallbacks': 0,
+        'lastCallbackAgeMs': 25,
+        'activeDelegate': 'cpu',
+        'lastError': null,
+        'analyzerInputFps': 30.0,
+        'inferenceSubmittedFps': 10.0,
+        'resultCallbackFps': 9.5,
+        'validPoseFps': 8.0,
         'actualAnalysisFps': 10.0,
         'droppedBeforePreprocessing': 12,
         'rejectedAsBusy': 2,
+        'convertedBitmapCount': 7,
+        'rotationBitmapCount': 7,
         'resultCount': 20,
         'noPoseCount': 3,
+        'preprocessingP50Ms': 4,
+        'preprocessingP95Ms': 8,
         'inferenceP50Ms': 45,
         'inferenceP95Ms': 80,
         'nativePipelineP50Ms': 55,
@@ -246,6 +378,36 @@ void main() {
         'landmarks': <Object>[],
       }),
       throwsA(isA<SquatDetectorFailure>()),
+    );
+  });
+
+  test('distinguishes callback wait from callback with no pose', () {
+    final detector = MethodChannelSquatDetector(methodChannel: channel);
+
+    final waiting = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'pipelineStatusChanged',
+      'eventId': 'session-12345678_pipeline_1',
+      'occurredAtEpochMs': 1_000,
+      'squatSessionId': 'session-12345678',
+      'status': 'awaitingResult',
+    });
+    final noPose = detector.parseEvent({
+      'contractVersion': 1,
+      'type': 'pipelineStatusChanged',
+      'eventId': 'session-12345678_pipeline_2',
+      'occurredAtEpochMs': 1_001,
+      'squatSessionId': 'session-12345678',
+      'status': 'noPose',
+    });
+
+    expect(
+      (waiting as SquatPipelineStatusChanged).status,
+      SquatPosePipelineStatus.awaitingResult,
+    );
+    expect(
+      (noPose as SquatPipelineStatusChanged).status,
+      SquatPosePipelineStatus.noPose,
     );
   });
 }

@@ -3,6 +3,8 @@ package com.kren.michizure.pose
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.PixelFormat
+import android.hardware.camera2.CameraCharacteristics
 import android.os.SystemClock
 import android.util.Range
 import android.util.Size
@@ -12,8 +14,10 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionFilter
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.view.transform.ImageProxyTransformFactory
 import androidx.camera.view.transform.OutputTransform
 import androidx.core.content.ContextCompat
@@ -28,18 +32,23 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 
 class CameraMediaPipePoseSource(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
     private val cameraContainer: SquatCameraContainer,
     private val onReady: (PoseDelegate) -> Unit,
+    private val onStatus: (PosePipelineStatusSnapshot) -> Unit,
     private val onFrame: (PoseFrameDelivery) -> PoseFrameCompletion,
     private val onFailure: (String) -> Unit,
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
+    private val runtimeEnvironment: AndroidRuntimeEnvironment =
+        AndroidRuntimeEnvironment.current(),
 ) : PoseSource {
     private val previewView
         get() = cameraContainer.previewView
@@ -47,27 +56,40 @@ class CameraMediaPipePoseSource(
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "michizure-mediapipe-pose")
         }
+    private val healthExecutor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "michizure-mediapipe-health")
+        }
     private val started = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
-    private val frameGate = AnalysisFrameGate()
+    private val runtimeFallbackStarted = AtomicBoolean(false)
+    private val terminalPipelineFailure = AtomicBoolean(false)
+    private val frameDispatcher = AnalysisFrameDispatcher()
     private val lastMediaPipeTimestampMs = AtomicLong(Long.MIN_VALUE)
-    private val pending = AtomicReference<PendingFrame?>()
+    private val engineGeneration = AtomicLong(0)
+    private val pendingMetadata = ConcurrentHashMap<Long, FrameMetadata>()
     private val poseFilter = LowerBodyPoseFilter(config)
     private val extractor = PoseFeatureExtractor(config)
     private val stats = PosePipelineStats()
+    private val callbackWatchdog = PoseCallbackWatchdog()
     private var cameraProvider: ProcessCameraProvider? = null
     private var landmarker: PoseLandmarker? = null
-    private var delegate: PoseDelegate? = null
+    @Volatile private var delegate: PoseDelegate? = null
+    @Volatile private var pipelineStatus = PosePipelineStatus.INITIALIZING
 
     override fun start() {
         if (!started.compareAndSet(false, true) || closed.get()) return
         analyzerExecutor.execute {
             if (closed.get()) return@execute
+            val preferGpu =
+                runtimeEnvironment.shouldPreferGpu(config.preferGpuDelegate)
             val initialized =
                 runCatching {
                     PoseEngineInitializer(::createLandmarker)
-                        .initialize(config.preferGpuDelegate)
+                        .initialize(preferGpu)
                 }.getOrElse {
+                    stats.recordRuntimeError(ERROR_INITIALIZATION)
+                    publishStatus(PosePipelineStatus.FAILED)
                     onFailure("poseLandmarkerUnavailable")
                     return@execute
                 }
@@ -77,7 +99,10 @@ class CameraMediaPipePoseSource(
             }
             landmarker = initialized.engine
             delegate = initialized.delegate
+            stats.setDelegate(initialized.delegate)
             onReady(initialized.delegate)
+            publishStatus(PosePipelineStatus.AWAITING_RESULT)
+            startHealthMonitor()
             bindCamera()
         }
     }
@@ -116,7 +141,12 @@ class CameraMediaPipePoseSource(
                 runCatching {
                     val provider = future.get()
                     cameraProvider = provider
-                    bindUseCases(provider)
+                    cameraContainer.previewView.post {
+                        if (!closed.get()) {
+                            runCatching { bindUseCases(provider) }
+                                .onFailure { onFailure("cameraUnavailable") }
+                        }
+                    }
                 }.onFailure {
                     onFailure("cameraUnavailable")
                 }
@@ -139,20 +169,49 @@ class CameraMediaPipePoseSource(
                 provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
             } ?: error("No camera is available")
 
+        val cameraInfo = selector.filter(provider.availableCameraInfos).firstOrNull()
+        val supportedRanges =
+            cameraInfo?.let { info ->
+                Camera2CameraInfo.from(info)
+                    .getCameraCharacteristic(
+                        CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES,
+                    )
+                    ?.map { range -> SupportedFrameRateRange(range.lower, range.upper) }
+                    .orEmpty()
+            }.orEmpty()
+        val selectedRange = CameraFrameRatePolicy.select(supportedRanges)
+        val previewBuilder = Preview.Builder()
+        selectedRange?.let {
+            previewBuilder.setTargetFrameRate(Range(it.lower, it.upper))
+        }
         val preview =
-            Preview.Builder()
-                .setTargetFrameRate(Range(PREVIEW_TARGET_FPS, PREVIEW_TARGET_FPS))
-                .build()
+            previewBuilder.build()
                 .also {
                 it.surfaceProvider = previewView.surfaceProvider
             }
+        val requestedSize = Size(config.requestedAnalysisWidth, config.requestedAnalysisHeight)
+        stats.recordRequestedAnalysisResolution(requestedSize.width, requestedSize.height)
         val resolutionSelector =
             ResolutionSelector.Builder()
                 .setResolutionStrategy(
                     ResolutionStrategy(
-                        Size(480, 640),
+                        requestedSize,
                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
                     ),
+                )
+                .setResolutionFilter(
+                    ResolutionFilter { supportedSizes, _ ->
+                        val ordered =
+                            AnalysisResolutionPolicy.order(
+                                supportedSizes.map { ImageDimensions(it.width, it.height) },
+                            )
+                        ordered.map { orderedSize ->
+                            supportedSizes.first { supported ->
+                                supported.width == orderedSize.width &&
+                                    supported.height == orderedSize.height
+                            }
+                        }
+                    },
                 )
                 .build()
         val analysis =
@@ -165,71 +224,109 @@ class CameraMediaPipePoseSource(
                     useCase.setAnalyzer(analyzerExecutor, ::analyze)
                 }
 
-        provider.unbindAll()
         val viewPort = previewView.viewPort ?: error("Preview viewport is not ready")
-        provider.bindToLifecycle(
-            lifecycleOwner,
-            selector,
+        val useCases =
             UseCaseGroup.Builder()
                 .setViewPort(viewPort)
                 .addUseCase(preview)
                 .addUseCase(analysis)
-                .build(),
-        )
+                .build()
+        provider.unbindAll()
+        provider.bindToLifecycle(lifecycleOwner, selector, useCases)
     }
 
     private fun analyze(imageProxy: ImageProxy) {
         val analyzerReceivedNs = monotonicNs()
-        try {
-            if (closed.get()) return
-            val selectedDelegate = delegate ?: return
-            val targetFps =
-                when (selectedDelegate) {
-                    PoseDelegate.GPU -> config.targetGpuAnalysisFps
-                    PoseDelegate.CPU -> config.targetCpuAnalysisFps
-                }
-            when (frameGate.tryAcquire(analyzerReceivedNs, targetFps)) {
-                AnalysisFrameDecision.THROTTLED -> {
-                    stats.recordDroppedBeforePreprocessing()
-                    return
-                }
-                AnalysisFrameDecision.BUSY -> {
-                    stats.recordRejectedAsBusy()
-                    return
-                }
-                AnalysisFrameDecision.ACCEPTED -> Unit
+        stats.recordActualAnalysisResolution(imageProxy.width, imageProxy.height)
+        stats.recordAnalyzerFrame(analyzerReceivedNs)
+        val selectedDelegate = delegate
+        val targetFps =
+            when {
+                runtimeEnvironment.isEmulator -> config.targetEmulatorAnalysisFps
+                selectedDelegate == PoseDelegate.GPU -> config.targetGpuAnalysisFps
+                else -> config.targetCpuAnalysisFps
             }
+        frameDispatcher.dispatch(
+            nowNs = analyzerReceivedNs,
+            frameTimestampNs = imageProxy.imageInfo.timestamp,
+            targetFps = targetFps,
+            closeFrame = imageProxy::close,
+            onRejected = { decision ->
+                when (decision) {
+                    AnalysisFrameDecision.BUSY -> stats.recordRejectedAsBusy()
+                    AnalysisFrameDecision.INVALID_TIMESTAMP,
+                    AnalysisFrameDecision.THROTTLED,
+                    -> stats.recordDroppedBeforePreprocessing()
+                    AnalysisFrameDecision.ACCEPTED -> Unit
+                }
+            },
+        ) {
+            if (closed.get() || terminalPipelineFailure.get() || selectedDelegate == null) {
+                return@dispatch false
+            }
+            runCatching { convertAndSubmit(imageProxy, selectedDelegate, analyzerReceivedNs) }
+                .getOrElse {
+                    failPipeline(ERROR_PREPROCESSING, "poseDetectionFailed")
+                    false
+                }
+        }
+    }
 
-            val preprocessingStartedNs = monotonicNs()
-            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-            val sourceTransform =
-                ImageProxyTransformFactory().apply {
-                    isUsingCropRect = false
-                    isUsingRotationDegrees = true
-                }.getOutputTransform(imageProxy)
-            val frame =
-                prepareFrame(
-                    imageProxy = imageProxy,
-                    rotationDegrees = rotationDegrees,
-                    sourceTransform = sourceTransform,
-                    analyzerReceivedNs = analyzerReceivedNs,
-                    preprocessingStartedNs = preprocessingStartedNs,
-                )
-            pending.set(frame)
-            stats.recordSubmitted(frame.inferenceSubmittedNs)
-            try {
-                requireNotNull(landmarker).detectAsync(frame.mpImage, frame.timestampMs)
-            } catch (error: RuntimeException) {
-                pending.compareAndSet(frame, null)
-                frame.close()
-                frameGate.release()
-                onFailure("poseDetectionFailed")
-            }
+    private fun convertAndSubmit(
+        imageProxy: ImageProxy,
+        selectedDelegate: PoseDelegate,
+        analyzerReceivedNs: Long,
+    ): Boolean {
+        val preprocessingStartedNs = monotonicNs()
+        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+        val sourceTransform =
+            ImageProxyTransformFactory().apply {
+                isUsingCropRect = false
+                isUsingRotationDegrees = true
+            }.getOutputTransform(imageProxy)
+        val frame =
+            prepareFrame(
+                imageProxy = imageProxy,
+                rotationDegrees = rotationDegrees,
+                sourceTransform = sourceTransform,
+                analyzerReceivedNs = analyzerReceivedNs,
+                preprocessingStartedNs = preprocessingStartedNs,
+            )
+        cameraContainer.updateDebugThumbnail(frame.bitmap)
+        val generation = engineGeneration.get()
+        pendingMetadata[frame.timestampMs] =
+            FrameMetadata(
+                timestampMs = frame.timestampMs,
+                generation = generation,
+                analyzerReceivedNs = frame.analyzerReceivedNs,
+                preprocessingStartedNs = frame.preprocessingStartedNs,
+                inferenceSubmittedNs = frame.inferenceSubmittedNs,
+                imageWidth = frame.imageWidth,
+                imageHeight = frame.imageHeight,
+                sourceTransform = frame.sourceTransform,
+            )
+        trimPendingMetadata()
+        stats.recordSubmitted(
+            timestampNs = frame.inferenceSubmittedNs,
+            preprocessingDurationMs =
+                (frame.inferenceSubmittedNs - frame.preprocessingStartedNs) /
+                    NANOS_PER_MILLISECOND,
+            delegate = selectedDelegate,
+        )
+        try {
+            requireNotNull(landmarker).detectAsync(frame.mpImage, frame.timestampMs)
+            return true
         } catch (error: RuntimeException) {
-            frameGate.release()
-            onFailure("poseDetectionFailed")
+            pendingMetadata.remove(frame.timestampMs)
+            if (selectedDelegate == PoseDelegate.GPU) {
+                requestCpuFallback(ERROR_SUBMISSION)
+            } else {
+                failPipeline(ERROR_SUBMISSION, "poseDetectionFailed")
+            }
+            return false
         } finally {
-            imageProxy.close()
+            // TaskRunner synchronously packetizes the MPImage before returning.
+            frame.close()
         }
     }
 
@@ -240,17 +337,26 @@ class CameraMediaPipePoseSource(
         analyzerReceivedNs: Long,
         preprocessingStartedNs: Long,
     ): PendingFrame {
-        val source =
-            Bitmap.createBitmap(
-                imageProxy.width,
-                imageProxy.height,
-                Bitmap.Config.ARGB_8888,
-            )
+        require(imageProxy.format == PixelFormat.RGBA_8888)
+        val plane = imageProxy.planes.single()
+        RgbaPlaneLayoutValidator.validate(
+            RgbaPlaneLayout(
+                width = imageProxy.width,
+                height = imageProxy.height,
+                rowStride = plane.rowStride,
+                pixelStride = plane.pixelStride,
+                remainingBytes = plane.buffer.remaining(),
+            ),
+        )
+        // CameraX owns the RGBA plane layout. toBitmap() handles row padding and
+        // channel order; a tightly packed width*height*4 copy is intentionally
+        // not used.
+        val source = imageProxy.toBitmap()
+        stats.recordConvertedBitmap()
         var prepared: Bitmap? = null
         try {
-            imageProxy.planes[0].buffer.rewind()
-            source.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
             prepared = rotate(source, rotationDegrees)
+            if (prepared !== source) stats.recordRotationBitmap()
             if (prepared !== source) source.recycle()
             val mpImage = BitmapImageBuilder(prepared).build()
             val inferenceSubmittedNs = monotonicNs()
@@ -276,12 +382,15 @@ class CameraMediaPipePoseSource(
 
     private fun onMediaPipeResult(
         result: PoseLandmarkerResult,
-        @Suppress("UNUSED_PARAMETER") input: MPImage,
+        input: MPImage,
     ) {
-        val frame = pending.getAndSet(null) ?: return
+        val inferenceCallbackNs = monotonicNs()
+        val frame = takeFrameMetadata(result.timestampMs())
         try {
-            if (closed.get() || result.timestampMs() != frame.timestampMs) return
-            val inferenceCallbackNs = monotonicNs()
+            if (closed.get()) {
+                return
+            }
+            if (frame == null || frame.generation != engineGeneration.get()) return
             val pose =
                 MediaPipePoseAdapter.convert(
                     MediaPipePoseResultSample(
@@ -309,7 +418,29 @@ class CameraMediaPipePoseSource(
                     ),
                 )
             val filteredPose = poseFilter.filter(pose)
-            val feature = extractor.extract(filteredPose)
+            val filteredFeature = extractor.extract(filteredPose)
+            val feature =
+                when (filteredFeature) {
+                    is PoseFeatureResult.Valid -> {
+                        val rawAngle =
+                            extractor.kneeAngleForSide(
+                                pose,
+                                filteredFeature.sample.selectedSide,
+                            )
+                        PoseFeatureResult.Valid(
+                            sample =
+                                filteredFeature.sample.copy(
+                                    rawKneeAngleDeg =
+                                        rawAngle ?: filteredFeature.sample.kneeAngleDeg,
+                                ),
+                            quality = filteredFeature.quality,
+                        )
+                    }
+                    is PoseFeatureResult.Invalid -> filteredFeature
+                }
+            val nextPipelineStatus =
+                PosePipelineStatus.fromTracking(feature.quality.trackingStatus)
+            pipelineStatus = nextPipelineStatus
             val beforeStateMachine =
                 PoseLatencySample(
                     analyzerReceivedNs = frame.analyzerReceivedNs,
@@ -324,42 +455,60 @@ class CameraMediaPipePoseSource(
                     PoseFrameDelivery(
                         feature = feature,
                         latency = beforeStateMachine,
-                        metrics = stats.snapshot(),
+                        metrics = stats.snapshot(inferenceCallbackNs),
                         delegate = requireNotNull(delegate),
                     ),
                 )
+            val selectedSide =
+                (feature as? PoseFeatureResult.Valid)?.sample?.selectedSide
+                    ?: feature.quality.selectedSide
+            val guideSide =
+                when (selectedSide) {
+                    PoseSide.LEFT -> filteredPose.left
+                    PoseSide.RIGHT -> filteredPose.right
+                    null -> preferredGuideSide(filteredPose)
+                }
+            cameraContainer.updateGuide(
+                SquatGuideFrame(
+                    timestampMs = frame.timestampMs,
+                    sourceTransform = frame.sourceTransform,
+                    hip = guideSide?.hip,
+                    knee = guideSide?.knee,
+                    ankle = guideSide?.ankle,
+                    pipelineStatus = nextPipelineStatus,
+                    state = completion.state,
+                ),
+            )
             val completed =
                 beforeStateMachine.copy(
                     stateMachineCompletedNs = completion.stateMachineCompletedNs,
                     nativeEventDispatchedNs = completion.nativeEventDispatchedNs,
                 )
-            stats.recordResult(completed, pose.poseDetected)
-            val selectedSide =
-                when (completion.selectedSide) {
-                    PoseSide.LEFT -> filteredPose.left
-                    PoseSide.RIGHT -> filteredPose.right
-                    null -> bestOverlaySide(filteredPose)
-                }
-            cameraContainer.updateGuide(
-                SquatGuideFrame(
-                    sourceTransform = frame.sourceTransform,
-                    hip = selectedSide?.hip,
-                    knee = selectedSide?.knee,
-                    trackingStatus = completion.trackingStatus,
-                    state = completion.state,
-                    timestampMs = frame.timestampMs,
-                ),
+            stats.recordResult(
+                sample = completed,
+                poseDetected = pose.poseDetected,
+                validPose = feature is PoseFeatureResult.Valid,
             )
+            publishStatus(nextPipelineStatus)
         } finally {
-            frame.close()
-            frameGate.release()
+            input.close()
+            if (frame != null && frame.generation == engineGeneration.get()) {
+                frameDispatcher.completeInference()
+            }
         }
     }
 
     private fun onMediaPipeError(@Suppress("UNUSED_PARAMETER") error: RuntimeException) {
-        pending.getAndSet(null)?.close()
-        frameGate.release()
-        if (!closed.get()) onFailure("poseDetectionFailed")
+        val nowNs = monotonicNs()
+        pendingMetadata.clear()
+        frameDispatcher.completeInference()
+        stats.recordError(nowNs, ERROR_CALLBACK)
+        if (closed.get()) return
+        if (delegate == PoseDelegate.GPU) {
+            requestCpuFallback(ERROR_GPU_CALLBACK)
+        } else {
+            failPipeline(ERROR_CALLBACK, "poseDetectionFailed")
+        }
     }
 
     private fun rotate(
@@ -388,28 +537,125 @@ class CameraMediaPipePoseSource(
         }
     }
 
-    private fun bestOverlaySide(pose: LowerBodyPose): LowerBodySide? {
-        fun score(side: LowerBodySide?): Double =
-            listOfNotNull(side?.hip?.confidence, side?.knee?.confidence).sum()
-        return if (score(pose.right) > score(pose.left)) pose.right else pose.left
+    private fun startHealthMonitor() {
+        healthExecutor.scheduleAtFixedRate(
+            {
+                if (closed.get()) return@scheduleAtFixedRate
+                val metrics = stats.snapshot(monotonicNs())
+                onStatus(PosePipelineStatusSnapshot(pipelineStatus, metrics))
+                when (callbackWatchdog.evaluate(metrics)) {
+                    PoseRuntimeRecoveryAction.NONE -> Unit
+                    PoseRuntimeRecoveryAction.FALLBACK_TO_CPU ->
+                        requestCpuFallback(ERROR_GPU_CALLBACK_TIMEOUT)
+                    PoseRuntimeRecoveryAction.FAIL_CPU -> {
+                        failPipeline(
+                            ERROR_CPU_CALLBACK_TIMEOUT,
+                            "poseDetectionFailed",
+                        )
+                    }
+                }
+            },
+            HEALTH_CHECK_INTERVAL_MS,
+            HEALTH_CHECK_INTERVAL_MS,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private fun requestCpuFallback(reason: String) {
+        if (!runtimeFallbackStarted.compareAndSet(false, true)) return
+        analyzerExecutor.execute {
+            if (closed.get() || delegate != PoseDelegate.GPU) return@execute
+            stats.recordRuntimeError(reason)
+            pipelineStatus = PosePipelineStatus.INITIALIZING
+            publishStatus(PosePipelineStatus.INITIALIZING)
+            engineGeneration.incrementAndGet()
+            pendingMetadata.clear()
+            frameDispatcher.reset()
+            runCatching { landmarker?.close() }
+            landmarker = null
+            val cpuEngine =
+                runCatching { createLandmarker(PoseDelegate.CPU) }
+                    .getOrElse {
+                        stats.recordRuntimeError(ERROR_CPU_INITIALIZATION)
+                        publishStatus(PosePipelineStatus.FAILED)
+                        onFailure("poseLandmarkerUnavailable")
+                        return@execute
+                    }
+            if (closed.get()) {
+                cpuEngine.close()
+                return@execute
+            }
+            landmarker = cpuEngine
+            delegate = PoseDelegate.CPU
+            stats.setDelegate(PoseDelegate.CPU)
+            callbackWatchdog.reset()
+            poseFilter.reset()
+            extractor.reset()
+            onReady(PoseDelegate.CPU)
+            publishStatus(PosePipelineStatus.AWAITING_RESULT)
+        }
+    }
+
+    private fun failPipeline(
+        diagnosticCode: String,
+        failureCode: String,
+    ) {
+        if (!terminalPipelineFailure.compareAndSet(false, true)) return
+        stats.recordRuntimeError(diagnosticCode)
+        engineGeneration.incrementAndGet()
+        pendingMetadata.clear()
+        frameDispatcher.reset()
+        publishStatus(PosePipelineStatus.FAILED)
+        onFailure(failureCode)
+        runCatching {
+            analyzerExecutor.execute {
+                runCatching { landmarker?.close() }
+                landmarker = null
+                poseFilter.reset()
+                extractor.reset()
+            }
+        }
+    }
+
+    private fun publishStatus(status: PosePipelineStatus) {
+        pipelineStatus = status
+        val snapshot = PosePipelineStatusSnapshot(status, stats.snapshot(monotonicNs()))
+        cameraContainer.updatePipelineStatus(snapshot)
+        onStatus(snapshot)
+    }
+
+    private fun takeFrameMetadata(timestampMs: Long): FrameMetadata? {
+        val matching = pendingMetadata.remove(timestampMs)
+        pendingMetadata.keys.removeIf { it <= timestampMs }
+        return matching
+    }
+
+    private fun trimPendingMetadata() {
+        if (pendingMetadata.size <= MAX_PENDING_METADATA) return
+        pendingMetadata.keys.sorted()
+            .take(pendingMetadata.size - MAX_PENDING_METADATA)
+            .forEach(pendingMetadata::remove)
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         cameraProvider?.unbindAll()
         cameraProvider = null
-        frameGate.reset()
+        cameraContainer.clearGuide()
+        frameDispatcher.reset()
+        healthExecutor.shutdownNow()
         runCatching {
             analyzerExecutor.execute {
+                engineGeneration.incrementAndGet()
                 landmarker?.close()
                 landmarker = null
-                pending.getAndSet(null)?.close()
+                pendingMetadata.clear()
                 poseFilter.reset()
                 extractor.reset()
                 stats.reset()
             }
         }.onFailure {
-            pending.getAndSet(null)?.close()
+            pendingMetadata.clear()
         }
         analyzerExecutor.shutdown()
     }
@@ -434,10 +680,40 @@ class CameraMediaPipePoseSource(
         }
     }
 
+    private data class FrameMetadata(
+        val timestampMs: Long,
+        val generation: Long,
+        val analyzerReceivedNs: Long,
+        val preprocessingStartedNs: Long,
+        val inferenceSubmittedNs: Long,
+        val imageWidth: Int,
+        val imageHeight: Int,
+        val sourceTransform: OutputTransform,
+    )
+
     private fun monotonicNs(): Long = SystemClock.elapsedRealtimeNanos()
+
+    private fun preferredGuideSide(pose: LowerBodyPose): LowerBodySide? {
+        fun score(side: LowerBodySide?): Double =
+            listOfNotNull(
+                side?.hip?.confidence,
+                side?.knee?.confidence,
+                side?.ankle?.confidence,
+            ).minOrNull() ?: -1.0
+        return if (score(pose.left) >= score(pose.right)) pose.left else pose.right
+    }
 
     private companion object {
         const val NANOS_PER_MILLISECOND = 1_000_000L
-        const val PREVIEW_TARGET_FPS = 30
+        const val HEALTH_CHECK_INTERVAL_MS = 250L
+        const val MAX_PENDING_METADATA = 24
+        const val ERROR_INITIALIZATION = "landmarker_initialization"
+        const val ERROR_PREPROCESSING = "rgba_preprocessing"
+        const val ERROR_SUBMISSION = "inference_submission"
+        const val ERROR_CALLBACK = "inference_callback"
+        const val ERROR_GPU_CALLBACK = "gpu_callback_error"
+        const val ERROR_GPU_CALLBACK_TIMEOUT = "gpu_callback_timeout"
+        const val ERROR_CPU_CALLBACK_TIMEOUT = "cpu_callback_timeout"
+        const val ERROR_CPU_INITIALIZATION = "cpu_initialization"
     }
 }

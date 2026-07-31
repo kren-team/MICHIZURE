@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -18,6 +19,7 @@ import '../features/profile/presentation/profile_screen.dart';
 import '../features/profile/presentation/profile_setup_screen.dart';
 import '../features/task/presentation/running_task_screen.dart';
 import '../features/task/presentation/task_composer_screen.dart';
+import '../debug/squat_lab_screen.dart';
 import 'providers.dart';
 
 const String splashRoutePath = '/splash';
@@ -36,6 +38,7 @@ const String debtListRoutePath = '/debts';
 const String taskComposerRoutePath = '/task/new';
 const String runningTaskRoutePath = '/task/running';
 const String recoverableErrorRoutePath = '/error';
+const String debugSquatLabRoutePath = '/debug/squat-lab';
 
 enum AuthRouteState {
   loading,
@@ -224,6 +227,11 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
         path: recoverableErrorRoutePath,
         builder: (context, state) => const RecoverableErrorScreen(),
       ),
+      if (kDebugMode)
+        GoRoute(
+          path: debugSquatLabRoutePath,
+          builder: (context, state) => const SquatLabScreen(),
+        ),
     ],
   );
 }

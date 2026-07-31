@@ -278,9 +278,12 @@ final class _SquatControls extends StatelessWidget {
           const AspectRatio(
             key: Key('pose-preview'),
             aspectRatio: 3 / 4,
-            child: AndroidView(
-              key: Key('native-squat-camera-container'),
-              viewType: MethodChannelSquatDetector.previewViewType,
+            child: ClipRRect(
+              borderRadius: BorderRadius.all(Radius.circular(20)),
+              child: AndroidView(
+                key: Key('native-squat-camera-container'),
+                viewType: MethodChannelSquatDetector.previewViewType,
+              ),
             ),
           ),
         const SizedBox(height: 8),
@@ -294,8 +297,8 @@ final class _SquatControls extends StatelessWidget {
             ),
           ),
         const Text(
-          'みぞおちから膝下まで映してください。'
-          '少し横向きになると判定しやすくなります。',
+          '胸の下から足首まで映してください。'
+          'カメラに対して斜め30〜45度または横向きになると判定しやすくなります。',
           textAlign: TextAlign.center,
         ),
         Semantics(
@@ -310,7 +313,7 @@ final class _SquatControls extends StatelessWidget {
         Semantics(
           liveRegion: true,
           child: Text(
-            _qualityMessage(state.qualityWarning),
+            _qualityMessage(state.pipelineStatus, state.qualityWarning),
             key: const Key('squat-quality-message'),
             textAlign: TextAlign.center,
           ),
@@ -351,16 +354,34 @@ String _stateLabel(SquatDetectorState state) {
   };
 }
 
-String _qualityMessage(SquatQualityWarning? warning) {
+String _qualityMessage(
+  SquatPosePipelineStatus pipelineStatus,
+  SquatQualityWarning? warning,
+) {
+  final pipelineMessage = switch (pipelineStatus) {
+    SquatPosePipelineStatus.initializing => '姿勢判定を準備しています。',
+    SquatPosePipelineStatus.awaitingResult => '姿勢判定の結果を待っています。',
+    SquatPosePipelineStatus.noPose => '人物を認識できません。',
+    SquatPosePipelineStatus.hipUnavailable => '腰を認識できません。',
+    SquatPosePipelineStatus.kneeUnavailable => '膝を認識できません。',
+    SquatPosePipelineStatus.ankleUnavailable => '足首を認識できません。',
+    SquatPosePipelineStatus.confidenceInsufficient => '明るい場所で腰・膝・足首を映してください。',
+    SquatPosePipelineStatus.failed => '端末内の姿勢判定を確認してください。',
+    SquatPosePipelineStatus.valid => null,
+  };
+  if (pipelineMessage != null) return pipelineMessage;
   return switch (warning) {
-    null => '腰と膝を認識しました。',
-    SquatQualityWarning.noPoseDetected => '人物を検出できません。みぞおちから膝下まで映してください。',
-    SquatQualityWarning.hipUnavailable => '腰を認識できません。みぞおちが映る位置へ調整してください。',
-    SquatQualityWarning.kneeUnavailable => '膝を認識できません。膝下まで映る位置へ調整してください。',
+    null => '腰・膝・足首を認識しました。',
+    SquatQualityWarning.noPoseDetected => '人物を認識できません。',
+    SquatQualityWarning.hipUnavailable => '腰を認識できません。',
+    SquatQualityWarning.kneeUnavailable => '膝を認識できません。',
+    SquatQualityWarning.ankleUnavailable => '足首を認識できません。',
     SquatQualityWarning.moveFartherBack => 'カメラから少し離れてください。',
     SquatQualityWarning.moveCloser => 'カメラへ少し近づいてください。',
-    SquatQualityWarning.lowLightOrConfidence => '明るい場所で腰と膝が見えるように調整してください。',
-    SquatQualityWarning.holdStillToCalibrate => '腰と膝を映し、立った姿勢で少し静止してください。',
+    SquatQualityWarning.lowLightOrConfidence => '明るい場所で腰・膝・足首を映してください。',
+    SquatQualityWarning.holdStillToCalibrate => '立った姿勢で少し静止してください。',
+    SquatQualityWarning.squatDeeper => 'もう少し深くしゃがんでください。',
+    SquatQualityWarning.tooDeep => '深くしゃがみすぎています。立った姿勢へ戻ってください。',
     SquatQualityWarning.cameraUnavailable => 'カメラを利用できません。',
   };
 }
@@ -384,8 +405,9 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
             children: [
               const Text('Debug detector diagnostics'),
               Text('Delegate: ${diagnostics.delegate?.name ?? 'initializing'}'),
-              Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
+              Text('Pipeline: ${diagnostics.pipelineStatus.name}'),
               Text('Tracking: ${diagnostics.trackingStatus.name}'),
+              Text('Pose detected: ${diagnostics.poseDetected ? 'yes' : 'no'}'),
               Text(
                 'Selected side: ${diagnostics.selectedSide?.name ?? 'none'}',
               ),
@@ -399,10 +421,7 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
                 '${_metric(diagnostics.rightKneeConfidence)} / '
                 '${_metric(diagnostics.rightAnkleConfidence)}',
               ),
-              Text(
-                'Hip/knee gap ratio: '
-                '${_metric(diagnostics.normalizedVerticalGap, digits: 3)}',
-              ),
+              Text('Knee angle: ${_metric(diagnostics.kneeAngle, digits: 1)}°'),
               Text(
                 'Hip drop: ${_metric(diagnostics.normalizedHipDrop, digits: 3)}',
               ),
@@ -416,8 +435,34 @@ final class _SquatDiagnosticsCard extends StatelessWidget {
               ),
               Text('Inference latency: ${diagnostics.analysisLatencyMs}ms'),
               Text(
+                'Analyzer / submitted / callbacks: '
+                '${diagnostics.analyzerFrames} / '
+                '${diagnostics.inferenceSubmitted} / '
+                '${diagnostics.resultCallbacks}',
+              ),
+              Text(
+                'Pose / no pose / errors: '
+                '${diagnostics.resultsWithPose} / '
+                '${diagnostics.resultsWithoutPose} / '
+                '${diagnostics.errorCallbacks}',
+              ),
+              Text(
+                'Last callback age: '
+                '${diagnostics.lastCallbackAgeMs ?? '-'} ms',
+              ),
+              Text(
+                'Active delegate: '
+                '${diagnostics.activeDelegate?.name ?? 'initializing'}',
+              ),
+              Text('Last error: ${diagnostics.lastError ?? 'none'}'),
+              Text(
                 'Analysis FPS: '
                 '${diagnostics.actualAnalysisFps.toStringAsFixed(1)}',
+              ),
+              Text(
+                'Preprocess p50 / p95: '
+                '${diagnostics.preprocessingP50Ms ?? '-'} / '
+                '${diagnostics.preprocessingP95Ms ?? '-'} ms',
               ),
               Text(
                 'Inference p50 / p95: '
