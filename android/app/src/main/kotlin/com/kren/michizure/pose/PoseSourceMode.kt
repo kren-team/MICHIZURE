@@ -5,6 +5,9 @@ enum class PoseSourceMode {
     ANDROID_LOCAL,
     ;
 
+    val requiresCameraPermission: Boolean
+        get() = this == ANDROID_LOCAL
+
     companion object {
         fun fromCreationParams(args: Any?): PoseSourceMode {
             val value = (args as? Map<*, *>)?.get("poseSource") as? String

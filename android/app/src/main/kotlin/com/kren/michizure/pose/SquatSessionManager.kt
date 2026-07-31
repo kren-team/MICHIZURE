@@ -28,13 +28,10 @@ class SquatSessionManager(
         PoseSourceSelector(
             hostFactory = {
                 CameraHostPoseSource(
-                    context = view.context.applicationContext,
-                    lifecycleOwner = owner,
                     cameraContainer = view,
                     onReady = onReady,
                     onStatus = onStatus,
                     onFrame = onFrame,
-                    onFailure = onFailure,
                 )
             },
             localFactory = {

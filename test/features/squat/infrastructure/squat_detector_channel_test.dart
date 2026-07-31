@@ -50,6 +50,7 @@ void main() {
       'stopSession',
     ]);
     expect((calls[1].arguments as Map)['contractVersion'], 1);
+    expect((calls[1].arguments as Map)['poseSource'], 'local');
     expect((calls[1].arguments as Map)['debtId'], 'debt-1');
   });
 

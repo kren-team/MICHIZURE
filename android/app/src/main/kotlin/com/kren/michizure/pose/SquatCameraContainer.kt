@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.camera.view.PreviewView
 import androidx.camera.view.transform.CoordinateTransform
 import androidx.camera.view.transform.OutputTransform
@@ -22,6 +23,18 @@ import kotlin.math.max
 data class SquatGuideFrame(
     val timestampMs: Long,
     val sourceTransform: OutputTransform,
+    val hip: PosePoint?,
+    val knee: PosePoint?,
+    val ankle: PosePoint?,
+    val pipelineStatus: PosePipelineStatus,
+    val state: SquatState,
+)
+
+data class HostSquatGuideFrame(
+    val frameId: Long,
+    val bitmap: Bitmap,
+    val imageWidth: Int,
+    val imageHeight: Int,
     val hip: PosePoint?,
     val knee: PosePoint?,
     val ankle: PosePoint?,
@@ -45,24 +58,36 @@ internal data class SquatGuideDrawing(
  */
 class SquatCameraContainer(
     context: Context,
+    initialHostPoseMode: Boolean = false,
     private val config: SquatDetectorConfig = SquatDetectorConfig(),
 ) : FrameLayout(context) {
-    val previewView =
+    val previewView: PreviewView by lazy {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             scaleType = PreviewView.ScaleType.FIT_CENTER
             background = ColorDrawable(Color.BLACK)
         }
+    }
+    private val hostImageView =
+        ImageView(context).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = ColorDrawable(Color.BLACK)
+        }
     internal val guideOverlayView = SquatGuideOverlayView(context)
     private var lastGuideTimestampMs = Long.MIN_VALUE
+    private var hostPoseMode = initialHostPoseMode
+    private var pendingHostFrame: HostSquatGuideFrame? = null
+    private var hostRenderPosted = false
+    private var displayedHostBitmap: Bitmap? = null
     private var debugThumbnailEnabled = false
 
     init {
         background = ColorDrawable(Color.BLACK)
         clipChildren = true
         clipToPadding = true
-        addView(previewView, matchParentLayoutParams())
+        addView(backgroundView(), matchParentLayoutParams())
         addView(guideOverlayView, matchParentLayoutParams())
+        guideOverlayView.setHostPoseMode(hostPoseMode)
     }
 
     internal fun updateGuide(frame: SquatGuideFrame) {
@@ -110,12 +135,67 @@ class SquatCameraContainer(
     internal fun updatePipelineStatus(snapshot: PosePipelineStatusSnapshot) {
         post {
             guideOverlayView.updateStatus(snapshot.status)
-            guideOverlayView.updateHostResultFps(snapshot.metrics.resultCallbackFps)
         }
     }
 
     internal fun setHostPoseMode(enabled: Boolean) {
-        post { guideOverlayView.setHostPoseMode(enabled) }
+        if (hostPoseMode == enabled) return
+        hostPoseMode = enabled
+        post {
+            removeView(if (enabled) previewView else hostImageView)
+            addView(backgroundView(), 0, matchParentLayoutParams())
+            guideOverlayView.setHostPoseMode(enabled)
+        }
+    }
+
+    internal fun updateHostFrame(
+        frame: HostSquatGuideFrame,
+        onDisplayed: () -> Unit,
+        onDropped: () -> Unit,
+    ) {
+        synchronized(this) {
+            pendingHostFrame?.bitmap?.takeIf { !it.isRecycled }?.recycle()
+            if (pendingHostFrame != null) onDropped()
+            pendingHostFrame = frame
+            if (hostRenderPosted) return
+            hostRenderPosted = true
+        }
+        post {
+            val latest =
+                synchronized(this) {
+                    hostRenderPosted = false
+                    pendingHostFrame.also { pendingHostFrame = null }
+                } ?: return@post
+            if (!hostPoseMode) {
+                latest.bitmap.recycle()
+                onDropped()
+                return@post
+            }
+            val mapped =
+                mapHostPoints(
+                    latest.imageWidth,
+                    latest.imageHeight,
+                    listOf(latest.hip, latest.knee, latest.ankle),
+                )
+            val previous = displayedHostBitmap
+            displayedHostBitmap = latest.bitmap
+            hostImageView.setImageBitmap(latest.bitmap)
+            guideOverlayView.update(
+                SquatGuideDrawing(
+                    hip = mapped[0],
+                    knee = mapped[1],
+                    ankle = mapped[2],
+                    pipelineStatus = latest.pipelineStatus,
+                    state = latest.state,
+                ),
+            )
+            previous?.takeIf { it !== latest.bitmap && !it.isRecycled }?.recycle()
+            onDisplayed()
+        }
+    }
+
+    internal fun updateHostMetrics(videoFps: Double, poseFps: Double) {
+        post { guideOverlayView.updateHostMetrics(videoFps, poseFps) }
     }
 
     internal fun updateDebugThumbnail(bitmap: Bitmap) {
@@ -141,7 +221,35 @@ class SquatCameraContainer(
 
     internal fun clearGuide() {
         lastGuideTimestampMs = Long.MIN_VALUE
-        post { guideOverlayView.clear() }
+        synchronized(this) {
+            pendingHostFrame?.bitmap?.takeIf { !it.isRecycled }?.recycle()
+            pendingHostFrame = null
+        }
+        post {
+            hostImageView.setImageDrawable(ColorDrawable(Color.BLACK))
+            displayedHostBitmap?.takeIf { !it.isRecycled }?.recycle()
+            displayedHostBitmap = null
+            guideOverlayView.clear()
+            guideOverlayView.setHostPoseMode(hostPoseMode)
+        }
+    }
+
+    private fun backgroundView(): View = if (hostPoseMode) hostImageView else previewView
+
+    private fun mapHostPoints(
+        imageWidth: Int,
+        imageHeight: Int,
+        points: List<PosePoint?>,
+    ): List<PointF?> {
+        if (width <= 0 || height <= 0) return List(points.size) { null }
+        val scale = max(width.toFloat() / imageWidth, height.toFloat() / imageHeight)
+        val offsetX = (width - imageWidth * scale) / 2f
+        val offsetY = (height - imageHeight * scale) / 2f
+        return points.map { point ->
+            point?.takeIf { it.x.isFinite() && it.y.isFinite() }?.let {
+                PointF(offsetX + it.x.toFloat() * scale, offsetY + it.y.toFloat() * scale)
+            }
+        }
     }
 
     private fun matchParentLayoutParams() =
@@ -155,6 +263,17 @@ class SquatCameraContainer(
             context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     private var lastDebugThumbnailMs = Long.MIN_VALUE
+
+    override fun onDetachedFromWindow() {
+        synchronized(this) {
+            pendingHostFrame?.bitmap?.takeIf { !it.isRecycled }?.recycle()
+            pendingHostFrame = null
+        }
+        hostImageView.setImageDrawable(null)
+        displayedHostBitmap?.takeIf { !it.isRecycled }?.recycle()
+        displayedHostBitmap = null
+        super.onDetachedFromWindow()
+    }
 
     private companion object {
         const val DEBUG_THUMBNAIL_INTERVAL_MS = 1_000L
@@ -191,6 +310,7 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
     private var pipelineStatus = PosePipelineStatus.INITIALIZING
     private var debugThumbnail: Bitmap? = null
     private var hostPoseMode = false
+    private var hostVideoFps = 0.0
     private var hostResultFps = 0.0
     private var lastHostMetricsUpdateMs = Long.MIN_VALUE
 
@@ -213,7 +333,7 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
         invalidate()
     }
 
-    fun updateHostResultFps(value: Double) {
+    fun updateHostMetrics(videoFps: Double, poseFps: Double) {
         if (!hostPoseMode) return
         val nowMs = SystemClock.elapsedRealtime()
         if (lastHostMetricsUpdateMs != Long.MIN_VALUE &&
@@ -222,8 +342,11 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             return
         }
         lastHostMetricsUpdateMs = nowMs
-        if (kotlin.math.abs(hostResultFps - value) < 0.1) return
-        hostResultFps = value
+        if (kotlin.math.abs(hostVideoFps - videoFps) < 0.1 &&
+            kotlin.math.abs(hostResultFps - poseFps) < 0.1
+        ) return
+        hostVideoFps = videoFps
+        hostResultFps = poseFps
         invalidate()
     }
 
@@ -277,6 +400,7 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
                 top + dp(30f),
                 textPaint,
             )
+            drawHostMetrics(canvas, inset, top)
             drawDebugThumbnail(canvas, inset, top)
             return
         }
@@ -303,15 +427,28 @@ internal class SquatGuideOverlayView(context: Context) : View(context) {
             max(top + dp(30f), dp(24f)),
             textPaint,
         )
-        if (hostPoseMode) {
-            canvas.drawText(
-                "Pose FPS: ${String.format(java.util.Locale.US, "%.1f", hostResultFps)}",
-                inset,
-                max(top + dp(50f), dp(44f)),
-                textPaint,
-            )
-        }
+        drawHostMetrics(canvas, inset, top)
         drawDebugThumbnail(canvas, inset, top)
+    }
+
+    private fun drawHostMetrics(
+        canvas: Canvas,
+        inset: Float,
+        top: Float,
+    ) {
+        if (!hostPoseMode) return
+        canvas.drawText(
+            "Video FPS: ${String.format(java.util.Locale.US, "%.1f", hostVideoFps)}",
+            inset,
+            max(top + dp(50f), dp(44f)),
+            textPaint,
+        )
+        canvas.drawText(
+            "Pose FPS: ${String.format(java.util.Locale.US, "%.1f", hostResultFps)}",
+            inset,
+            max(top + dp(70f), dp(64f)),
+            textPaint,
+        )
     }
 
     private fun statusLabel(): String {

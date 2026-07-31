@@ -22,7 +22,8 @@ private class PosePreviewView(
     private val manager: SquatSessionManager,
     mode: PoseSourceMode,
 ) : PlatformView {
-    private val cameraContainer = SquatCameraContainer(context)
+    private val cameraContainer =
+        SquatCameraContainer(context, initialHostPoseMode = mode == PoseSourceMode.HOST_DEMO)
 
     init {
         manager.attachPreview(cameraContainer, mode)

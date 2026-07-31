@@ -1,60 +1,109 @@
 import asyncio
 import json
+import struct
 
-from pose_host.main import LatestFrameSlot
-from pose_host.protocol import HEADER, MAGIC, FrameMessage, decode_frame, encode_result
+import numpy as np
 
-
-def frame(frame_id: int) -> FrameMessage:
-    return FrameMessage(frame_id, 1234 + frame_id, 320, 240, 90, b"jpeg")
-
-
-def test_binary_frame_is_received() -> None:
-    raw = HEADER.pack(MAGIC, 7, 1234, 320, 240, 90, 4) + b"jpeg"
-
-    decoded = decode_frame(raw)
-
-    assert decoded.frame_id == 7
-    assert decoded.timestamp_ms == 1234
-    assert decoded.jpeg == b"jpeg"
-    assert decoded.rotation_degrees == 90
+from pose_host.main import (
+    CapturedFrame,
+    LatestFrameSlot,
+    PoseHostServer,
+    StreamConfig,
+    prepare_portrait_frame,
+)
+from pose_host.protocol import HEADER_LENGTH, PROTOCOL_VERSION, encode_packet
 
 
-def test_landmark_json_keeps_frame_id() -> None:
-    payload = json.loads(
-        encode_result(
-            frame(8),
-            inference_ms=42,
-            image_width=240,
-            image_height=320,
-            landmarks=[
-                {
-                    "x": 0.1,
-                    "y": 0.2,
-                    "z": -0.3,
-                    "visibility": 0.9,
-                    "presence": 0.8,
-                }
-            ],
-        )
+def decode(packet: bytes) -> tuple[dict, bytes]:
+    header_length = HEADER_LENGTH.unpack(packet[:4])[0]
+    header_end = 4 + header_length
+    return json.loads(packet[4:header_end]), packet[header_end:]
+
+
+def test_portrait_crop_resize_and_mirror_share_one_frame() -> None:
+    source = np.zeros((4, 6, 3), dtype=np.uint8)
+    source[:, 2] = 20
+    source[:, 3] = 30
+
+    transformed = prepare_portrait_frame(source, width=2, height=4, mirror=True)
+
+    assert transformed.shape == (4, 2, 3)
+    assert np.all(transformed[:, 0] == 30)
+    assert np.all(transformed[:, 1] == 20)
+
+
+def test_packet_contains_json_header_and_exact_jpeg_length() -> None:
+    packet = encode_packet(
+        frame_id=7,
+        captured_at_ms=1234,
+        image_width=360,
+        image_height=480,
+        inference_ms=42,
+        landmarks=[{"x": 0.1, "y": 0.2, "z": 0.0, "visibility": 0.9, "presence": 0.8}],
+        jpeg=b"jpeg",
     )
 
-    assert payload["frameId"] == 8
-    assert payload["timestamp"] == 1242
-    assert payload["landmarks"][0]["visibility"] == 0.9
+    header, jpeg = decode(packet)
+
+    assert struct.unpack(">I", packet[:4])[0] > 0
+    assert header["protocolVersion"] == PROTOCOL_VERSION
+    assert header["frameId"] == 7
+    assert header["capturedAtMs"] == 1234
+    assert header["jpegLength"] == len(jpeg) == 4
+    assert header["poseDetected"] is True
+    assert jpeg == b"jpeg"
 
 
-def test_latest_frame_replaces_older_pending_frame() -> None:
-    async def scenario() -> None:
-        slot = LatestFrameSlot()
-        await slot.put(frame(1))
-        await slot.put(frame(2))
+def test_latest_slot_drops_older_capture() -> None:
+    slot = LatestFrameSlot()
+    first = CapturedFrame(1, np.zeros((2, 2, 3), dtype=np.uint8))
+    second = CapturedFrame(2, np.ones((2, 2, 3), dtype=np.uint8))
+    slot.put(first)
+    slot.put(second)
 
-        selected = await slot.take()
+    selected = slot.take(0)
 
-        assert selected is not None
-        assert selected.frame_id == 2
-        assert slot.dropped == 1
-        await slot.close()
+    assert selected is second
+    assert slot.dropped == 1
+    slot.close()
 
-    asyncio.run(scenario())
+
+class FakeInferencer:
+    def infer(self, image: np.ndarray) -> list[dict[str, float | None]]:
+        return []
+
+
+def test_generated_frame_ids_are_monotonic() -> None:
+    server = PoseHostServer(FakeInferencer(), StreamConfig(preview_width=2, preview_height=4))
+    captured = CapturedFrame(10, np.zeros((4, 2, 3), dtype=np.uint8))
+
+    first, _ = decode(server._process(captured))
+    second, _ = decode(server._process(captured))
+
+    assert second["frameId"] == first["frameId"] + 1
+
+
+def test_camera_is_released_when_client_disconnects() -> None:
+    class Camera:
+        closed = False
+
+        def take_latest(self, timeout_seconds: float) -> CapturedFrame:
+            return CapturedFrame(10, np.zeros((4, 2, 3), dtype=np.uint8))
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Socket:
+        async def send(self, packet: bytes) -> None:
+            raise ConnectionError("client disconnected")
+
+    camera = Camera()
+    server = PoseHostServer(
+        FakeInferencer(),
+        StreamConfig(preview_width=2, preview_height=4),
+        camera_factory=lambda: camera,
+    )
+
+    asyncio.run(server.handle(Socket()))
+
+    assert camera.closed is True

@@ -85,6 +85,7 @@ final class MethodChannelSquatDetector implements SquatDetector {
       final result = await _methodChannel
           .invokeMapMethod<Object?, Object?>(method, {
             'contractVersion': contractVersion,
+            'poseSource': poseSource,
             ...values,
           })
           .timeout(_timeout);

@@ -4,69 +4,78 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONObject
 
-data class HostPoseFrameHeader(
+data class HostPosePacket(
     val frameId: Long,
-    val timestampMs: Long,
-    val imageWidth: Int,
-    val imageHeight: Int,
-    val rotationDegrees: Int,
-)
-
-data class HostPoseResult(
-    val frameId: Long,
-    val timestampMs: Long,
+    val capturedAtMs: Long,
     val inferenceMs: Long,
     val imageWidth: Int,
     val imageHeight: Int,
+    val poseDetected: Boolean,
     val landmarks: List<MediaPipeLandmarkSample>?,
+    val jpeg: ByteArray,
 )
 
 object HostPoseProtocol {
-    const val HEADER_SIZE = 36
+    const val PROTOCOL_VERSION = 1
 
-    fun encodeFrame(header: HostPoseFrameHeader, jpeg: ByteArray): ByteArray =
-        ByteBuffer.allocate(HEADER_SIZE + jpeg.size)
-            .order(ByteOrder.BIG_ENDIAN)
-            .putInt(MAGIC)
-            .putLong(header.frameId)
-            .putLong(header.timestampMs)
-            .putInt(header.imageWidth)
-            .putInt(header.imageHeight)
-            .putInt(header.rotationDegrees)
-            .putInt(jpeg.size)
-            .put(jpeg)
-            .array()
+    fun decodePacket(message: ByteArray): HostPosePacket {
+        require(message.size >= HEADER_LENGTH_BYTES) { "packet is too short" }
+        require(message.size <= MAX_PACKET_BYTES) { "packet is too large" }
+        val headerLength =
+            ByteBuffer.wrap(message, 0, HEADER_LENGTH_BYTES)
+                .order(ByteOrder.BIG_ENDIAN)
+                .int
+        require(headerLength in 1..MAX_HEADER_BYTES) { "invalid header length" }
+        val jpegOffset = HEADER_LENGTH_BYTES + headerLength
+        require(jpegOffset <= message.size) { "truncated header" }
+        val json = JSONObject(message.copyOfRange(HEADER_LENGTH_BYTES, jpegOffset).toString(Charsets.UTF_8))
+        require(json.getInt("protocolVersion") == PROTOCOL_VERSION) { "unsupported protocol" }
+        val frameId = json.getLong("frameId")
+        val capturedAtMs = json.getLong("capturedAtMs")
+        val imageWidth = json.getInt("imageWidth")
+        val imageHeight = json.getInt("imageHeight")
+        val inferenceMs = json.getLong("inferenceMs")
+        val jpegLength = json.getInt("jpegLength")
+        val poseDetected = json.getBoolean("poseDetected")
+        require(frameId > 0 && capturedAtMs >= 0) { "invalid frame metadata" }
+        require(imageWidth > 0 && imageHeight > 0) { "invalid image dimensions" }
+        require(inferenceMs >= 0 && jpegLength > 0) { "invalid payload metadata" }
+        require(jpegOffset + jpegLength == message.size) { "JPEG length mismatch" }
 
-    fun decodeResult(text: String): HostPoseResult {
-        val json = JSONObject(text)
-        val values = json.optJSONArray("landmarks")
+        val values = json.getJSONArray("landmarks")
         val landmarks =
-            values?.let { array ->
-                List(array.length()) { index ->
-                    val item = array.getJSONObject(index)
-                    MediaPipeLandmarkSample(
-                        x = item.getDouble("x"),
-                        y = item.getDouble("y"),
-                        z = item.getDouble("z"),
-                        visibility = item.optDoubleOrNull("visibility"),
-                        presence = item.optDoubleOrNull("presence"),
-                    )
-                }
-            }?.takeIf { it.isNotEmpty() }
-        return HostPoseResult(
-            frameId = json.getLong("frameId"),
-            timestampMs = json.getLong("timestamp"),
-            inferenceMs = json.getLong("inferenceMs"),
-            imageWidth = json.getInt("imageWidth"),
-            imageHeight = json.getInt("imageHeight"),
+            List(values.length()) { index ->
+                val item = values.getJSONObject(index)
+                MediaPipeLandmarkSample(
+                    x = item.getFiniteDouble("x"),
+                    y = item.getFiniteDouble("y"),
+                    z = item.getFiniteDouble("z"),
+                    visibility = item.getOptionalFiniteDouble("visibility"),
+                    presence = item.getOptionalFiniteDouble("presence"),
+                )
+            }.takeIf { it.isNotEmpty() }
+        require(poseDetected == (landmarks != null)) { "pose flag does not match landmarks" }
+        return HostPosePacket(
+            frameId = frameId,
+            capturedAtMs = capturedAtMs,
+            inferenceMs = inferenceMs,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            poseDetected = poseDetected,
             landmarks = landmarks,
+            jpeg = message.copyOfRange(jpegOffset, message.size),
         )
     }
 
-    private fun JSONObject.optDoubleOrNull(name: String): Double? =
-        if (isNull(name) || !has(name)) null else getDouble(name)
+    private fun JSONObject.getFiniteDouble(name: String): Double =
+        getDouble(name).also { require(it.isFinite()) { "$name is not finite" } }
 
-    private const val MAGIC = 0x4D504831 // MPH1
+    private fun JSONObject.getOptionalFiniteDouble(name: String): Double? =
+        if (!has(name) || isNull(name)) null else getFiniteDouble(name)
+
+    private const val HEADER_LENGTH_BYTES = 4
+    private const val MAX_HEADER_BYTES = 128 * 1024
+    private const val MAX_PACKET_BYTES = 4 * 1024 * 1024
 }
 
 class HostPoseResultGate {
@@ -97,11 +106,11 @@ class HostPoseResultProcessor(
     private val filter = LowerBodyPoseFilter(config)
     private val extractor = PoseFeatureExtractor(config)
 
-    fun process(result: HostPoseResult): ProcessedHostPose {
+    fun process(result: HostPosePacket): ProcessedHostPose {
         val pose =
             MediaPipePoseAdapter.convert(
                 MediaPipePoseResultSample(
-                    timestampMs = result.timestampMs,
+                    timestampMs = result.capturedAtMs,
                     imageWidth = result.imageWidth,
                     imageHeight = result.imageHeight,
                     landmarks = result.landmarks,
@@ -112,13 +121,9 @@ class HostPoseResultProcessor(
         val feature =
             when (filteredFeature) {
                 is PoseFeatureResult.Valid ->
-                    filteredFeature.copy(
-                        sample = filteredFeature.sample.withRawAngle(pose),
-                    )
+                    filteredFeature.copy(sample = filteredFeature.sample.withRawAngle(pose))
                 is PoseFeatureResult.CalibrationCandidate ->
-                    filteredFeature.copy(
-                        sample = filteredFeature.sample.withRawAngle(pose),
-                    )
+                    filteredFeature.copy(sample = filteredFeature.sample.withRawAngle(pose))
                 is PoseFeatureResult.Invalid -> filteredFeature
             }
         return ProcessedHostPose(pose, filteredPose, feature)

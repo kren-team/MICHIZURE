@@ -2,53 +2,36 @@ from __future__ import annotations
 
 import json
 import struct
-from dataclasses import dataclass
 from typing import Any
 
-MAGIC = 0x4D504831  # MPH1
-HEADER = struct.Struct(">Iqqiiii")
+PROTOCOL_VERSION = 1
+HEADER_LENGTH = struct.Struct(">I")
 
 
-@dataclass(frozen=True)
-class FrameMessage:
-    frame_id: int
-    timestamp_ms: int
-    image_width: int
-    image_height: int
-    rotation_degrees: int
-    jpeg: bytes
-
-
-def decode_frame(message: bytes) -> FrameMessage:
-    if len(message) < HEADER.size:
-        raise ValueError("frame is shorter than the protocol header")
-    magic, frame_id, timestamp_ms, width, height, rotation, jpeg_size = HEADER.unpack_from(
-        message
-    )
-    if magic != MAGIC:
-        raise ValueError("invalid frame magic")
-    jpeg = message[HEADER.size :]
-    if jpeg_size != len(jpeg) or width <= 0 or height <= 0:
-        raise ValueError("invalid frame dimensions or JPEG size")
-    if rotation not in (0, 90, 180, 270):
-        raise ValueError("invalid rotation")
-    return FrameMessage(frame_id, timestamp_ms, width, height, rotation, jpeg)
-
-
-def encode_result(
-    frame: FrameMessage,
+def encode_packet(
     *,
-    inference_ms: int,
+    frame_id: int,
+    captured_at_ms: int,
     image_width: int,
     image_height: int,
+    inference_ms: int,
     landmarks: list[dict[str, float | None]],
-) -> str:
-    payload: dict[str, Any] = {
-        "frameId": frame.frame_id,
-        "timestamp": frame.timestamp_ms,
-        "inferenceMs": inference_ms,
+    jpeg: bytes,
+) -> bytes:
+    header: dict[str, Any] = {
+        "protocolVersion": PROTOCOL_VERSION,
+        "frameId": frame_id,
+        "capturedAtMs": captured_at_ms,
         "imageWidth": image_width,
         "imageHeight": image_height,
+        "jpegLength": len(jpeg),
+        "inferenceMs": inference_ms,
+        "poseDetected": bool(landmarks),
         "landmarks": landmarks,
     }
-    return json.dumps(payload, separators=(",", ":"), allow_nan=False)
+    encoded_header = json.dumps(
+        header,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return HEADER_LENGTH.pack(len(encoded_header)) + encoded_header + jpeg
