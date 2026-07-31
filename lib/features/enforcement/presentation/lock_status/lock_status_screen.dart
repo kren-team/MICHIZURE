@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/providers.dart';
+import '../../../../core/presentation/app_components.dart';
+import '../../../../core/presentation/app_theme.dart';
 import '../../../debt/application/debt_lock_release_controller.dart';
 import '../../../debt/presentation/debt_failure_message.dart';
 import '../../application/app_lock_controller.dart';
@@ -84,24 +86,39 @@ final class _LockStateView extends StatelessWidget {
         .where((obligation) => obligation.isUnresolved)
         .toList(growable: false);
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
         Card(
-          child: ListTile(
-            leading: Icon(
-              state.hasActiveLock ? Icons.lock : Icons.lock_open,
-              color: state.isDegraded
-                  ? Theme.of(context).colorScheme.error
-                  : null,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: MichizureGradients.subtle,
             ),
-            title: Text(
-              state.hasActiveLock ? 'アプリを封印中' : '現在の封印はありません',
-              key: const Key('lock-status-title'),
-            ),
-            subtitle: Text(
-              state.hasActiveLock
-                  ? '有効な対象 ${state.effectiveTargetCount}件'
-                  : '負債の完済または期限到達で解除されます',
+            child: Padding(
+              padding: const EdgeInsets.all(MichizureSpacing.card),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MichizureStatusPill(
+                    label: state.hasActiveLock ? '封印中' : '利用可能',
+                    icon: state.hasActiveLock ? Icons.lock : Icons.lock_open,
+                    color: state.hasActiveLock
+                        ? MichizureColors.pink
+                        : MichizureColors.success,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    state.hasActiveLock ? 'アプリを封印中' : '現在の封印はありません',
+                    key: const Key('lock-status-title'),
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    state.hasActiveLock
+                        ? '有効な対象 ${state.effectiveTargetCount}件'
+                        : '負債の完済または期限到達で解除されます',
+                  ),
+                ],
+              ),
             ),
           ),
         ),

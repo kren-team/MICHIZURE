@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../application/profile_controller.dart';
 import '../domain/user_profile.dart';
 import 'profile_failure_message.dart';
@@ -47,52 +49,68 @@ final class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('プロフィール')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                key: const Key('profile-display-name-field'),
-                controller: _displayNameController,
-                enabled: !isSaving,
-                maxLength: ProfileValidator.maximumDisplayNameLength,
-                decoration: const InputDecoration(labelText: '表示名'),
-                validator: (value) =>
-                    ProfileValidator.isValidDisplayName(value ?? '')
-                    ? null
-                    : '表示名は制御文字を含めず、1〜40文字で入力してください。',
-              ),
-              if (state.whenOrNull(error: (error, stackTrace) => error)
-                  case final error?) ...[
-                const SizedBox(height: 12),
-                Semantics(
-                  liveRegion: true,
-                  child: Text(
-                    profileFailureMessage(error),
-                    key: const Key('profile-error-message'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(MichizureSpacing.page),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(MichizureSpacing.card),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const MichizureStatusPill(
+                        label: 'アカウント情報',
+                        icon: Icons.person_outline,
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        key: const Key('profile-display-name-field'),
+                        controller: _displayNameController,
+                        enabled: !isSaving,
+                        maxLength: ProfileValidator.maximumDisplayNameLength,
+                        decoration: const InputDecoration(labelText: '表示名'),
+                        validator: (value) =>
+                            ProfileValidator.isValidDisplayName(value ?? '')
+                            ? null
+                            : '表示名は制御文字を含めず、1〜40文字で入力してください。',
+                      ),
+                      if (state.whenOrNull(error: (error, stackTrace) => error)
+                          case final error?) ...[
+                        const SizedBox(height: 12),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            profileFailureMessage(error),
+                            key: const Key('profile-error-message'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      MichizurePrimaryButton(
+                        buttonKey: const Key('profile-save-button'),
+                        onPressed: isSaving ? null : () => _save(user.id),
+                        child: isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('変更を保存する'),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-              const SizedBox(height: 24),
-              FilledButton(
-                key: const Key('profile-save-button'),
-                onPressed: isSaving ? null : () => _save(user.id),
-                child: isSaving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('変更を保存する'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

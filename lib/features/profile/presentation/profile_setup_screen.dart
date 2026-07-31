@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
+import '../../../core/presentation/app_theme.dart';
 import '../application/profile_controller.dart';
 import '../domain/user_profile.dart';
 import 'profile_failure_message.dart';
@@ -35,51 +37,66 @@ final class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('グループに表示する名前を設定してください。'),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      key: const Key('profile-display-name-field'),
-                      controller: _displayNameController,
-                      enabled: !isSaving,
-                      maxLength: ProfileValidator.maximumDisplayNameLength,
-                      decoration: const InputDecoration(labelText: '表示名'),
-                      validator: (value) =>
-                          ProfileValidator.isValidDisplayName(value ?? '')
-                          ? null
-                          : '表示名は制御文字を含めず、1〜40文字で入力してください。',
-                    ),
-                    if (state.whenOrNull(error: (error, stackTrace) => error)
-                        case final error?) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        profileFailureMessage(error),
-                        key: const Key('profile-error-message'),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(MichizureSpacing.page),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(MichizureSpacing.section),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(
+                          Icons.person_add_alt_1,
+                          size: 42,
+                          color: MichizureColors.purple,
                         ),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      key: const Key('profile-save-button'),
-                      onPressed: isSaving || user == null ? null : _save,
-                      child: isSaving
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                        const SizedBox(height: 16),
+                        const Text('グループに表示する名前を設定してください。'),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          key: const Key('profile-display-name-field'),
+                          controller: _displayNameController,
+                          enabled: !isSaving,
+                          maxLength: ProfileValidator.maximumDisplayNameLength,
+                          decoration: const InputDecoration(labelText: '表示名'),
+                          validator: (value) =>
+                              ProfileValidator.isValidDisplayName(value ?? '')
+                              ? null
+                              : '表示名は制御文字を含めず、1〜40文字で入力してください。',
+                        ),
+                        if (state.whenOrNull(
+                              error: (error, stackTrace) => error,
                             )
-                          : const Text('保存する'),
+                            case final error?) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            profileFailureMessage(error),
+                            key: const Key('profile-error-message'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        MichizurePrimaryButton(
+                          buttonKey: const Key('profile-save-button'),
+                          onPressed: isSaving || user == null ? null : _save,
+                          child: isSaving
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('保存する'),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

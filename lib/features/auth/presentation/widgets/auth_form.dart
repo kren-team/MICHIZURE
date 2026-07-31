@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/presentation/app_components.dart';
 import '../../domain/auth_form_validator.dart';
 
 final class AuthForm extends StatefulWidget {
@@ -61,8 +62,8 @@ final class _AuthFormState extends State<AuthForm> {
                 _passwordErrorMessage(AuthFormValidator.password(value ?? '')),
           ),
           const SizedBox(height: 24),
-          FilledButton(
-            key: const Key('auth-submit-button'),
+          MichizurePrimaryButton(
+            buttonKey: const Key('auth-submit-button'),
             onPressed: widget.isSubmitting ? null : _submit,
             child: widget.isSubmitting
                 ? const SizedBox(

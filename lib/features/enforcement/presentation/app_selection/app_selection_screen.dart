@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/presentation/app_components.dart';
+import '../../../../core/presentation/app_theme.dart';
 import '../../application/device_setup_controller.dart';
 import '../../domain/lockable_app.dart';
 import '../enforcement_failure_message.dart';
@@ -71,24 +73,32 @@ final class AppSelectionScreen extends ConsumerWidget {
           return Column(
             children: [
               if (!state.capabilities.isDeviceOwner)
-                const Material(
-                  color: Colors.amberAccent,
-                  child: ListTile(
-                    leading: Icon(Icons.warning_amber),
-                    title: Text('管理端末の準備が必要です'),
-                    subtitle: Text('アプリは選択できますが、封印の実行にはDevice Owner設定が必要です。'),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Card(
+                    color: MichizureColors.elevatedSurface,
+                    child: ListTile(
+                      leading: Icon(Icons.warning_amber),
+                      title: Text('管理端末の準備が必要です'),
+                      subtitle: Text('アプリは選択できますが、封印の実行にはDevice Owner設定が必要です。'),
+                    ),
                   ),
                 ),
-              Material(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                child: ListTile(
-                  key: const Key('app-selection-summary'),
-                  leading: const Icon(Icons.lock_outline),
-                  title: Text('${state.selectedPackageNames.length}件を選択中'),
-                  subtitle: Text(
-                    state.hasUnsavedChanges
-                        ? '変更はまだ端末に保存されていません'
-                        : '選択内容はこの端末だけに保存されています',
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Card(
+                  child: ListTile(
+                    key: const Key('app-selection-summary'),
+                    leading: const Icon(Icons.lock_outline),
+                    title: Text(
+                      '${state.selectedPackageNames.length}件を選択中',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      state.hasUnsavedChanges
+                          ? '変更はまだ端末に保存されていません'
+                          : '選択内容はこの端末だけに保存されています',
+                    ),
                   ),
                 ),
               ),
@@ -137,8 +147,8 @@ final class AppSelectionScreen extends ConsumerWidget {
                 minimum: const EdgeInsets.all(16),
                 child: SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
-                    key: const Key('app-selection-save-button'),
+                  child: MichizurePrimaryButton(
+                    buttonKey: const Key('app-selection-save-button'),
                     onPressed: state.isSaving || !state.hasUnsavedChanges
                         ? null
                         : () async {
