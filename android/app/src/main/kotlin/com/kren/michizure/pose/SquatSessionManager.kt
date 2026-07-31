@@ -329,10 +329,26 @@ class SquatSessionManager(
                 "returnStandingDurationMs" to
                     (diagnostics?.returnStandingDurationMs ?: 0),
                 "currentRepDurationMs" to diagnostics?.currentRepDurationMs,
+                "calibratedStandingKneeAngle" to
+                    diagnostics?.calibratedStandingKneeAngleDeg,
                 "standingThresholdDeg" to
-                    (diagnostics?.standingThresholdDeg ?: detectorConfig.standingKneeDeg),
+                    (diagnostics?.standingThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).standingEnterAngle),
+                "descendingThresholdDeg" to
+                    (diagnostics?.descendingThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).descendingStartAngle),
                 "bottomThresholdDeg" to
-                    (diagnostics?.bottomThresholdDeg ?: detectorConfig.bottomKneeDeg),
+                    (diagnostics?.bottomThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).bottomAngle),
+                "returnStandingThresholdDeg" to
+                    (diagnostics?.returnStandingThresholdDeg ?:
+                        detectorConfig.thresholdsFor(180.0).returnStandingAngle),
+                "minimumAttemptKneeAngle" to diagnostics?.minimumAttemptKneeAngleDeg,
+                "maximumAttemptHipDrop" to diagnostics?.maximumAttemptHipDropRatio,
+                "baselineHipY" to diagnostics?.baselineHipY,
+                "legScale" to diagnostics?.legScale,
+                "baselineJitter" to diagnostics?.baselineJitter,
+                "calibrationSelectedSide" to diagnostics?.calibrationSelectedSide?.wireValue,
                 "analysisLatencyMs" to (latencyMs ?: 0),
                 "acceptedReps" to (update?.repSequence ?: machine.repSequence),
                 "rejectedAttempts" to (diagnostics?.rejectedAttempts ?: 0),

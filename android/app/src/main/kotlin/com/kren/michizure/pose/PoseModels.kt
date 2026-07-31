@@ -148,8 +148,17 @@ data class SquatFrameDiagnostics(
     val bottomConfirmationDurationMs: Long,
     val returnStandingDurationMs: Long,
     val currentRepDurationMs: Long?,
+    val calibratedStandingKneeAngleDeg: Double?,
     val standingThresholdDeg: Double,
+    val descendingThresholdDeg: Double,
     val bottomThresholdDeg: Double,
+    val returnStandingThresholdDeg: Double,
+    val minimumAttemptKneeAngleDeg: Double?,
+    val maximumAttemptHipDropRatio: Double?,
+    val baselineHipY: Double?,
+    val legScale: Double?,
+    val baselineJitter: Double?,
+    val calibrationSelectedSide: PoseSide?,
 )
 
 data class SquatDetectorUpdate(

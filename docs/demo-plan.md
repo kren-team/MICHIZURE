@@ -434,10 +434,10 @@ Task failure / Contribution pendingを作った後にnetworkを戻し、same eve
 2. 端末内処理・非保存の説明を確認してcamera permissionを許可する。
 3. 「スクワット返済を開始」を押し、native previewとcalibration表示を確認する。
 4. host webcamを使う場合は胸の下から足首までをframeへ入れ、斜め30〜45度または横向きで2秒程度直立する。6〜8 valid sampleと`calibrationStatus=complete`を確認する。
-5. Emulatorでは`Delegate: CPU`であることを確認する。「姿勢判定を準備しています」の後、debug diagnosticsでanalyzer / submit / callback / valid-pose FPS、callback age、callback未到達とcallback到達・poseなしの区別、drop / busy数、選択side、hip/knee/ankle confidence、raw/filtered knee angle、hip drop、前後phase、transition/reject/reset reason、confirmation時間、preprocess / inference / pipeline p50・p95を確認する。
+5. Emulatorでは`Delegate: CPU`であることを確認する。「姿勢判定を準備しています」の後、debug diagnosticsでanalyzer / submit / callback / valid-pose FPS、callback age、callback未到達とcallback到達・poseなしの区別、drop / busy数、選択side、hip/knee/ankle confidence、calibrated standing knee `S`、standing / descending / bottom / return threshold、raw/filtered knee angle、attempt最小膝角度、hip drop / attempt最大hip drop、前後phase、transition/reject/reset reason、confirmation時間、preprocess / inference / pipeline p50・p95を確認する。
 6. Squat Labの「既知画像でMediaPipeを確認」を1回実行し、callback=true、pose count 1以上、hip/knee/ankle=trueを確認する。これは推論配線の診断であり、実Camera精度やスクワット成功の代替ではない。
 7. 深くしゃがんで完全に立ち、端末検出、送信待ち、Firestore確定、負債残数の順に更新されることを確認する。
-8. 浅い屈伸はcountされず、正常1 squatがexactly 1 repであることを確認する。
+8. 浅い屈伸と途中で下降をやめる動作はcountされず、正常1 squatがexactly 1 repであることを確認する。
 9. 画面を離れ、camera privacy indicatorが消えてanalyzerが停止することを確認する。
 10. 最終repではDebt completed後にsessionが停止し、Phase 7→6経路でobligationが解除されることを確認する。
 

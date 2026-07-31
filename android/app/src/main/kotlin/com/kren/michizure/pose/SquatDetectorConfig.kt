@@ -22,31 +22,34 @@ data class SquatDetectorConfig(
     val calibrationTargetSamples: Int = 8,
     val calibrationMaximumHipDriftRatio: Double = 0.03,
     val calibrationMaximumKneeDriftDeg: Double = 8.0,
-    val standingKneeDeg: Double = 155.0,
+    val calibrationStandingMinimumKneeDeg: Double = 155.0,
     val standingMaximumHipDropRatio: Double = 0.12,
-    val standingKneeBaselineToleranceDeg: Double = 12.0,
-    val standingConfirmationMs: Long = 250,
-    val descendingKneeDeg: Double = 150.0,
-    val descendingKneeBaselineDeltaDeg: Double = 12.0,
-    val descendingHipDropRatio: Double = 0.08,
+    val standingKneeBaselineDeltaDeg: Double = 12.0,
+    val standingKneeMinimumDeg: Double = 143.0,
+    val standingKneeMaximumDeg: Double = 168.0,
+    val standingConfirmationMs: Long = 225,
+    val descendingKneeBaselineDeltaDeg: Double = 20.0,
+    val descendingKneeMinimumDeg: Double = 135.0,
+    val descendingKneeMaximumDeg: Double = 160.0,
+    val descendingHipDropRatio: Double = 0.06,
     val descendingStableMs: Long = 100,
-    val bottomKneeDeg: Double = 120.0,
-    val bottomHipDropRatio: Double = 0.20,
-    val bottomConfirmationMs: Long = 150,
+    val bottomKneeBaselineDeltaDeg: Double = 35.0,
+    val bottomKneeMinimumDeg: Double = 125.0,
+    val bottomKneeMaximumDeg: Double = 140.0,
+    val bottomHipDropRatio: Double = 0.10,
+    val deepBottomAngleMarginDeg: Double = 8.0,
+    val deepBottomMinimumHipDropRatio: Double = 0.06,
+    val bottomConfirmationMs: Long = 125,
     val tooDeepKneeDeg: Double = 55.0,
     val tooDeepHipDropRatio: Double = 0.20,
-    val bottomExitKneeDeg: Double = 125.0,
-    val bottomExitMaximumHipDropRatio: Double = 0.18,
     val ascendingStableMs: Long = 100,
-    val returnStandingKneeDeg: Double = 150.0,
+    val returnStandingKneeBaselineDeltaDeg: Double = 15.0,
+    val returnStandingKneeMinimumDeg: Double = 140.0,
+    val returnStandingKneeMaximumDeg: Double = 168.0,
     val returnStandingMaximumHipDropRatio: Double = 0.15,
     val returnStandingConfirmationMs: Long = 200,
     val minimumRepDurationMs: Long = 800,
     val maximumRepDurationMs: Long = 6_000,
-    val minimumDescendingMs: Long = 200,
-    val minimumAscendingMs: Long = 200,
-    val minimumRangeOfMotionDeg: Double = 50.0,
-    val minimumRepHipDropRatio: Double = 0.18,
     val refractoryMs: Long = 500,
     val oneEuroMinCutoff: Double = 1.0,
     val oneEuroBeta: Double = 0.02,
@@ -57,8 +60,31 @@ data class SquatDetectorConfig(
     val diagnosticIntervalMs: Long
         get() = 1_000L / diagnosticUiFps
 
+    fun thresholdsFor(standingKneeAngle: Double): SquatCalibrationThresholds =
+        SquatCalibrationThresholds(
+            standingEnterAngle =
+                (standingKneeAngle - standingKneeBaselineDeltaDeg)
+                    .coerceIn(standingKneeMinimumDeg, standingKneeMaximumDeg),
+            descendingStartAngle =
+                (standingKneeAngle - descendingKneeBaselineDeltaDeg)
+                    .coerceIn(descendingKneeMinimumDeg, descendingKneeMaximumDeg),
+            bottomAngle =
+                (standingKneeAngle - bottomKneeBaselineDeltaDeg)
+                    .coerceIn(bottomKneeMinimumDeg, bottomKneeMaximumDeg),
+            returnStandingAngle =
+                (standingKneeAngle - returnStandingKneeBaselineDeltaDeg)
+                    .coerceIn(returnStandingKneeMinimumDeg, returnStandingKneeMaximumDeg),
+        )
+
     companion object {
-        const val VERSION = "mediapipe-lite-knee-angle-hip-drop-v5"
+        const val VERSION = "mediapipe-lite-knee-angle-hip-drop-v6"
         const val MODEL_ASSET = "pose_landmarker_lite.task"
     }
 }
+
+data class SquatCalibrationThresholds(
+    val standingEnterAngle: Double,
+    val descendingStartAngle: Double,
+    val bottomAngle: Double,
+    val returnStandingAngle: Double,
+)

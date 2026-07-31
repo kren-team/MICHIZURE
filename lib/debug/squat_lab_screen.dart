@@ -236,7 +236,16 @@ final class _SquatLabDiagnosticsPanel extends StatelessWidget {
         ),
         Text('Hip drop: ${_metric(value?.normalizedHipDrop, digits: 3)}'),
         Text(
-          'Threshold standing / bottom: ${_metric(value?.standingThresholdDeg)} / ${_metric(value?.bottomThresholdDeg)}',
+          'Attempt min knee / max hip drop: ${_metric(value?.minimumAttemptKneeAngle)} / ${_metric(value?.maximumAttemptHipDrop, digits: 3)}',
+        ),
+        Text(
+          'Calibrated standing knee: ${_metric(value?.calibratedStandingKneeAngle)}',
+        ),
+        Text(
+          'Threshold standing / descent / bottom / return: ${_metric(value?.standingThresholdDeg)} / ${_metric(value?.descendingThresholdDeg)} / ${_metric(value?.bottomThresholdDeg)} / ${_metric(value?.returnStandingThresholdDeg)}',
+        ),
+        Text(
+          'Baseline hip / leg scale / jitter / side: ${_metric(value?.baselineHipY, digits: 3)} / ${_metric(value?.legScale, digits: 3)} / ${_metric(value?.baselineJitter, digits: 3)} / ${value?.calibrationSelectedSide?.name ?? '-'}',
         ),
         Text(
           'Phase path: ${value?.previousState?.name ?? '-'} → ${value?.state.name ?? '-'}',

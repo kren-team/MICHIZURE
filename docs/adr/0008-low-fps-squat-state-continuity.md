@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-31
 - Supersedes: [ADR 0007](0007-knee-angle-hip-drop-squat.md) のframe gap、calibration、過深動作、Preview FPS選択
+- Amended by: [ADR 0009](0009-calibrated-relative-squat-depth.md) の相対深度とphase skip
 
 ## Context
 

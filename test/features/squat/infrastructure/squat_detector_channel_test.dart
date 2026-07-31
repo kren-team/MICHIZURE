@@ -201,8 +201,17 @@ void main() {
       'bottomConfirmationDurationMs': 0,
       'returnStandingDurationMs': 0,
       'currentRepDurationMs': 250,
-      'standingThresholdDeg': 155.0,
-      'bottomThresholdDeg': 120.0,
+      'calibratedStandingKneeAngle': 168.0,
+      'standingThresholdDeg': 156.0,
+      'descendingThresholdDeg': 148.0,
+      'bottomThresholdDeg': 133.0,
+      'returnStandingThresholdDeg': 153.0,
+      'minimumAttemptKneeAngle': 132.0,
+      'maximumAttemptHipDrop': 0.11,
+      'baselineHipY': 0.25,
+      'legScale': 0.50,
+      'baselineJitter': 0.01,
+      'calibrationSelectedSide': 'left',
       'analysisLatencyMs': 80,
       'acceptedReps': 1,
       'rejectedAttempts': 0,
@@ -246,6 +255,14 @@ void main() {
     expect(diagnostics.lastTransitionReason, 'descentConfirmed');
     expect(diagnostics.calibrationSampleCount, 8);
     expect(diagnostics.validPoseFps, 8);
+    expect(diagnostics.calibratedStandingKneeAngle, 168);
+    expect(diagnostics.standingThresholdDeg, 156);
+    expect(diagnostics.descendingThresholdDeg, 148);
+    expect(diagnostics.bottomThresholdDeg, 133);
+    expect(diagnostics.returnStandingThresholdDeg, 153);
+    expect(diagnostics.minimumAttemptKneeAngle, 132);
+    expect(diagnostics.maximumAttemptHipDrop, 0.11);
+    expect(diagnostics.calibrationSelectedSide, SquatPoseSide.left);
 
     expect(
       () => detector.parseEvent({
@@ -284,8 +301,17 @@ void main() {
         'bottomConfirmationDurationMs': 0,
         'returnStandingDurationMs': 0,
         'currentRepDurationMs': 250,
-        'standingThresholdDeg': 155.0,
-        'bottomThresholdDeg': 120.0,
+        'calibratedStandingKneeAngle': 168.0,
+        'standingThresholdDeg': 156.0,
+        'descendingThresholdDeg': 148.0,
+        'bottomThresholdDeg': 133.0,
+        'returnStandingThresholdDeg': 153.0,
+        'minimumAttemptKneeAngle': 132.0,
+        'maximumAttemptHipDrop': 0.11,
+        'baselineHipY': 0.25,
+        'legScale': 0.50,
+        'baselineJitter': 0.01,
+        'calibrationSelectedSide': 'left',
         'analysisLatencyMs': 80,
         'acceptedReps': 1,
         'rejectedAttempts': 0,

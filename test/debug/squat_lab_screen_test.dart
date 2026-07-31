@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -67,13 +69,84 @@ void main() {
     expect(thumbnail.values, [true]);
     expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
   });
+
+  testWidgets('shows calibrated thresholds and attempt extrema', (
+    tester,
+  ) async {
+    final detector = _FakeLabDetector();
+    addTearDown(detector.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [squatDetectorProvider.overrideWithValue(detector)],
+        child: const MaterialApp(home: SquatLabScreen()),
+      ),
+    );
+    await tester.pump();
+
+    detector.emit(
+      SquatDetectorDiagnostics(
+        eventId: 'diagnostics-1',
+        occurredAt: DateTime.fromMillisecondsSinceEpoch(1),
+        squatSessionId: 'squat-lab-debug-0001',
+        poseDetected: true,
+        selectedSide: SquatPoseSide.left,
+        leftHipConfidence: 0.9,
+        leftKneeConfidence: 0.9,
+        leftAnkleConfidence: 0.9,
+        rightHipConfidence: null,
+        rightKneeConfidence: null,
+        rightAnkleConfidence: null,
+        kneeAngle: 132,
+        normalizedHipDrop: 0.11,
+        kneeAngularVelocity: null,
+        hipVerticalVelocity: null,
+        state: SquatDetectorState.bottom,
+        latestRejectReason: null,
+        analysisLatencyMs: 50,
+        acceptedReps: 0,
+        rejectedAttempts: 0,
+        calibratedStandingKneeAngle: 168,
+        standingThresholdDeg: 156,
+        descendingThresholdDeg: 148,
+        bottomThresholdDeg: 133,
+        returnStandingThresholdDeg: 153,
+        minimumAttemptKneeAngle: 132,
+        maximumAttemptHipDrop: 0.11,
+        baselineHipY: 0.25,
+        legScale: 0.5,
+        baselineJitter: 0.01,
+        calibrationSelectedSide: SquatPoseSide.left,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.textContaining('Calibrated standing knee: 168.0'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Threshold standing / descent / bottom / return: 156.00 / 148.00 / 133.00 / 153.00',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Attempt min knee / max hip drop: 132.00 / 0.110'),
+      findsOneWidget,
+    );
+  });
 }
 
 final class _FakeLabDetector implements SquatDetector {
   var started = false;
+  final _events = StreamController<SquatDetectorEvent>.broadcast(sync: true);
 
   @override
-  Stream<SquatDetectorEvent> get events => const Stream.empty();
+  Stream<SquatDetectorEvent> get events => _events.stream;
+
+  void emit(SquatDetectorEvent event) => _events.add(event);
+
+  Future<void> dispose() => _events.close();
 
   @override
   Future<CameraPermissionState> getCameraPermissionState() async =>

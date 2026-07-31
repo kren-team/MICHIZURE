@@ -200,8 +200,17 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
     this.bottomConfirmationDurationMs = 0,
     this.returnStandingDurationMs = 0,
     this.currentRepDurationMs,
+    this.calibratedStandingKneeAngle,
     this.standingThresholdDeg = 155,
+    this.descendingThresholdDeg = 150,
     this.bottomThresholdDeg = 120,
+    this.returnStandingThresholdDeg = 150,
+    this.minimumAttemptKneeAngle,
+    this.maximumAttemptHipDrop,
+    this.baselineHipY,
+    this.legScale,
+    this.baselineJitter,
+    this.calibrationSelectedSide,
     this.sampleCount = 0,
     this.analyzerFrames = 0,
     this.inferenceSubmitted = 0,
@@ -259,8 +268,17 @@ final class SquatDetectorDiagnostics extends SquatDetectorEvent {
   final int bottomConfirmationDurationMs;
   final int returnStandingDurationMs;
   final int? currentRepDurationMs;
+  final double? calibratedStandingKneeAngle;
   final double standingThresholdDeg;
+  final double descendingThresholdDeg;
   final double bottomThresholdDeg;
+  final double returnStandingThresholdDeg;
+  final double? minimumAttemptKneeAngle;
+  final double? maximumAttemptHipDrop;
+  final double? baselineHipY;
+  final double? legScale;
+  final double? baselineJitter;
+  final SquatPoseSide? calibrationSelectedSide;
   final int analysisLatencyMs;
   final int acceptedReps;
   final int rejectedAttempts;

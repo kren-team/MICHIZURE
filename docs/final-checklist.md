@@ -76,11 +76,15 @@
 - [ ] debug既知画像でcallback、pose 1件以上、hip/knee/ankleを確認
 - [ ] diagnosticsが4 FPS以下、analysisが物理GPU 12 FPS / 物理CPU 8 FPS / Emulator CPU 5〜6 FPS近傍
 - [ ] 2秒・6〜8 valid sampleで直立calibration
+- [ ] calibrated standing knee angle `S`とbaseline hip / leg scale / jitter / sideを記録
+- [ ] `bottomAngle=clamp(S-35°, 125°, 140°)`と4つの相対thresholdを確認
 - [ ] 前後phase、transition / reject / reset reason、frame dt、confirmation時間を記録
 - [ ] 正常3 squatをexactly 3回count
 - [ ] 深いsquat 1回をexactly 1回count
 - [ ] 浅い屈伸3回を0回としてreject
+- [ ] 途中で下降をやめて戻る動作を0回としてreject
 - [ ] 複数squatで二重countなし
+- [ ] attemptの最小膝角度、最大hip drop、通過phaseを記録
 - [ ] pending / confirmedを区別
 - [ ] 最終repでDebt completed
 - [ ] Aのobligation release
