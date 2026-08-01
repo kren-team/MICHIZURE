@@ -43,7 +43,10 @@ final class _LockStatusScreenState extends ConsumerState<LockStatusScreen> {
     final state = ref.watch(appLockControllerProvider);
     final remoteRelease = ref.watch(debtLockReleaseStateProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('アプリ封印状態')),
+      appBar: AppBar(
+        title: const Text('アプリ封印状態'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: state.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => _LockError(

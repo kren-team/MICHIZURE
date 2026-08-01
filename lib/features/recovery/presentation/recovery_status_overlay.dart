@@ -91,7 +91,6 @@ final class _RecoveryStatusOverlayState
 }
 
 String? _warningKey(RecoveryPhase phase) => switch (phase) {
-  RecoveryPhase.degraded ||
   RecoveryPhase.actionRequired ||
   RecoveryPhase.failed => '${phase.name}:${_message(phase)}',
   _ => null,
@@ -99,7 +98,6 @@ String? _warningKey(RecoveryPhase phase) => switch (phase) {
 
 String _message(RecoveryPhase phase) {
   return switch (phase) {
-    RecoveryPhase.degraded => '一部の同期を保留しています。通信状態を確認してください。',
     RecoveryPhase.actionRequired => '端末またはアカウント状態の確認が必要です。',
     RecoveryPhase.failed => '状態を安全に復旧できませんでした。',
     _ => '',

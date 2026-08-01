@@ -54,6 +54,16 @@ void main() {
     expect(find.textContaining('FirebaseException'), findsNothing);
   });
 
+  testWidgets('does not show a banner for deferred synchronization', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_degradedApp());
+
+    expect(find.byKey(const Key('recovery-status-card')), findsNothing);
+    expect(find.textContaining('同期を保留'), findsNothing);
+    expect(find.text('Home'), findsOneWidget);
+  });
+
   testWidgets('warning has a close button and stays dismissed', (tester) async {
     await tester.pumpWidget(_warningApp());
 
@@ -95,7 +105,7 @@ void main() {
     await tester.pumpWidget(_warningApp());
 
     expect(find.byKey(const Key('recovery-status-card')), findsOneWidget);
-    expect(find.text('一部の同期を保留しています。通信状態を確認してください。'), findsOneWidget);
+    expect(find.text('端末またはアカウント状態の確認が必要です。'), findsOneWidget);
   });
 
   testWidgets('retry invokes its callback exactly once', (tester) async {
@@ -114,7 +124,7 @@ Widget _warningApp({Widget? child, VoidCallback? onRetry}) {
     overrides: [
       recoveryControllerProvider.overrideWithBuild(
         (ref, notifier) => const RecoveryControllerState(
-          phase: RecoveryPhase.degraded,
+          phase: RecoveryPhase.actionRequired,
           trigger: RecoveryTrigger.coldStart,
         ),
       ),
@@ -124,6 +134,22 @@ Widget _warningApp({Widget? child, VoidCallback? onRetry}) {
         onRetry: onRetry,
         child: child ?? const Scaffold(body: Text('Home')),
       ),
+    ),
+  );
+}
+
+Widget _degradedApp() {
+  return ProviderScope(
+    overrides: [
+      recoveryControllerProvider.overrideWithBuild(
+        (ref, notifier) => const RecoveryControllerState(
+          phase: RecoveryPhase.degraded,
+          trigger: RecoveryTrigger.coldStart,
+        ),
+      ),
+    ],
+    child: const MaterialApp(
+      home: RecoveryStatusOverlay(child: Scaffold(body: Text('Home'))),
     ),
   );
 }

@@ -38,8 +38,7 @@ void main() {
     expect(find.byType(TextFormField), findsNothing);
   });
 
-  testWidgets('shows pending state and offers retry', (tester) async {
-    var retried = false;
+  testWidgets('keeps pending state without an inline warning', (tester) async {
     final request = contributionRequest();
     final pending = ContributionDelivery(
       request: request,
@@ -61,16 +60,16 @@ void main() {
               lastDelivery: pending,
             ),
             isFromCache: true,
-            hasPendingWrites: false,
-            onRetry: () => retried = true,
+            hasPendingWrites: true,
           ),
         ),
       ),
     );
 
-    expect(find.textContaining('端末内に保存'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('contribution-retry-button')));
-    expect(retried, isTrue);
+    expect(find.text('送信待ち 1 回'), findsOneWidget);
+    expect(find.textContaining('端末内に保存'), findsNothing);
+    expect(find.textContaining('同期確定前'), findsNothing);
+    expect(find.byKey(const Key('contribution-retry-button')), findsNothing);
   });
 
   testWidgets('shows confirmed and typed rejection without SDK text', (
@@ -228,7 +227,11 @@ void main() {
       );
       expect(find.text('次の動作: スクワットを開始してください'), findsOneWidget);
       expect(find.text('残り 9 回'), findsOneWidget);
-      expect(find.text('1回の返済がサーバーで確定しました。'), findsOneWidget);
+      expect(find.textContaining('サーバーで確定'), findsNothing);
+      expect(
+        find.byKey(const Key('contribution-delivery-message')),
+        findsNothing,
+      );
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(nativeFinder, findsOneWidget);
       expect(

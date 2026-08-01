@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/providers.dart';
 import '../../../core/presentation/app_components.dart';
 import '../../../core/presentation/app_theme.dart';
+import '../../debt/domain/debt.dart';
 import '../application/handle_native_task_event.dart';
 import '../application/task_command_controller.dart';
 import '../domain/task_failure.dart';
@@ -23,6 +24,7 @@ final class RunningTaskScreen extends ConsumerStatefulWidget {
 final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
   Timer? _ticker;
   String? _guardStartedTaskId;
+  String? _navigatedDebtId;
 
   @override
   void initState() {
@@ -50,11 +52,12 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
         : guard.task?.isTerminal ?? false
         ? guard.task
         : null;
+    final createdDebt = command.value?.debt ?? guard.debt;
 
     if (terminalTask != null) {
       return _TaskResultView(
         task: terminalTask,
-        debtReps: command.value?.debt?.totalReps ?? guard.debt?.totalReps,
+        debtReps: createdDebt?.totalReps,
       );
     }
 
@@ -116,10 +119,28 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
       ),
     );
     if (shouldAbort ?? false) {
-      await ref
+      final completed = await ref
           .read(taskCommandControllerProvider.notifier)
           .abort(ownerUid: task.ownerUid, taskId: task.id);
+      if (!completed || !mounted) {
+        return;
+      }
+      final debt = ref.read(taskCommandControllerProvider).value?.debt;
+      if (debt != null) {
+        _openCreatedDebt(debt);
+      }
     }
+  }
+
+  void _openCreatedDebt(Debt debt) {
+    if (_navigatedDebtId == debt.id) {
+      return;
+    }
+    _navigatedDebtId = debt.id;
+    ref.invalidate(activeGroupDebtsProvider);
+    ref.invalidate(debtProvider(debt.id));
+    ref.invalidate(debtContributionsProvider(debt.id));
+    context.go('/debts/${debt.id}', extra: debt);
   }
 }
 
@@ -301,15 +322,6 @@ final class _TaskResultView extends StatelessWidget {
                 const Text('グループのメンバーがスクワットで一緒に返済できます。'),
               ],
               const SizedBox(height: 24),
-              if (!succeeded && task.debtId != null) ...[
-                FilledButton.icon(
-                  key: const Key('task-result-debt-button'),
-                  onPressed: () => context.go('/debts/${task.debtId}'),
-                  icon: const Icon(Icons.fitness_center),
-                  label: const Text('発生した負債を見る'),
-                ),
-                const SizedBox(height: 8),
-              ],
               FilledButton(
                 key: const Key('task-result-home-button'),
                 onPressed: () => context.go('/home'),

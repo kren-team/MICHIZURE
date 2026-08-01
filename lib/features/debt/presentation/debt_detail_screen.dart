@@ -10,9 +10,10 @@ import '../domain/debt.dart';
 import 'debt_failure_message.dart';
 
 final class DebtDetailScreen extends ConsumerWidget {
-  const DebtDetailScreen({required this.debtId, super.key});
+  const DebtDetailScreen({required this.debtId, this.initialDebt, super.key});
 
   final String debtId;
+  final Debt? initialDebt;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -20,9 +21,20 @@ final class DebtDetailScreen extends ConsumerWidget {
     final contributions = ref.watch(debtContributionsProvider(debtId));
     final members = ref.watch(currentGroupMembersProvider).value;
     return Scaffold(
-      appBar: AppBar(title: const Text('負債の詳細')),
+      appBar: AppBar(
+        title: const Text('負債の詳細'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: debt.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => initialDebt == null
+            ? const Center(child: CircularProgressIndicator())
+            : _buildDetail(
+                ref,
+                debt: initialDebt!,
+                contributions: contributions,
+                members: members,
+                debtIsFromCache: false,
+              ),
         error: (error, stackTrace) => _DetailError(
           message: debtFailureMessage(error),
           onRetry: () {
@@ -31,25 +43,46 @@ final class DebtDetailScreen extends ConsumerWidget {
           },
         ),
         data: (snapshot) {
-          final value = snapshot.value;
+          final value =
+              snapshot.value ?? (snapshot.isFromCache ? initialDebt : null);
           if (value == null) {
+            if (snapshot.isFromCache) {
+              return const Center(child: CircularProgressIndicator());
+            }
             return const Center(child: Text('負債が見つかりません。'));
           }
-          return contributions.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stackTrace) => _DetailError(
-              message: debtFailureMessage(error),
-              onRetry: () => ref.invalidate(debtContributionsProvider(debtId)),
-            ),
-            data: (summarySnapshot) => _DebtDetail(
-              debt: value,
-              summaries: summarySnapshot.value,
-              members: members ?? const [],
-              isFromCache: snapshot.isFromCache || summarySnapshot.isFromCache,
-            ),
+          return _buildDetail(
+            ref,
+            debt: value,
+            contributions: contributions,
+            members: members,
+            debtIsFromCache: snapshot.value != null && snapshot.isFromCache,
           );
         },
       ),
+    );
+  }
+
+  Widget _buildDetail(
+    WidgetRef ref, {
+    required Debt debt,
+    required AsyncValue<DebtSnapshot<List<DebtContributionSummary>>>
+    contributions,
+    required List<GroupMember>? members,
+    required bool debtIsFromCache,
+  }) {
+    final summarySnapshot = contributions.value;
+    final contributionError = contributions.whenOrNull(
+      error: (error, stackTrace) => debtFailureMessage(error),
+    );
+    return _DebtDetail(
+      debt: debt,
+      summaries: summarySnapshot?.value,
+      contributionError: contributionError,
+      onRetryContributions: () =>
+          ref.invalidate(debtContributionsProvider(debtId)),
+      members: members ?? const [],
+      isFromCache: debtIsFromCache || (summarySnapshot?.isFromCache ?? false),
     );
   }
 }
@@ -58,12 +91,16 @@ final class _DebtDetail extends StatelessWidget {
   const _DebtDetail({
     required this.debt,
     required this.summaries,
+    required this.contributionError,
+    required this.onRetryContributions,
     required this.members,
     required this.isFromCache,
   });
 
   final Debt debt;
-  final List<DebtContributionSummary> summaries;
+  final List<DebtContributionSummary>? summaries;
+  final String? contributionError;
+  final VoidCallback onRetryContributions;
   final List<GroupMember> members;
   final bool isFromCache;
 
@@ -102,10 +139,19 @@ final class _DebtDetail extends StatelessWidget {
         const Divider(height: 32),
         Text('メンバー別の確定回数', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        if (summaries.isEmpty)
+        if (contributionError != null) ...[
+          Text(
+            contributionError!,
+            key: const Key('debt-contributions-error'),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          TextButton(onPressed: onRetryContributions, child: const Text('再試行')),
+        ] else if (summaries == null)
+          const LinearProgressIndicator(key: Key('debt-contributions-loading'))
+        else if (summaries!.isEmpty)
           const Text('まだ確定した返済はありません。', key: Key('debt-contributions-empty'))
         else
-          ...summaries.map(
+          ...summaries!.map(
             (summary) => ListTile(
               key: Key('debt-contribution-${summary.userId}'),
               leading: const Icon(Icons.person),

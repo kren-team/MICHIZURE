@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:michizure/app/providers.dart';
 import 'package:michizure/core/time/clock.dart';
+import 'package:michizure/features/debt/domain/debt.dart';
 import 'package:michizure/features/task/domain/task_failure.dart';
 import 'package:michizure/features/task/domain/native_task_guard.dart';
 import 'package:michizure/features/task/domain/task_session.dart';
@@ -72,11 +74,17 @@ void main() {
   testWidgets('manual abort creates a failed Task result', (tester) async {
     final tasks = FakeTaskRepository();
     final task = runningTaskFixture();
-    await _pumpRunning(
+    String? routedDebtId;
+    Debt? routedDebt;
+    await _pumpRunningWithDebtRoute(
       tester,
       tasks: tasks,
       task: task,
       clock: _FakeClock(task.startedAt.add(const Duration(minutes: 1))),
+      onDebtRoute: (debtId, debt) {
+        routedDebtId = debtId;
+        routedDebt = debt;
+      },
     );
 
     await tester.tap(find.byKey(const Key('task-abort-button')));
@@ -86,9 +94,55 @@ void main() {
     await tester.pump();
 
     expect(tasks.failCalls, 1);
-    expect(find.byKey(const Key('task-failed-title')), findsOneWidget);
-    expect(find.text('発生した負債: 50回'), findsOneWidget);
+    expect(routedDebtId, tasks.debt.id);
+    expect(identical(routedDebt, tasks.debt), isTrue);
+    expect(find.text('Debt detail'), findsOneWidget);
+    expect(find.byKey(const Key('task-result-debt-button')), findsNothing);
   });
+}
+
+Future<void> _pumpRunningWithDebtRoute(
+  WidgetTester tester, {
+  required FakeTaskRepository tasks,
+  required TaskSession task,
+  required Clock clock,
+  required void Function(String debtId, Debt? debt) onDebtRoute,
+}) async {
+  final taskGuard = FakeNativeTaskGuard();
+  addTearDown(taskGuard.close);
+  final router = GoRouter(
+    initialLocation: '/task/running',
+    routes: [
+      GoRoute(
+        path: '/task/running',
+        builder: (context, state) => const RunningTaskScreen(),
+      ),
+      GoRoute(
+        path: '/debts/:debtId',
+        builder: (context, state) {
+          onDebtRoute(
+            state.pathParameters['debtId']!,
+            state.extra is Debt ? state.extra! as Debt : null,
+          );
+          return const Scaffold(body: Text('Debt detail'));
+        },
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        taskRepositoryProvider.overrideWithValue(tasks),
+        nativeTaskGuardProvider.overrideWithValue(taskGuard),
+        appLockRepositoryProvider.overrideWithValue(FakeAppLockRepository()),
+        activeTaskSessionProvider.overrideWithValue(AsyncData(task)),
+        clockProvider.overrideWithValue(clock),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ),
+  );
+  await tester.pump();
 }
 
 Future<void> _pumpRunning(

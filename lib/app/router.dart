@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
+import '../features/debt/domain/debt.dart';
 import '../features/debt/presentation/debt_detail_screen.dart';
 import '../features/debt/presentation/debt_list_screen.dart';
 import '../features/debt/presentation/contribution_session_screen.dart';
@@ -125,6 +126,10 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       final location = state.matchedLocation;
       final isAuthRoute =
           location == loginRoutePath || location == registerRoutePath;
+      final createdDebt = state.extra is Debt ? state.extra! as Debt : null;
+      final isCreatedDebtRoute =
+          createdDebt != null &&
+          location == '$debtListRoutePath/${createdDebt.id}';
 
       return switch (gate.state) {
         AuthRouteState.loading =>
@@ -140,7 +145,9 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
               ? authenticatedRoutePath
               : null,
         AuthRouteState.runningTask =>
-          location == runningTaskRoutePath ? null : runningTaskRoutePath,
+          location == runningTaskRoutePath || isCreatedDebtRoute
+              ? null
+              : runningTaskRoutePath,
         AuthRouteState.recoverableError =>
           location == recoverableErrorRoutePath
               ? null
@@ -202,8 +209,10 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
         routes: [
           GoRoute(
             path: ':debtId',
-            builder: (context, state) =>
-                DebtDetailScreen(debtId: state.pathParameters['debtId']!),
+            builder: (context, state) => DebtDetailScreen(
+              debtId: state.pathParameters['debtId']!,
+              initialDebt: state.extra is Debt ? state.extra! as Debt : null,
+            ),
             routes: [
               GoRoute(
                 path: 'repay',

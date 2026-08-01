@@ -51,7 +51,10 @@ final class _DebtListScreenState extends ConsumerState<DebtListScreen> {
     final expiration = ref.watch(debtExpirationControllerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('現在の負債')),
+      appBar: AppBar(
+        title: const Text('現在の負債'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: profile?.groupId == null
           ? const _CenteredMessage(
               key: Key('debt-group-required'),

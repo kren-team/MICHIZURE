@@ -6,6 +6,7 @@ import 'package:michizure/app/providers.dart';
 import 'package:michizure/app/router.dart';
 import 'package:michizure/features/auth/domain/auth_user.dart';
 import 'package:michizure/features/auth/presentation/login_screen.dart';
+import 'package:michizure/features/debt/presentation/debt_detail_screen.dart';
 import 'package:michizure/features/group/presentation/group_home_screen.dart';
 import 'package:michizure/features/profile/domain/user_profile.dart';
 import 'package:michizure/features/profile/presentation/profile_setup_screen.dart';
@@ -60,6 +61,40 @@ void main() {
       expect(harness.location, runningTaskRoutePath);
       expect(find.byType(RunningTaskScreen), findsOneWidget);
     });
+
+    testWidgets('created Debt route keeps its extra during Task gate refresh', (
+      tester,
+    ) async {
+      final harness = await _pumpRouter(tester, AuthRouteState.runningTask);
+      final debt = debtFixture();
+
+      harness.router.go('/debts/${debt.id}', extra: debt);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(harness.location, '/debts/${debt.id}');
+      expect(find.byType(DebtDetailScreen), findsOneWidget);
+
+      harness.gate.update(const AsyncData(AuthRouteState.ready));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(harness.location, '/debts/${debt.id}');
+      expect(find.byType(DebtDetailScreen), findsOneWidget);
+    });
+
+    testWidgets(
+      'Debt route without created Debt extra stays behind Task gate',
+      (tester) async {
+        final harness = await _pumpRouter(tester, AuthRouteState.runningTask);
+
+        harness.router.go('/debts/task-1');
+        await tester.pump();
+
+        expect(harness.location, runningTaskRoutePath);
+        expect(find.byType(RunningTaskScreen), findsOneWidget);
+      },
+    );
 
     testWidgets('recoverable error automatically returns to Home when ready', (
       tester,
@@ -142,6 +177,10 @@ Future<_RouterHarness> _pumpRouter(
         activeTaskSessionProvider.overrideWith(
           (ref) => Stream.value(runningTaskFixture()),
         ),
+        debtProvider('task-1').overrideWithValue(const AsyncLoading()),
+        debtContributionsProvider(
+          'task-1',
+        ).overrideWithValue(const AsyncLoading()),
         nativeTaskGuardProvider.overrideWithValue(guard),
       ],
       child: MaterialApp.router(routerConfig: router),
