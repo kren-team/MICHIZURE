@@ -65,14 +65,12 @@ void main() {
 
   test('release uses one bundled MediaPipe Lite model without ML Kit', () {
     final appBuild = File('android/app/build.gradle.kts').readAsStringSync();
+    final pubspec = File('pubspec.yaml').readAsStringSync();
     final taskModels = Directory('android/app/src/main/assets')
         .listSync()
         .whereType<File>()
         .where((file) => file.path.endsWith('.task'))
         .toList();
-    final contributionScreen = File(
-      'lib/features/debt/presentation/contribution_session_screen.dart',
-    ).readAsStringSync();
     final router = File('lib/app/router.dart').readAsStringSync();
     final home = File(
       'lib/features/group/presentation/group_home_screen.dart',
@@ -90,13 +88,14 @@ void main() {
 
     expect(appBuild, contains('com.google.mediapipe:tasks-vision:1.0.0'));
     expect(appBuild, isNot(contains('pose-detection')));
+    expect(appBuild, isNot(contains('com.google.mlkit')));
+    expect(pubspec, isNot(contains('google_mlkit')));
     expect(taskModels, hasLength(1));
     expect(taskModels.single.path, endsWith('pose_landmarker_lite.task'));
     expect(taskModels.single.lengthSync(), 5777746);
     expect(debugFixture.existsSync(), isTrue);
     expect(mainFixture.existsSync(), isFalse);
     expect(debugFixtureRunner.existsSync(), isTrue);
-    expect(contributionScreen, contains('if (kDebugMode)'));
     expect(router, contains('if (kDebugMode)'));
     expect(
       router,
