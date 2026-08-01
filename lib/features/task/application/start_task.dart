@@ -59,8 +59,9 @@ final class StartTask {
     try {
       await _nativeTaskGuard.start(task);
     } on Object {
-      // The Firestore Task is already committed. Routing restores it and the
-      // Running controller retries the idempotent native start.
+      // NOTE: The Firestore Task record has already been committed at this
+      // point, so it's safe to fail here. Navigation will restore the task,
+      // and the Running controller will retry the (idempotent) native start.
       throw const TaskFailure(TaskFailureKind.deviceNotReady);
     }
     return task;
