@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: michizure-notification-api
+    runtime: docker
+    dockerfilePath: ./services/notification_api/Dockerfile
+    dockerContext: ./services/notification_api
+    healthCheckPath: /health
+    envVars:
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false

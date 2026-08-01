@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import '../../notifications/domain/push_notifications.dart';
 import '../domain/contribution.dart';
 import '../domain/contribution_repository.dart';
 
@@ -16,10 +19,11 @@ final class ContributionDelivery {
 }
 
 final class SubmitContribution {
-  SubmitContribution(this._repository, this._outbox);
+  SubmitContribution(this._repository, this._outbox, [this._notifications]);
 
   final ContributionRepository _repository;
   final ContributionOutbox _outbox;
+  final NotificationEventPublisher? _notifications;
   final Map<String, Future<ContributionDelivery>> _deliveriesInFlight = {};
   final Map<String, Future<List<ContributionDelivery>>> _flushesInFlight = {};
 
@@ -98,6 +102,26 @@ final class SubmitContribution {
     try {
       final result = await _repository.submit(request);
       await _outbox.remove(request.eventId);
+      if (!result.isDuplicate) {
+        final notifications = _notifications;
+        if (notifications != null) {
+          unawaited(
+            _ignoreNotificationFailure(
+              notifications.contributionCreated(
+                debtId: request.debtId,
+                contributionId: result.eventId,
+              ),
+            ),
+          );
+          if (result.debtCompleted) {
+            unawaited(
+              _ignoreNotificationFailure(
+                notifications.debtCompleted(request.debtId),
+              ),
+            );
+          }
+        }
+      }
       return ContributionDelivery(
         request: request,
         status: ContributionSyncStatus.confirmed,
@@ -124,6 +148,14 @@ final class SubmitContribution {
         failure: const ContributionFailure(ContributionRejectionReason.unknown),
       );
     }
+  }
+}
+
+Future<void> _ignoreNotificationFailure(Future<void> notification) async {
+  try {
+    await notification;
+  } on Object {
+    // Notification delivery is never authoritative for Contribution state.
   }
 }
 

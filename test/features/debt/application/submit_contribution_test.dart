@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:michizure/features/debt/application/submit_contribution.dart';
 import 'package:michizure/features/debt/domain/contribution.dart';
+import 'package:michizure/features/notifications/domain/push_notifications.dart';
 
 import '../support/fake_contribution_repository.dart';
 
@@ -18,6 +19,52 @@ void main() {
     expect(repository.requests, [request]);
     expect(outbox.entries, isEmpty);
   });
+
+  test('publishes an accepted Contribution but not its duplicate', () async {
+    final repository = FakeContributionRepository();
+    final outbox = InMemoryContributionOutbox();
+    final notifications = _RecordingNotifications();
+    final useCase = SubmitContribution(repository, outbox, notifications);
+    final request = contributionRequest();
+
+    await useCase.recordAcceptedRep(request);
+    await useCase.recordAcceptedRep(request);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.contributions, [(request.debtId, request.eventId)]);
+  });
+
+  test('publishes Debt completion after the completing Contribution', () async {
+    final repository = FakeContributionRepository()..completesDebt = true;
+    final notifications = _RecordingNotifications();
+    final request = contributionRequest();
+    final useCase = SubmitContribution(
+      repository,
+      InMemoryContributionOutbox(),
+      notifications,
+    );
+
+    await useCase.recordAcceptedRep(request);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.completedDebtIds, [request.debtId]);
+  });
+
+  test(
+    'notification failure does not change a confirmed Contribution',
+    () async {
+      final useCase = SubmitContribution(
+        FakeContributionRepository(),
+        InMemoryContributionOutbox(),
+        _FailingNotifications(),
+      );
+
+      final delivery = await useCase.recordAcceptedRep(contributionRequest());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(delivery.status, ContributionSyncStatus.confirmed);
+    },
+  );
 
   test('duplicate event is confirmed without a second count', () async {
     final repository = FakeContributionRepository();
@@ -103,4 +150,45 @@ void main() {
     expect(results[1].single.status, ContributionSyncStatus.confirmed);
     expect(outbox.entries, isEmpty);
   });
+}
+
+final class _RecordingNotifications implements NotificationEventPublisher {
+  final List<(String, String)> contributions = [];
+  final List<String> completedDebtIds = [];
+
+  @override
+  Future<void> contributionCreated({
+    required String debtId,
+    required String contributionId,
+  }) async {
+    contributions.add((debtId, contributionId));
+  }
+
+  @override
+  Future<void> debtCompleted(String debtId) async {
+    completedDebtIds.add(debtId);
+  }
+
+  @override
+  Future<void> debtCreated(String debtId) async {}
+}
+
+final class _FailingNotifications implements NotificationEventPublisher {
+  @override
+  Future<void> contributionCreated({
+    required String debtId,
+    required String contributionId,
+  }) async {
+    throw StateError('unavailable');
+  }
+
+  @override
+  Future<void> debtCompleted(String debtId) async {
+    throw StateError('unavailable');
+  }
+
+  @override
+  Future<void> debtCreated(String debtId) async {
+    throw StateError('unavailable');
+  }
 }

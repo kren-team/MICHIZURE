@@ -50,6 +50,14 @@ const validUser = (overrides = {}) => ({
   ...overrides,
 });
 
+const validDevice = (overrides = {}) => ({
+  token: 'fcm-token',
+  platform: 'android',
+  updatedAt: serverTimestamp(),
+  enabled: true,
+  ...overrides,
+});
+
 const firestoreAs = (uid) =>
   testEnvironment.authenticatedContext(uid).firestore();
 
@@ -113,6 +121,22 @@ describe('users rules allow paths', () => {
       }),
     );
   });
+
+  test('allows a user to manage their own device registrations', async () => {
+    const device = doc(
+      firestoreAs(aliceId),
+      'users',
+      aliceId,
+      'devices',
+      '0123456789abcdef',
+    );
+    await assertSucceeds(setDoc(device, validDevice()));
+    await assertSucceeds(getDoc(device));
+    await assertSucceeds(
+      updateDoc(device, {token: 'refreshed-token', updatedAt: serverTimestamp()}),
+    );
+    await assertSucceeds(deleteDoc(device));
+  });
 });
 
 describe('users rules deny paths', () => {
@@ -144,6 +168,43 @@ describe('users rules deny paths', () => {
         updatedAt: serverTimestamp(),
       }),
     );
+  });
+
+  test('denies access to another user device registration', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(
+          context.firestore(),
+          'users',
+          aliceId,
+          'devices',
+          '0123456789abcdef',
+        ),
+        validDevice({updatedAt: fixedTimestamp}),
+      );
+    });
+    const device = doc(
+      firestoreAs(bobId),
+      'users',
+      aliceId,
+      'devices',
+      '0123456789abcdef',
+    );
+    await expectDenied(getDoc(device));
+    await expectDenied(setDoc(device, validDevice()));
+    await expectDenied(deleteDoc(device));
+  });
+
+  test('denies malformed device registrations', async () => {
+    const device = doc(
+      firestoreAs(aliceId),
+      'users',
+      aliceId,
+      'devices',
+      '0123456789abcdef',
+    );
+    await expectDenied(setDoc(device, validDevice({platform: 'ios'})));
+    await expectDenied(setDoc(device, validDevice({unexpected: true})));
   });
 
   test('denies UID spoofing on create', async () => {
