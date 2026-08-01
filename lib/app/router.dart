@@ -126,6 +126,10 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
       final location = state.matchedLocation;
       final isAuthRoute =
           location == loginRoutePath || location == registerRoutePath;
+      final createdDebt = state.extra is Debt ? state.extra! as Debt : null;
+      final isCreatedDebtRoute =
+          createdDebt != null &&
+          location == '$debtListRoutePath/${createdDebt.id}';
 
       return switch (gate.state) {
         AuthRouteState.loading =>
@@ -141,7 +145,9 @@ GoRouter createAppRouter({AuthRouteGate? authRouteGate}) {
               ? authenticatedRoutePath
               : null,
         AuthRouteState.runningTask =>
-          location == runningTaskRoutePath ? null : runningTaskRoutePath,
+          location == runningTaskRoutePath || isCreatedDebtRoute
+              ? null
+              : runningTaskRoutePath,
         AuthRouteState.recoverableError =>
           location == recoverableErrorRoutePath
               ? null

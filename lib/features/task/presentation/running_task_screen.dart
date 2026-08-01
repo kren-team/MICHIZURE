@@ -24,6 +24,7 @@ final class RunningTaskScreen extends ConsumerStatefulWidget {
 final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
   Timer? _ticker;
   String? _guardStartedTaskId;
+  String? _navigatedDebtId;
 
   @override
   void initState() {
@@ -57,9 +58,6 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
       return _TaskResultView(
         task: terminalTask,
         debtReps: createdDebt?.totalReps,
-        onOpenDebt: terminalTask.debtId == null
-            ? null
-            : () => _openDebt(terminalTask.debtId!, createdDebt),
       );
     }
 
@@ -74,14 +72,7 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
           return const _TaskLoadError(noActiveTask: true);
         }
         if (task.isTerminal) {
-          final debtCreationInFlight =
-              command.isLoading || guard.phase == TaskGuardPhase.synchronizing;
-          return _TaskResultView(
-            task: task,
-            onOpenDebt: task.debtId == null || debtCreationInFlight
-                ? null
-                : () => _openDebt(task.debtId!, null),
-          );
+          return _TaskResultView(task: task);
         }
         final now = ref.read(clockProvider).now().toUtc();
         final remaining = task.remainingAt(now);
@@ -128,20 +119,28 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
       ),
     );
     if (shouldAbort ?? false) {
-      await ref
+      final completed = await ref
           .read(taskCommandControllerProvider.notifier)
           .abort(ownerUid: task.ownerUid, taskId: task.id);
+      if (!completed || !mounted) {
+        return;
+      }
+      final debt = ref.read(taskCommandControllerProvider).value?.debt;
+      if (debt != null) {
+        _openCreatedDebt(debt);
+      }
     }
   }
 
-  void _openDebt(String debtId, Debt? initialDebt) {
+  void _openCreatedDebt(Debt debt) {
+    if (_navigatedDebtId == debt.id) {
+      return;
+    }
+    _navigatedDebtId = debt.id;
     ref.invalidate(activeGroupDebtsProvider);
-    ref.invalidate(debtProvider(debtId));
-    ref.invalidate(debtContributionsProvider(debtId));
-    context.go(
-      '/debts/$debtId',
-      extra: initialDebt?.id == debtId ? initialDebt : null,
-    );
+    ref.invalidate(debtProvider(debt.id));
+    ref.invalidate(debtContributionsProvider(debt.id));
+    context.go('/debts/${debt.id}', extra: debt);
   }
 }
 
@@ -284,11 +283,10 @@ String _guardFailureMessage(Object? error) {
 }
 
 final class _TaskResultView extends StatelessWidget {
-  const _TaskResultView({required this.task, this.debtReps, this.onOpenDebt});
+  const _TaskResultView({required this.task, this.debtReps});
 
   final TaskSession task;
   final int? debtReps;
-  final VoidCallback? onOpenDebt;
 
   @override
   Widget build(BuildContext context) {
@@ -324,15 +322,6 @@ final class _TaskResultView extends StatelessWidget {
                 const Text('グループのメンバーがスクワットで一緒に返済できます。'),
               ],
               const SizedBox(height: 24),
-              if (!succeeded && onOpenDebt != null) ...[
-                FilledButton.icon(
-                  key: const Key('task-result-debt-button'),
-                  onPressed: onOpenDebt,
-                  icon: const Icon(Icons.fitness_center),
-                  label: const Text('発生した負債を見る'),
-                ),
-                const SizedBox(height: 8),
-              ],
               FilledButton(
                 key: const Key('task-result-home-button'),
                 onPressed: () => context.go('/home'),

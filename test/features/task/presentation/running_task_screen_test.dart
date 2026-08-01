@@ -94,14 +94,10 @@ void main() {
     await tester.pump();
 
     expect(tasks.failCalls, 1);
-    expect(find.byKey(const Key('task-failed-title')), findsOneWidget);
-    expect(find.text('発生した負債: 50回'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('task-result-debt-button')));
-    await tester.pump();
-
     expect(routedDebtId, tasks.debt.id);
     expect(identical(routedDebt, tasks.debt), isTrue);
+    expect(find.text('Debt detail'), findsOneWidget);
+    expect(find.byKey(const Key('task-result-debt-button')), findsNothing);
   });
 }
 
