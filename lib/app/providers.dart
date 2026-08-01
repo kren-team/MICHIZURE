@@ -30,6 +30,7 @@ import '../features/notifications/application/notifying_task_repository.dart';
 import '../features/notifications/domain/push_notifications.dart';
 import '../features/notifications/infrastructure/firebase_push_messaging_gateway.dart';
 import '../features/notifications/infrastructure/firestore_device_registration_repository.dart';
+import '../features/notifications/infrastructure/flutter_local_notification_gateway.dart';
 import '../features/notifications/infrastructure/http_notification_event_publisher.dart';
 import '../features/notifications/infrastructure/shared_preferences_device_id_store.dart';
 import '../features/profile/domain/profile_repository.dart';
@@ -97,6 +98,12 @@ final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
 
 final pushMessagingGatewayProvider = Provider<PushMessagingGateway>((ref) {
   return FirebasePushMessagingGateway(FirebaseMessaging.instance);
+});
+
+final localNotificationGatewayProvider = Provider<LocalNotificationGateway>((
+  ref,
+) {
+  return defaultLocalNotificationGateway;
 });
 
 final deviceIdStoreProvider = Provider<DeviceIdStore>((ref) {

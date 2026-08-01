@@ -13,6 +13,7 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -33,6 +34,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     val cameraXVersion = "1.6.1"
     implementation("androidx.camera:camera-camera2:$cameraXVersion")

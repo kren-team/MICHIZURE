@@ -13,6 +13,8 @@
 - Debt / ContributionのFirestore transactionを変更せず、成功後にIDだけを通知APIへbest-effort送信する。
 - FastAPIはFirebase ID Token、対象document、group membershipを検証し、Firestoreから有効端末を解決する。
 - `eventType + sourceId`の決定的hashを`notificationEvents`へ予約し、再試行の重複送信を抑止する。
+- Android通知は高重要度チャンネル`michizure_alerts_v1`へ統一し、`eventType`、`debtId`、`contributionId`、`sourceId`を遷移用dataとして送る。
+- foregroundだけFlutter側でローカル通知を表示し、background／terminatedはFCMのシステム通知を使用する。通知タップは認証状態の復元後に対象Debtへ一度だけ遷移する。
 - Docker imageはRenderで動かし、同じimageをAWS App Runnerへ移せるようportとSecretを環境注入する。
 
 ## Consequences

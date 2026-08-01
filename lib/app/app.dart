@@ -7,6 +7,7 @@ import '../core/presentation/app_theme.dart';
 import '../features/debt/application/contribution_controller.dart';
 import '../features/debt/application/debt_lock_release_controller.dart';
 import '../features/notifications/application/device_registration_controller.dart';
+import '../features/notifications/application/notification_navigation_coordinator.dart';
 import '../features/recovery/application/recovery_controller.dart';
 import '../features/recovery/domain/recovery.dart';
 import '../features/recovery/presentation/recovery_status_overlay.dart';
@@ -41,6 +42,9 @@ final class _MichizureAppView extends ConsumerStatefulWidget {
 
 final class _MichizureAppViewState extends ConsumerState<_MichizureAppView>
     with WidgetsBindingObserver {
+  final NotificationNavigationCoordinator _notificationNavigation =
+      NotificationNavigationCoordinator();
+
   @override
   void initState() {
     super.initState();
@@ -72,25 +76,18 @@ final class _MichizureAppViewState extends ConsumerState<_MichizureAppView>
     if (Firebase.apps.isNotEmpty) {
       ref.watch(deviceRegistrationControllerProvider);
       ref.listen(deviceRegistrationControllerProvider, (previous, next) {
-        if (previous?.messageSequence == next.messageSequence) {
+        if (previous?.navigationSequence == next.navigationSequence) {
           return;
         }
-        final message = next.foregroundMessage;
+        final message = next.navigationMessage;
         if (message == null) {
           return;
         }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final notificationContext =
-              router.routerDelegate.navigatorKey.currentContext;
-          final messenger = notificationContext == null
-              ? null
-              : ScaffoldMessenger.maybeOf(notificationContext);
-          messenger
-            ?..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(content: Text('${message.title}\n${message.body}')),
-            );
-        });
+        _notificationNavigation.enqueue(message);
+        _scheduleNotificationNavigation(router);
+      });
+      ref.listen(appRouteStateProvider, (_, _) {
+        _scheduleNotificationNavigation(router);
       });
     }
     return MaterialApp.router(
@@ -100,5 +97,20 @@ final class _MichizureAppViewState extends ConsumerState<_MichizureAppView>
       builder: (context, child) =>
           RecoveryStatusOverlay(child: child ?? const SizedBox.shrink()),
     );
+  }
+
+  void _scheduleNotificationNavigation(GoRouter router) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final routeState = ref.read(appRouteStateProvider).value;
+      final path = _notificationNavigation.takeNextPath(
+        canNavigate: routeState == AuthRouteState.ready,
+      );
+      if (path != null) {
+        router.go(path);
+      }
+    });
   }
 }

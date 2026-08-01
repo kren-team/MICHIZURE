@@ -13,12 +13,12 @@ final deviceRegistrationControllerProvider =
 
 final class DeviceRegistrationState {
   const DeviceRegistrationState({
-    this.foregroundMessage,
-    this.messageSequence = 0,
+    this.navigationMessage,
+    this.navigationSequence = 0,
   });
 
-  final PushNotificationMessage? foregroundMessage;
-  final int messageSequence;
+  final PushNotificationMessage? navigationMessage;
+  final int navigationSequence;
 }
 
 final class DeviceRegistrationController
@@ -26,8 +26,12 @@ final class DeviceRegistrationController
   StreamSubscription<String>? _tokenSubscription;
   StreamSubscription<PushNotificationMessage>? _messageSubscription;
   StreamSubscription<PushNotificationMessage>? _openedMessageSubscription;
+  StreamSubscription<PushNotificationMessage>? _localOpenedSubscription;
+  final Set<String> _displayedMessageKeys = {};
+  final Set<String> _openedMessageKeys = {};
   String? _registeredUserId;
   String? _deviceId;
+  bool _notificationsPermitted = false;
   int _generation = 0;
 
   @override
@@ -40,6 +44,7 @@ final class DeviceRegistrationController
       unawaited(_tokenSubscription?.cancel());
       unawaited(_messageSubscription?.cancel());
       unawaited(_openedMessageSubscription?.cancel());
+      unawaited(_localOpenedSubscription?.cancel());
     });
     return const DeviceRegistrationState();
   }
@@ -54,6 +59,9 @@ final class DeviceRegistrationController
     _messageSubscription = null;
     await _openedMessageSubscription?.cancel();
     _openedMessageSubscription = null;
+    await _localOpenedSubscription?.cancel();
+    _localOpenedSubscription = null;
+    _notificationsPermitted = false;
     if (userId == null) {
       return;
     }
@@ -86,6 +94,11 @@ final class DeviceRegistrationController
     _messageSubscription = null;
     unawaited(_openedMessageSubscription?.cancel());
     _openedMessageSubscription = null;
+    unawaited(_localOpenedSubscription?.cancel());
+    _localOpenedSubscription = null;
+    _displayedMessageKeys.clear();
+    _openedMessageKeys.clear();
+    _notificationsPermitted = false;
     _registeredUserId = userId;
     if (userId != null) {
       unawaited(_register(userId, _generation));
@@ -94,11 +107,34 @@ final class DeviceRegistrationController
 
   Future<void> _register(String userId, int generation) async {
     final messaging = ref.read(pushMessagingGatewayProvider);
+    final localNotifications = ref.read(localNotificationGatewayProvider);
     try {
+      await localNotifications.initialize();
+      if (!_isCurrent(userId, generation)) {
+        return;
+      }
+      _messageSubscription ??= messaging.foregroundMessages.listen(
+        (message) => unawaited(_showForegroundNotification(message)),
+      );
+      _openedMessageSubscription ??= messaging.openedMessages.listen(
+        _queueNavigation,
+      );
+      _localOpenedSubscription ??= localNotifications.openedMessages.listen(
+        _queueNavigation,
+      );
+      final initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null && _isCurrent(userId, generation)) {
+        _queueNavigation(initialMessage);
+      }
+      final initialLocalMessage = await localNotifications.getInitialMessage();
+      if (initialLocalMessage != null && _isCurrent(userId, generation)) {
+        _queueNavigation(initialLocalMessage);
+      }
       final permitted = await messaging.requestPermission();
       if (!permitted || !_isCurrent(userId, generation)) {
         return;
       }
+      _notificationsPermitted = true;
       final deviceId = await ref.read(deviceIdStoreProvider).getOrCreate();
       final token = await messaging.getToken();
       if (token == null || token.isEmpty || !_isCurrent(userId, generation)) {
@@ -114,16 +150,6 @@ final class DeviceRegistrationController
           unawaited(_upsert(userId: userId, deviceId: deviceId, token: token));
         }
       });
-      _messageSubscription ??= messaging.foregroundMessages.listen(
-        _showForegroundMessage,
-      );
-      _openedMessageSubscription ??= messaging.openedMessages.listen(
-        _showForegroundMessage,
-      );
-      final initialMessage = await messaging.getInitialMessage();
-      if (initialMessage != null && _isCurrent(userId, generation)) {
-        _showForegroundMessage(initialMessage);
-      }
     } on Object {
       // Push registration is optional and must not block the signed-in app.
     }
@@ -152,13 +178,34 @@ final class DeviceRegistrationController
   bool _isCurrent(String userId, int generation) =>
       ref.mounted && _registeredUserId == userId && _generation == generation;
 
-  void _showForegroundMessage(PushNotificationMessage message) {
-    if (!ref.mounted) {
+  Future<void> _showForegroundNotification(
+    PushNotificationMessage message,
+  ) async {
+    final key = message.deduplicationKey;
+    if (!ref.mounted ||
+        !_notificationsPermitted ||
+        key == null ||
+        !_displayedMessageKeys.add(key)) {
+      return;
+    }
+    try {
+      await ref.read(localNotificationGatewayProvider).show(message);
+    } on Object {
+      _displayedMessageKeys.remove(key);
+    }
+  }
+
+  void _queueNavigation(PushNotificationMessage message) {
+    final key = message.deduplicationKey;
+    if (!ref.mounted ||
+        message.navigationPath == null ||
+        key == null ||
+        !_openedMessageKeys.add(key)) {
       return;
     }
     state = DeviceRegistrationState(
-      foregroundMessage: message,
-      messageSequence: state.messageSequence + 1,
+      navigationMessage: message,
+      navigationSequence: state.navigationSequence + 1,
     );
   }
 }
