@@ -1,0 +1,99 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "taskSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "debts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "groupId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lockExpiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "debts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "groupId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "closedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "debts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "failedUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lockExpiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "taskSessions",
+      "fieldPath": "content",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "taskSessions",
+      "fieldPath": "failureEventId",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "debts",
+      "fieldPath": "lastContributionEventId",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "contributionEvents",
+      "fieldPath": "detectorVersion",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "contributionEvents",
+      "fieldPath": "clientObservedAt",
+      "indexes": []
+    }
+  ]
+}
