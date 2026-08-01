@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,82 @@ import 'package:michizure/features/debt/presentation/debt_detail_screen.dart';
 import 'package:michizure/features/group/domain/group_member.dart';
 
 void main() {
+  testWidgets('keeps cached absence loading until Firestore returns Debt', (
+    tester,
+  ) async {
+    final debtStream = StreamController<DebtSnapshot<Debt?>>();
+    addTearDown(debtStream.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          debtProvider('debt-1').overrideWith((ref) => debtStream.stream),
+          debtContributionsProvider('debt-1').overrideWithValue(
+            const AsyncData(
+              DebtSnapshot(
+                value: <DebtContributionSummary>[],
+                isFromCache: false,
+                hasPendingWrites: false,
+              ),
+            ),
+          ),
+          currentGroupMembersProvider.overrideWithValue(const AsyncData([])),
+        ],
+        child: const MaterialApp(home: DebtDetailScreen(debtId: 'debt-1')),
+      ),
+    );
+    await tester.pump();
+
+    debtStream.add(
+      const DebtSnapshot(
+        value: null,
+        isFromCache: true,
+        hasPendingWrites: false,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('負債が見つかりません。'), findsNothing);
+
+    debtStream.add(
+      DebtSnapshot(
+        value: _debt(totalReps: 10, memberCountAtFailure: 1),
+        isFromCache: false,
+        hasPendingWrites: false,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('残り 10 回'), findsOneWidget);
+    expect(find.text('合計 10 回 / 完了 0 回'), findsOneWidget);
+    expect(find.text('負債が見つかりません。'), findsNothing);
+  });
+
+  testWidgets('renders the created Debt while its stream is loading', (
+    tester,
+  ) async {
+    final debt = _debt(totalReps: 10, memberCountAtFailure: 1);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          debtProvider('debt-1').overrideWithValue(const AsyncLoading()),
+          debtContributionsProvider(
+            'debt-1',
+          ).overrideWithValue(const AsyncLoading()),
+          currentGroupMembersProvider.overrideWithValue(const AsyncData([])),
+        ],
+        child: MaterialApp(
+          home: DebtDetailScreen(debtId: 'debt-1', initialDebt: debt),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('残り 10 回'), findsOneWidget);
+    expect(find.text('合計 10 回 / 完了 0 回'), findsOneWidget);
+    expect(find.text('負債が見つかりません。'), findsNothing);
+  });
+
   testWidgets('renders Debt aggregate, summaries and explicit repay action', (
     tester,
   ) async {
@@ -97,15 +175,20 @@ void main() {
   });
 }
 
-Debt _debt({DebtStatus status = DebtStatus.active, DateTime? closedAt}) {
+Debt _debt({
+  DebtStatus status = DebtStatus.active,
+  DateTime? closedAt,
+  int memberCountAtFailure = 2,
+  int totalReps = 20,
+}) {
   return Debt(
     id: 'debt-1',
     groupId: 'group-1',
     failedUserId: 'alice',
     failedTaskSessionId: 'debt-1',
-    memberCountAtFailure: 2,
+    memberCountAtFailure: memberCountAtFailure,
     repsPerMember: 10,
-    totalReps: 20,
+    totalReps: totalReps,
     completedReps: 0,
     status: status,
     createdAt: DateTime.utc(2026),

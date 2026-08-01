@@ -105,10 +105,6 @@ final class _ContributionSessionScreenState
           .read(squatSessionControllerProvider.notifier)
           .start(debtId: debt.id, remainingReps: debt.remainingReps),
       onStop: () => ref.read(squatSessionControllerProvider.notifier).stop(),
-      onRetry: syncState.pendingCount > 0
-          ? () =>
-                ref.read(contributionControllerProvider.notifier).retryPending()
-          : null,
     );
   }
 }
@@ -125,7 +121,6 @@ final class ContributionSessionView extends StatelessWidget {
     this.onOpenSettings,
     this.onStart,
     this.onStop,
-    this.onRetry,
     super.key,
   });
 
@@ -139,7 +134,6 @@ final class ContributionSessionView extends StatelessWidget {
   final VoidCallback? onOpenSettings;
   final VoidCallback? onStart;
   final VoidCallback? onStop;
-  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -166,32 +160,14 @@ final class ContributionSessionView extends StatelessWidget {
                 : MichizureColors.success,
           ),
         ),
-        if (isFromCache || hasPendingWrites)
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.cloud_off),
-              title: Text('同期確定前の情報が含まれます'),
-              subtitle: Text('接続後、サーバーで確定した回数へ更新されます。'),
-            ),
-          ),
-        if (state.lastDelivery case final delivery?)
+        if (state.lastDelivery case final delivery?
+            when delivery.status == ContributionSyncStatus.rejected)
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
-              _deliveryMessage(delivery.status, delivery.failure?.reason),
+              _rejectionMessage(delivery.failure?.reason),
               key: const Key('contribution-delivery-message'),
-              style: delivery.status == ContributionSyncStatus.rejected
-                  ? TextStyle(color: Theme.of(context).colorScheme.error)
-                  : null,
-            ),
-          ),
-        if (onRetry != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton(
-              key: const Key('contribution-retry-button'),
-              onPressed: onRetry,
-              child: const Text('送信を再試行'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
         const SizedBox(height: 16),
@@ -422,28 +398,20 @@ String _detectorFailureMessage(SquatDetectorFailureReason reason) {
   };
 }
 
-String _deliveryMessage(
-  ContributionSyncStatus status,
-  ContributionRejectionReason? reason,
-) {
-  return switch (status) {
-    ContributionSyncStatus.detected => 'スクワットを検出しました。',
-    ContributionSyncStatus.pending => 'オフラインです。端末内に保存して再送します。',
-    ContributionSyncStatus.confirmed => '1回の返済がサーバーで確定しました。',
-    ContributionSyncStatus.rejected => switch (reason) {
-      ContributionRejectionReason.debtTerminal ||
-      ContributionRejectionReason.debtFull => 'この負債はすでに終了しています。',
-      ContributionRejectionReason.deadlineReached => '負債の期限が終了しました。',
-      ContributionRejectionReason.unauthorized => 'この負債を返済する権限がありません。',
-      ContributionRejectionReason.invalidRequest ||
-      ContributionRejectionReason.conflict ||
-      ContributionRejectionReason.malformedData => '返済データを確認できませんでした。',
-      ContributionRejectionReason.debtNotFound => '負債が見つかりません。',
-      ContributionRejectionReason.outboxFull => '送信待ちが上限です。接続後に再試行してください。',
-      ContributionRejectionReason.offline ||
-      ContributionRejectionReason.unknown ||
-      null => '返済を確定できませんでした。再試行してください。',
-    },
+String _rejectionMessage(ContributionRejectionReason? reason) {
+  return switch (reason) {
+    ContributionRejectionReason.debtTerminal ||
+    ContributionRejectionReason.debtFull => 'この負債はすでに終了しています。',
+    ContributionRejectionReason.deadlineReached => '負債の期限が終了しました。',
+    ContributionRejectionReason.unauthorized => 'この負債を返済する権限がありません。',
+    ContributionRejectionReason.invalidRequest ||
+    ContributionRejectionReason.conflict ||
+    ContributionRejectionReason.malformedData => '返済データを確認できませんでした。',
+    ContributionRejectionReason.debtNotFound => '負債が見つかりません。',
+    ContributionRejectionReason.outboxFull => '送信待ちが上限です。接続後に再試行してください。',
+    ContributionRejectionReason.offline ||
+    ContributionRejectionReason.unknown ||
+    null => '返済を確定できませんでした。再試行してください。',
   };
 }
 

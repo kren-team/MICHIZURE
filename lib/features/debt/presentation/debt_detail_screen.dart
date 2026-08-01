@@ -46,6 +46,9 @@ final class DebtDetailScreen extends ConsumerWidget {
           final value =
               snapshot.value ?? (snapshot.isFromCache ? initialDebt : null);
           if (value == null) {
+            if (snapshot.isFromCache) {
+              return const Center(child: CircularProgressIndicator());
+            }
             return const Center(child: Text('負債が見つかりません。'));
           }
           return _buildDetail(

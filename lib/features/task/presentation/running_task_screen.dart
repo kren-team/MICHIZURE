@@ -74,9 +74,11 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
           return const _TaskLoadError(noActiveTask: true);
         }
         if (task.isTerminal) {
+          final debtCreationInFlight =
+              command.isLoading || guard.phase == TaskGuardPhase.synchronizing;
           return _TaskResultView(
             task: task,
-            onOpenDebt: task.debtId == null
+            onOpenDebt: task.debtId == null || debtCreationInFlight
                 ? null
                 : () => _openDebt(task.debtId!, null),
           );
