@@ -28,10 +28,17 @@ final class ContributionSessionScreen extends ConsumerStatefulWidget {
 final class _ContributionSessionScreenState
     extends ConsumerState<ContributionSessionScreen> {
   DebtSnapshot<Debt?>? _lastDebtSnapshot;
+  late final SquatSessionController _squatSessionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _squatSessionController = ref.read(squatSessionControllerProvider.notifier);
+  }
 
   @override
   void dispose() {
-    unawaited(ref.read(squatSessionControllerProvider.notifier).stop());
+    unawaited(_squatSessionController.stop());
     super.dispose();
   }
 
@@ -58,7 +65,10 @@ final class _ContributionSessionScreenState
       }
     });
     return Scaffold(
-      appBar: AppBar(title: const Text('スクワットで返済')),
+      appBar: AppBar(
+        title: const Text('スクワットで返済'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: visibleSnapshot != null
           ? _buildSession(visibleSnapshot, syncState, squatState)
           : debt.when(

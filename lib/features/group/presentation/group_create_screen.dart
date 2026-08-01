@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
 import '../application/group_controller.dart';
 import '../domain/group.dart';
 import 'group_failure_message.dart';
@@ -35,7 +36,10 @@ final class _GroupCreateScreenState extends ConsumerState<GroupCreateScreen> {
     final command = ref.watch(groupControllerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('グループを作成')),
+      appBar: AppBar(
+        title: const Text('グループを作成'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),

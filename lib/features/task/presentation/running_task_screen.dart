@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/providers.dart';
 import '../../../core/presentation/app_components.dart';
 import '../../../core/presentation/app_theme.dart';
+import '../../debt/domain/debt.dart';
 import '../application/handle_native_task_event.dart';
 import '../application/task_command_controller.dart';
 import '../domain/task_failure.dart';
@@ -50,11 +51,15 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
         : guard.task?.isTerminal ?? false
         ? guard.task
         : null;
+    final createdDebt = command.value?.debt ?? guard.debt;
 
     if (terminalTask != null) {
       return _TaskResultView(
         task: terminalTask,
-        debtReps: command.value?.debt?.totalReps ?? guard.debt?.totalReps,
+        debtReps: createdDebt?.totalReps,
+        onOpenDebt: terminalTask.debtId == null
+            ? null
+            : () => _openDebt(terminalTask.debtId!, createdDebt),
       );
     }
 
@@ -69,7 +74,12 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
           return const _TaskLoadError(noActiveTask: true);
         }
         if (task.isTerminal) {
-          return _TaskResultView(task: task);
+          return _TaskResultView(
+            task: task,
+            onOpenDebt: task.debtId == null
+                ? null
+                : () => _openDebt(task.debtId!, null),
+          );
         }
         final now = ref.read(clockProvider).now().toUtc();
         final remaining = task.remainingAt(now);
@@ -120,6 +130,16 @@ final class _RunningTaskScreenState extends ConsumerState<RunningTaskScreen> {
           .read(taskCommandControllerProvider.notifier)
           .abort(ownerUid: task.ownerUid, taskId: task.id);
     }
+  }
+
+  void _openDebt(String debtId, Debt? initialDebt) {
+    ref.invalidate(activeGroupDebtsProvider);
+    ref.invalidate(debtProvider(debtId));
+    ref.invalidate(debtContributionsProvider(debtId));
+    context.go(
+      '/debts/$debtId',
+      extra: initialDebt?.id == debtId ? initialDebt : null,
+    );
   }
 }
 
@@ -262,10 +282,11 @@ String _guardFailureMessage(Object? error) {
 }
 
 final class _TaskResultView extends StatelessWidget {
-  const _TaskResultView({required this.task, this.debtReps});
+  const _TaskResultView({required this.task, this.debtReps, this.onOpenDebt});
 
   final TaskSession task;
   final int? debtReps;
+  final VoidCallback? onOpenDebt;
 
   @override
   Widget build(BuildContext context) {
@@ -301,10 +322,10 @@ final class _TaskResultView extends StatelessWidget {
                 const Text('グループのメンバーがスクワットで一緒に返済できます。'),
               ],
               const SizedBox(height: 24),
-              if (!succeeded && task.debtId != null) ...[
+              if (!succeeded && onOpenDebt != null) ...[
                 FilledButton.icon(
                   key: const Key('task-result-debt-button'),
-                  onPressed: () => context.go('/debts/${task.debtId}'),
+                  onPressed: onOpenDebt,
                   icon: const Icon(Icons.fitness_center),
                   label: const Text('発生した負債を見る'),
                 ),

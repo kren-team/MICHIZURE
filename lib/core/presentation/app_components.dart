@@ -1,6 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import 'app_theme.dart';
+
+final class MichizureHomeAction extends StatelessWidget {
+  const MichizureHomeAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: const Key('home-navigation-button'),
+      tooltip: 'ホームへ戻る',
+      onPressed: () => context.go('/home'),
+      icon: const Icon(Icons.home_outlined),
+    );
+  }
+}
 
 final class MichizurePrimaryButton extends StatelessWidget {
   const MichizurePrimaryButton({

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/presentation/app_components.dart';
 import '../application/group_controller.dart';
 import 'group_failure_message.dart';
 
@@ -16,7 +17,10 @@ final class GroupInviteScreen extends ConsumerWidget {
     final issuedInvite = command.value;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('グループ招待')),
+      appBar: AppBar(
+        title: const Text('グループ招待'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),

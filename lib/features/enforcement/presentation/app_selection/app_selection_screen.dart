@@ -14,7 +14,10 @@ final class AppSelectionScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final setup = ref.watch(deviceSetupControllerProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('封印対象アプリ')),
+      appBar: AppBar(
+        title: const Text('封印対象アプリ'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: setup.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => Center(

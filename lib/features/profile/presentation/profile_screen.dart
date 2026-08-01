@@ -48,7 +48,10 @@ final class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('プロフィール')),
+      appBar: AppBar(
+        title: const Text('プロフィール'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(MichizureSpacing.page),

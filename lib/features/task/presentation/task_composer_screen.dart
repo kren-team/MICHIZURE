@@ -51,7 +51,10 @@ final class _TaskComposerScreenState extends ConsumerState<TaskComposerScreen> {
         setup!.savedPackageNames.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('約束を始める')),
+      appBar: AppBar(
+        title: const Text('約束を始める'),
+        actions: const [MichizureHomeAction()],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(MichizureSpacing.page),
         children: [

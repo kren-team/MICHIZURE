@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/presentation/app_components.dart';
 import '../../application/device_setup_controller.dart';
 import '../enforcement_failure_message.dart';
 import '../selected_apps_summary.dart';
@@ -41,6 +42,7 @@ final class _DeviceSetupScreenState extends ConsumerState<DeviceSetupScreen>
       appBar: AppBar(
         title: const Text('端末セットアップ'),
         actions: [
+          const MichizureHomeAction(),
           IconButton(
             tooltip: '端末状態を再確認',
             onPressed: () =>
