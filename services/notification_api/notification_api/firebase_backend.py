@@ -10,11 +10,35 @@ from firebase_admin import auth, credentials, firestore, messaging
 
 from .service import DeviceTarget
 
+ANDROID_NOTIFICATION_CHANNEL_ID = "michizure_alerts_v1"
+
 
 def _chunks(values: list[DeviceTarget], size: int) -> Iterable[list[DeviceTarget]]:
     iterator = iter(values)
     while chunk := list(islice(iterator, size)):
         yield chunk
+
+
+def build_multicast_message(
+    targets: list[DeviceTarget],
+    title: str,
+    body: str,
+    data: dict[str, str],
+) -> messaging.MulticastMessage:
+    return messaging.MulticastMessage(
+        notification=messaging.Notification(title=title, body=body),
+        data=data,
+        android=messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(
+                channel_id=ANDROID_NOTIFICATION_CHANNEL_ID,
+                priority="high",
+                default_sound=True,
+                default_vibrate_timings=True,
+            ),
+        ),
+        tokens=[target.token for target in targets],
+    )
 
 
 class FirebaseNotificationBackend:
@@ -120,11 +144,7 @@ class FirebaseNotificationBackend:
         invalid: list[DeviceTarget] = []
         for chunk in _chunks(targets, 500):
             response = messaging.send_each_for_multicast(
-                messaging.MulticastMessage(
-                    notification=messaging.Notification(title=title, body=body),
-                    data=data,
-                    tokens=[target.token for target in chunk],
-                )
+                build_multicast_message(chunk, title, body, data)
             )
             for target, result in zip(chunk, response.responses, strict=True):
                 if not result.success and isinstance(

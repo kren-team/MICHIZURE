@@ -13,14 +13,14 @@ final class FirebasePushMessagingGateway implements PushMessagingGateway {
   @override
   Stream<PushNotificationMessage> get foregroundMessages => FirebaseMessaging
       .onMessage
-      .map(_toMessage)
+      .map(pushNotificationMessageFromRemoteMessage)
       .where((message) => message != null)
       .cast<PushNotificationMessage>();
 
   @override
   Stream<PushNotificationMessage> get openedMessages => FirebaseMessaging
       .onMessageOpenedApp
-      .map(_toMessage)
+      .map(pushNotificationMessageFromRemoteMessage)
       .where((message) => message != null)
       .cast<PushNotificationMessage>();
 
@@ -39,16 +39,33 @@ final class FirebasePushMessagingGateway implements PushMessagingGateway {
 
   @override
   Future<PushNotificationMessage?> getInitialMessage() async {
-    return _toMessage(await _messaging.getInitialMessage());
+    return pushNotificationMessageFromRemoteMessage(
+      await _messaging.getInitialMessage(),
+    );
   }
 }
 
-PushNotificationMessage? _toMessage(RemoteMessage? message) {
+PushNotificationMessage? pushNotificationMessageFromRemoteMessage(
+  RemoteMessage? message,
+) {
   final notification = message?.notification;
   final title = notification?.title;
   final body = notification?.body;
   if (title == null || title.isEmpty || body == null || body.isEmpty) {
     return null;
   }
-  return PushNotificationMessage(title: title, body: body);
+  final data = message?.data ?? const <String, dynamic>{};
+  return PushNotificationMessage(
+    messageId: message?.messageId,
+    title: title,
+    body: body,
+    eventType: PushNotificationEventType.fromWireValue(
+      _stringValue(data['eventType']),
+    ),
+    debtId: _stringValue(data['debtId']),
+    contributionId: _stringValue(data['contributionId']),
+    sourceId: _stringValue(data['sourceId']),
+  );
 }
+
+String? _stringValue(Object? value) => value is String ? value : null;

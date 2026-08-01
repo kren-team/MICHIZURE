@@ -248,7 +248,9 @@ flutter run --profile -d emulator-5554 \
   --dart-define=MICHIZURE_FIREBASE_PROJECT_ID=...
 ```
 
-複数人デモでは全員が同じ共有Firebaseへ接続し、Firebase Emulatorは使用しません。Google Play対応Android Emulatorを各自で起動し、別ユーザーでログインして同じグループへ参加し、通知権限を許可します。その後、Debt作成、スクワット救済、完済の順に別端末で通知を確認します。foregroundではSnackBar、background／terminatedではAndroid通知として表示されます。
+複数人デモでは全員が同じ共有Firebaseへ接続し、Firebase Emulatorは使用しません。Google Play対応Android Emulatorを各自で起動し、別ユーザーでログインして同じグループへ参加し、通知権限を許可します。その後、Debt作成、スクワット救済、完済の順に別端末で通知を確認します。foregroundを含めて通知チャンネル`michizure_alerts_v1`のAndroid通知として表示され、通知タップでは対象Debtの詳細または返済画面を開きます。
+
+2台確認では、一方をforeground、もう一方をbackgroundにしてDebt作成通知を確認し、次にアプリを終了した受信側へ救済または完済通知を送ります。各状態で通知が1件だけ表示され、タップ後に対象Debtへ遷移することを確認します。
 
 AWS App Runnerへ移す場合は、同じDockerイメージをECRへpushし、container port `8080` のimage-based serviceを作成します。`FIREBASE_PROJECT_ID`は通常の環境変数、`FIREBASE_SERVICE_ACCOUNT_JSON`はSecrets Manager参照として渡し、その参照権限だけをinstance roleへ付与します。AWS resourceの作成とdeployはこのrepositoryでは行いません。
 

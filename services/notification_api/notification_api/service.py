@@ -160,7 +160,11 @@ class NotificationService:
             if uid != caller_uid
         ]
         targets = self._backend.enabled_devices(recipients)
-        data = {"eventType": event_type, "debtId": debt_id}
+        data = {
+            "eventType": event_type,
+            "debtId": debt_id,
+            "sourceId": source_id,
+        }
         if contribution_id is not None:
             data["contributionId"] = contribution_id
         invalid = self._backend.send(targets, title, body, data) if targets else []

@@ -13,6 +13,7 @@ void main() {
     () async {
       final registrations = _FakeRegistrationRepository();
       final messaging = _FakeMessagingGateway();
+      final localNotifications = _FakeLocalNotificationGateway();
       final container = ProviderContainer(
         overrides: [
           authStateProvider.overrideWith(
@@ -21,6 +22,9 @@ void main() {
           deviceRegistrationRepositoryProvider.overrideWithValue(registrations),
           deviceIdStoreProvider.overrideWithValue(_FakeDeviceIdStore()),
           pushMessagingGatewayProvider.overrideWithValue(messaging),
+          localNotificationGatewayProvider.overrideWithValue(
+            localNotifications,
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -35,17 +39,52 @@ void main() {
 
       messaging.tokenController.add('token-2');
       messaging.messageController.add(
-        const PushNotificationMessage(title: '通知', body: '本文'),
+        const PushNotificationMessage(
+          messageId: 'message-1',
+          title: '通知',
+          body: '本文',
+          eventType: PushNotificationEventType.debtCreated,
+          debtId: 'debt-1',
+          sourceId: 'debt-1',
+        ),
+      );
+      messaging.messageController.add(
+        const PushNotificationMessage(
+          messageId: 'message-1',
+          title: '通知',
+          body: '本文',
+          eventType: PushNotificationEventType.debtCreated,
+          debtId: 'debt-1',
+          sourceId: 'debt-1',
+        ),
       );
       await _flush();
       expect(registrations.upserts.last.token, 'token-2');
+      expect(localNotifications.shown, hasLength(1));
+      expect(
+        container.read(deviceRegistrationControllerProvider).navigationMessage,
+        isNull,
+      );
+
+      messaging.openedController.add(
+        const PushNotificationMessage(
+          messageId: 'message-1',
+          title: '通知',
+          body: '本文',
+          eventType: PushNotificationEventType.debtCreated,
+          debtId: 'debt-1',
+          sourceId: 'debt-1',
+        ),
+      );
+      await _flush();
       expect(
         container
             .read(deviceRegistrationControllerProvider)
-            .foregroundMessage
-            ?.title,
-        '通知',
+            .navigationMessage
+            ?.navigationPath,
+        '/debts/debt-1/repay',
       );
+      expect(localNotifications.shown, hasLength(1));
 
       await container
           .read(deviceRegistrationControllerProvider.notifier)
@@ -54,6 +93,114 @@ void main() {
       expect(messaging.deleteTokenCalls, 1);
     },
   );
+
+  test('queues terminated and foreground notification taps once', () async {
+    final messaging = _FakeMessagingGateway()
+      ..initialMessage = const PushNotificationMessage(
+        messageId: 'message-initial',
+        title: '完済',
+        body: '本文',
+        eventType: PushNotificationEventType.debtCompleted,
+        debtId: 'debt-1',
+        sourceId: 'debt-1',
+      );
+    final localNotifications = _FakeLocalNotificationGateway();
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => Stream.value(const AuthUser(id: 'alice')),
+        ),
+        deviceRegistrationRepositoryProvider.overrideWithValue(
+          _FakeRegistrationRepository(),
+        ),
+        deviceIdStoreProvider.overrideWithValue(_FakeDeviceIdStore()),
+        pushMessagingGatewayProvider.overrideWithValue(messaging),
+        localNotificationGatewayProvider.overrideWithValue(localNotifications),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(
+      deviceRegistrationControllerProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+
+    await _flush();
+    expect(
+      container
+          .read(deviceRegistrationControllerProvider)
+          .navigationMessage
+          ?.navigationPath,
+      '/debts/debt-1',
+    );
+    expect(
+      container.read(deviceRegistrationControllerProvider).navigationSequence,
+      1,
+    );
+
+    localNotifications.openedController.add(
+      const PushNotificationMessage(
+        messageId: 'message-local',
+        title: '救済',
+        body: '本文',
+        eventType: PushNotificationEventType.contributionCreated,
+        debtId: 'debt-2',
+        contributionId: 'contribution-2',
+        sourceId: 'contribution-2',
+      ),
+    );
+    await _flush();
+    expect(
+      container
+          .read(deviceRegistrationControllerProvider)
+          .navigationMessage
+          ?.navigationPath,
+      '/debts/debt-2/repay',
+    );
+    expect(
+      container.read(deviceRegistrationControllerProvider).navigationSequence,
+      2,
+    );
+  });
+
+  test('does not show a foreground notification without permission', () async {
+    final messaging = _FakeMessagingGateway()..permissionGranted = false;
+    final localNotifications = _FakeLocalNotificationGateway();
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => Stream.value(const AuthUser(id: 'alice')),
+        ),
+        deviceRegistrationRepositoryProvider.overrideWithValue(
+          _FakeRegistrationRepository(),
+        ),
+        deviceIdStoreProvider.overrideWithValue(_FakeDeviceIdStore()),
+        pushMessagingGatewayProvider.overrideWithValue(messaging),
+        localNotificationGatewayProvider.overrideWithValue(localNotifications),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(
+      deviceRegistrationControllerProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await _flush();
+
+    messaging.messageController.add(
+      const PushNotificationMessage(
+        messageId: 'message-denied',
+        title: '通知',
+        body: '本文',
+        eventType: PushNotificationEventType.debtCreated,
+        debtId: 'debt-1',
+        sourceId: 'debt-1',
+      ),
+    );
+    await _flush();
+
+    expect(localNotifications.shown, isEmpty);
+  });
 }
 
 Future<void> _flush() async {
@@ -90,6 +237,10 @@ final class _FakeMessagingGateway implements PushMessagingGateway {
   final tokenController = StreamController<String>.broadcast();
   final messageController =
       StreamController<PushNotificationMessage>.broadcast();
+  final openedController =
+      StreamController<PushNotificationMessage>.broadcast();
+  PushNotificationMessage? initialMessage;
+  bool permissionGranted = true;
   int deleteTokenCalls = 0;
 
   @override
@@ -97,7 +248,7 @@ final class _FakeMessagingGateway implements PushMessagingGateway {
       messageController.stream;
 
   @override
-  Stream<PushNotificationMessage> get openedMessages => const Stream.empty();
+  Stream<PushNotificationMessage> get openedMessages => openedController.stream;
 
   @override
   Stream<String> get tokenRefreshes => tokenController.stream;
@@ -108,11 +259,31 @@ final class _FakeMessagingGateway implements PushMessagingGateway {
   }
 
   @override
-  Future<PushNotificationMessage?> getInitialMessage() async => null;
+  Future<PushNotificationMessage?> getInitialMessage() async => initialMessage;
 
   @override
   Future<String?> getToken() async => 'token-1';
 
   @override
-  Future<bool> requestPermission() async => true;
+  Future<bool> requestPermission() async => permissionGranted;
+}
+
+final class _FakeLocalNotificationGateway implements LocalNotificationGateway {
+  final openedController =
+      StreamController<PushNotificationMessage>.broadcast();
+  final List<PushNotificationMessage> shown = [];
+
+  @override
+  Stream<PushNotificationMessage> get openedMessages => openedController.stream;
+
+  @override
+  Future<PushNotificationMessage?> getInitialMessage() async => null;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> show(PushNotificationMessage message) async {
+    shown.add(message);
+  }
 }

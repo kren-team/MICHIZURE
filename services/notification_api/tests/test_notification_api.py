@@ -1,5 +1,9 @@
 from fastapi.testclient import TestClient
 
+from notification_api.firebase_backend import (
+    ANDROID_NOTIFICATION_CHANNEL_ID,
+    build_multicast_message,
+)
 from notification_api.main import app, get_service
 from notification_api.service import DeviceTarget, NotificationService
 
@@ -68,6 +72,11 @@ def test_health_and_authenticated_debt_created() -> None:
     assert response.json()["status"] == "sent"
     assert response.json()["recipientDeviceCount"] == 1
     assert backend.sent[0][0][0].user_id == "bob"
+    assert backend.sent[0][1] == {
+        "eventType": "debt-created",
+        "debtId": "debt-1",
+        "sourceId": "debt-1",
+    }
     app.dependency_overrides.clear()
 
 
@@ -116,3 +125,22 @@ def test_completed_debt_uses_separate_event_type() -> None:
 
     assert completed.event_id != created.event_id
     assert len(backend.sent) == 2
+
+
+def test_android_notification_uses_high_priority_channel() -> None:
+    message = build_multicast_message(
+        [DeviceTarget("bob", "device-bob", "token-bob")],
+        "通知",
+        "本文",
+        {
+            "eventType": "debt-created",
+            "debtId": "debt-1",
+            "sourceId": "debt-1",
+        },
+    )
+
+    assert message.android.priority == "high"
+    assert message.android.notification.channel_id == ANDROID_NOTIFICATION_CHANNEL_ID
+    assert message.android.notification.priority == "high"
+    assert message.android.notification.default_sound is True
+    assert message.android.notification.default_vibrate_timings is True
