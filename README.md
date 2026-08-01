@@ -6,7 +6,7 @@
 
 ## 設計上の重要な結論
 
-- ハッカソンMVPは、管理対象のAndroid Emulatorを Device Owner としてプロビジョニングする。
+- ハッカソンMVPは、管理対象のAndroid Emulatorを Device Owner としてプロビジョニングするんご。
 - 封印は Kotlin から `DevicePolicyManager.setPackagesSuspended` を使用する。
 - タスク離脱検知は、Foreground Service が `UsageStatsManager` の `ACTIVITY_RESUMED` を監視し、画面OFF・Keyguard・既知のシステム割り込みを除外する。
 - 一般ユーザー向けの通常権限アプリでは、任意の他アプリを強制的に封印できない。公開版は「Android Enterprise管理端末版」または「強制封印を持たないコンシューマー版」に分ける。
