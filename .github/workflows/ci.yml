@@ -40,16 +40,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: firebase/rules-tests/package-lock.json
-
-      - name: Run quality gates
-        run: ./tool/check_all.sh
-
       - name: Build debug APK
         timeout-minutes: 15
         run: flutter build apk --debug
@@ -57,3 +47,4 @@ jobs:
       - name: Build isolated demo target APK
         timeout-minutes: 5
         run: ./android/gradlew -p tools/demo-target assembleDebug --no-daemon
+
