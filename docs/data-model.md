@@ -15,6 +15,7 @@
 
 ```text
 users/{uid}
+users/{uid}/devices/{deviceId}
 groups/{groupId}
 groups/{groupId}/members/{uid}
 groupInvites/{tokenHash}
@@ -22,6 +23,7 @@ taskSessions/{taskSessionId}
 debts/{debtId}
 debts/{debtId}/contributions/{uid}
 debts/{debtId}/contributionEvents/{eventId}
+notificationEvents/{eventId}
 ```
 
 `debtId == failedTaskSessionId` とする。これにより1 failureからDebtを二重生成できない。
@@ -62,6 +64,19 @@ erDiagram
 | `schemaVersion` | int | yes | 初期値1 |
 
 emailはFirebase Authを正としFirestoreへ複製しない。本人以外に見せる表示名はmember docのsnapshotを使う。
+
+### 4.1.1 `users/{uid}/devices/{deviceId}`
+
+| field | type | 必須 | 説明 |
+|---|---|---:|---|
+| `token` | string | yes | FCM registration token |
+| `platform` | string | yes | 現在は`android`のみ |
+| `updatedAt` | timestamp | yes | server timestamp |
+| `enabled` | bool | yes | 無効tokenは通知APIがfalseへ更新 |
+
+`deviceId`は端末内へ永続化するランダムIDで、同じuidへ複数端末を登録できる。client Rulesは本人のsubcollectionだけを許可する。
+
+`notificationEvents/{eventId}`は通知API専用の冪等予約documentである。`eventType`とsource IDから決定的に作り、Admin SDK以外のclient read/writeはdefault denyとする。
 
 ### 4.2 `groups/{groupId}`
 

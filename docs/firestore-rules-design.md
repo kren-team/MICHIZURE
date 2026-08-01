@@ -119,6 +119,10 @@ where status == "active"
    - null→taskIdならafter-stateのTaskが自分のrunning
    - taskId→nullならafter-stateのTaskが自分のterminal
 
+### Devices subcollection
+
+`users/{uid}/devices/{deviceId}`は本人だけがget/list/create/update/deleteできる。client writeは`token`, `platform=android`, `updatedAt=request.time`, `enabled`のexact fieldだけを許可し、他ユーザーのtoken取得を拒否する。通知APIのAdmin SDKはRules外のtrusted pathとしてgroup membershipを再検証する。
+
 clientが任意にgroupIdやactiveTaskSessionIdを書き換える単独updateは拒否する。
 
 ## 5. `groups/{groupId}` とmembers
