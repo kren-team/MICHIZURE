@@ -64,6 +64,7 @@ void main() {
     final first = controller.signOut();
     final second = controller.signOut();
 
+    await Future<void>.delayed(Duration.zero);
     expect(repository.signOutCalls, 1);
     repository.completer.complete();
     await Future.wait([first, second]);

@@ -4,7 +4,7 @@
 
 FlutterをUIとアプリケーションの主実装とし、Androidの権限・管理API・カメラ処理だけをKotlinへ隔離する。共有状態はCloud Firestore、強制封印に必要な即時・復元状態はAndroidローカルストアを正とする。
 
-Cloud FunctionsをMVPの実行経路に含めない。信頼できるサーバーがないことによる不正耐性の限界は、Security Rulesで可能な整合性検証と、明示したclient trustに分ける。
+Cloud Functionsを主要データ更新の実行経路に含めない。Debt / Contributionは引き続きclient transactionとRulesを正とし、共有Firebaseデモのpush通知だけを独立したFastAPIへbest-effortで委譲する。
 
 ## 2. システム構成
 
@@ -33,6 +33,8 @@ flowchart LR
 
     Auth["Firebase Authentication"]
     Firestore["Cloud Firestore<br/>or Emulator Suite"]
+    NotificationApi["FastAPI notification service<br/>Render / App Runner"]
+    FCM["Firebase Cloud Messaging"]
 
     UIA --> AppA --> InfraA
     AppA --> BridgeA
@@ -49,6 +51,12 @@ flowchart LR
     FSM --> BridgeB
     InfraB <--> Auth
     InfraB <--> Firestore
+    InfraA -. "ID Token + event ID" .-> NotificationApi
+    InfraB -. "ID Token + event ID" .-> NotificationApi
+    NotificationApi --> Firestore
+    NotificationApi --> FCM
+    FCM --> DeviceA
+    FCM --> DeviceB
 ```
 
 ## 3. 技術スタック
@@ -60,6 +68,7 @@ flowchart LR
 | Navigation | `go_router` | 認証・group・running taskのredirectを宣言的に扱う |
 | Auth | Firebase Authentication（email/password） | SparkでMVP規模を満たす |
 | Realtime DB | Cloud Firestore | listener、transaction、offline cache |
+| Push通知 | Firebase Messaging + FastAPI / Firebase Admin | server側で所属・宛先・文面を決定し、主要writeとは分離 |
 | Android native | Kotlin | DPC、UsageStats、CameraX、MediaPipeの公式API |
 | Flutter ↔ Kotlin | MethodChannel + EventChannel + PlatformView | command、イベントstream、camera previewを役割分離 |
 | Camera | CameraX Preview + ImageAnalysis | lifecycle統合、backpressure |

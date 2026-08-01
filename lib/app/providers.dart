@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import '../core/time/clock.dart';
 import '../features/auth/domain/auth_repository.dart';
@@ -25,6 +26,12 @@ import '../features/group/domain/group_member.dart';
 import '../features/group/domain/group_repository.dart';
 import '../features/group/infrastructure/firestore_group_repository.dart';
 import '../features/group/infrastructure/secure_invite_token_generator.dart';
+import '../features/notifications/application/notifying_task_repository.dart';
+import '../features/notifications/domain/push_notifications.dart';
+import '../features/notifications/infrastructure/firebase_push_messaging_gateway.dart';
+import '../features/notifications/infrastructure/firestore_device_registration_repository.dart';
+import '../features/notifications/infrastructure/http_notification_event_publisher.dart';
+import '../features/notifications/infrastructure/shared_preferences_device_id_store.dart';
 import '../features/profile/domain/profile_repository.dart';
 import '../features/profile/domain/user_profile.dart';
 import '../features/profile/infrastructure/firestore_profile_repository.dart';
@@ -88,6 +95,33 @@ final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
   return FirebaseFirestore.instance;
 });
 
+final pushMessagingGatewayProvider = Provider<PushMessagingGateway>((ref) {
+  return FirebasePushMessagingGateway(FirebaseMessaging.instance);
+});
+
+final deviceIdStoreProvider = Provider<DeviceIdStore>((ref) {
+  return SharedPreferencesDeviceIdStore();
+});
+
+final deviceRegistrationRepositoryProvider =
+    Provider<DeviceRegistrationRepository>((ref) {
+      return FirestoreDeviceRegistrationRepository(
+        ref.watch(firebaseFirestoreProvider),
+      );
+    });
+
+final notificationEventPublisherProvider = Provider<NotificationEventPublisher>(
+  (ref) {
+    const baseUrl = String.fromEnvironment('NOTIFICATION_API_BASE_URL');
+    return BestEffortNotificationEventPublisher(
+      HttpNotificationEventPublisher(
+        auth: ref.watch(firebaseAuthProvider),
+        baseUrl: baseUrl,
+      ),
+    );
+  },
+);
+
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
 final recoveryAuthGatewayProvider = Provider<RecoveryAuthGateway>((ref) {
@@ -119,6 +153,7 @@ final submitContributionProvider = Provider<SubmitContribution>((ref) {
   return SubmitContribution(
     ref.watch(contributionRepositoryProvider),
     ref.watch(contributionOutboxProvider),
+    ref.watch(notificationEventPublisherProvider),
   );
 });
 
@@ -222,9 +257,12 @@ final debtContributionsProvider = StreamProvider.autoDispose
     });
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
-  return FirestoreTaskRepository(
-    ref.watch(firebaseFirestoreProvider),
-    ref.watch(clockProvider),
+  return NotifyingTaskRepository(
+    FirestoreTaskRepository(
+      ref.watch(firebaseFirestoreProvider),
+      ref.watch(clockProvider),
+    ),
+    ref.watch(notificationEventPublisherProvider),
   );
 });
 

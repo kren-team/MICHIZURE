@@ -147,6 +147,7 @@ Firebase `apiKey`, `google-services.json`, `firebase_options.dart` の識別子�
 - liveの `google-services.json` と生成configはgitignoreし、ローカルまたはCIで注入する。
 - API keyには利用可能なAPI restrictionを設定する。
 - configが漏れてもRules / App Checkでdataを守る。
+- Firebase Admin service accountはRender SecretまたはAWS Secrets Managerから実行時注入し、image・Git・logへ含めない。通知APIはFirebase ID Token、対象document、group membershipを検証し、client指定のtoken・uid・文面を受け付けない。
 
 `.env.example` はkey名とdummy値だけを持ち、secret値を含めない。
 

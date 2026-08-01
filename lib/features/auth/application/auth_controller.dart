@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../notifications/application/device_registration_controller.dart';
 import '../domain/auth_repository.dart';
 
 final authControllerProvider =
@@ -22,7 +23,12 @@ final class AuthController extends Notifier<AsyncValue<void>> {
     return _submit(() => _repository.signIn(email: email, password: password));
   }
 
-  Future<void> signOut() => _submit(_repository.signOut);
+  Future<void> signOut() => _submit(() async {
+    await ref
+        .read(deviceRegistrationControllerProvider.notifier)
+        .unregisterCurrentDevice();
+    await _repository.signOut();
+  });
 
   void clearError() {
     if (state.hasError) {

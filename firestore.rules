@@ -104,6 +104,27 @@ service cloud.firestore {
         && request.resource.data.schemaVersion == 1;
     }
 
+    function validDeviceRegistration() {
+      return request.resource.data.keys().hasAll([
+          'token',
+          'platform',
+          'updatedAt',
+          'enabled'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'token',
+          'platform',
+          'updatedAt',
+          'enabled'
+        ])
+        && request.resource.data.token is string
+        && request.resource.data.token.size() >= 1
+        && request.resource.data.token.size() <= 4096
+        && request.resource.data.platform == 'android'
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.enabled is bool;
+    }
+
     function validProfileUpdate(uid) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName',
@@ -200,6 +221,15 @@ service cloud.firestore {
           || validGroupPointerUpdate(uid)
           || validActiveTaskPointerUpdate(uid)
         );
+
+      match /devices/{deviceId} {
+        allow get, list: if isSelf(uid);
+        allow create, update: if isSelf(uid)
+          && deviceId.size() >= 16
+          && deviceId.size() <= 64
+          && validDeviceRegistration();
+        allow delete: if isSelf(uid);
+      }
     }
 
     function hasExactGroupKeys() {

@@ -8,6 +8,7 @@ final class FakeContributionRepository implements ContributionRepository {
   final Map<String, ContributionCommitResult> committed = {};
   ContributionFailure? failure;
   Completer<void>? blocker;
+  bool completesDebt = false;
 
   @override
   Future<ContributionCommitResult> submit(ContributionRequest request) async {
@@ -31,9 +32,9 @@ final class FakeContributionRepository implements ContributionRepository {
       eventId: request.eventId,
       disposition: ContributionCommitDisposition.accepted,
       acceptedReps: 1,
-      debtCompletedReps: committed.length + 1,
+      debtCompletedReps: completesDebt ? 10 : committed.length + 1,
       debtTotalReps: 10,
-      debtCompleted: false,
+      debtCompleted: completesDebt,
     );
     committed[request.eventId] = result;
     return result;

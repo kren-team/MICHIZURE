@@ -12,6 +12,7 @@
 - 一般ユーザー向けの通常権限アプリでは、任意の他アプリを強制的に封印できない。公開版は「Android Enterprise管理端末版」または「強制封印を持たないコンシューマー版」に分ける。
 - UI、ユースケース、Firestore連携は Flutter / Dart、Device Owner、UsageStats、CameraX、MediaPipe は Kotlin が担当する。
 - バックエンドは Firebase Authentication と Cloud Firestore のクライアントSDKのみを必須とし、MVPは Spark Plan で動かす。
+- 共有Firebaseデモの通知だけは、Firebase ID Tokenを検証する独立FastAPIからFCMへ送信する。
 - スクワット映像は保存・外部送信せず、CameraX + MediaPipe Pose Landmarker Lite + One-Euro Filter + 状態機械で端末内判定する。
 - 封印候補は`LauncherApps`からLauncher起動可能appだけを取得し、debug / releaseとも`QUERY_ALL_PACKAGES`を使用しない。
 - スクワットは左右いずれか同じ側のhip / kneeを入力とし、顔・肩・足首を判定必須にしない。Previewとguideはnativeの同一3:4 containerへ配置する。実Camera成立率とlatencyはデモ前manual gateで確認する。
@@ -228,6 +229,28 @@ non-debug buildはdemo projectへfallbackしません。次の4つの `--dart-de
 live設定、`.env`実値、signing keyをrepositoryへcommitしないでください。Phase 0はrelease signingとlive Firebase接続を構成しません。
 
 Rules test用のFirebase CLIはローカル・CI限定のdevDependencyです。現行CLIの推移依存に `npm audit` 警告がある場合、`npm audit fix --force` で無検証downgradeせず、Firebase CLI更新時にRules testとともに見直します。
+
+### 共有Firebaseと通知APIのデモ
+
+通知APIは `services/notification_api/` のDockerイメージをRender Web Serviceとして起動します。Render Blueprintは [render.yaml](render.yaml) を使用し、health checkは `/health`、秘密値はDashboardで次の環境変数へ設定します。
+
+- `FIREBASE_PROJECT_ID`: 共有Firebase project ID
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: Firebase Admin用service account JSON全文（Gitへ保存しない）
+
+ローカル確認は `uv run --project services/notification_api uvicorn notification_api.main:app --host 0.0.0.0 --port 8080` で起動します。Androidアプリはlive Firebase用の4つの `MICHIZURE_FIREBASE_*` と、公開HTTPS URLを次のように指定します。
+
+```bash
+flutter run --profile -d emulator-5554 \
+  --dart-define=NOTIFICATION_API_BASE_URL=https://example.onrender.com \
+  --dart-define=MICHIZURE_FIREBASE_API_KEY=... \
+  --dart-define=MICHIZURE_FIREBASE_APP_ID=... \
+  --dart-define=MICHIZURE_FIREBASE_MESSAGING_SENDER_ID=... \
+  --dart-define=MICHIZURE_FIREBASE_PROJECT_ID=...
+```
+
+複数人デモでは全員が同じ共有Firebaseへ接続し、Firebase Emulatorは使用しません。Google Play対応Android Emulatorを各自で起動し、別ユーザーでログインして同じグループへ参加し、通知権限を許可します。その後、Debt作成、スクワット救済、完済の順に別端末で通知を確認します。foregroundではSnackBar、background／terminatedではAndroid通知として表示されます。
+
+AWS App Runnerへ移す場合は、同じDockerイメージをECRへpushし、container port `8080` のimage-based serviceを作成します。`FIREBASE_PROJECT_ID`は通常の環境変数、`FIREBASE_SERVICE_ACCOUNT_JSON`はSecrets Manager参照として渡し、その参照権限だけをinstance roleへ付与します。AWS resourceの作成とdeployはこのrepositoryでは行いません。
 
 ## デモと既知の制約
 
