@@ -59,3 +59,4 @@ jobs:
       - name: Build isolated demo target APK
         timeout-minutes: 5
         run: ./android/gradlew -p tools/demo-target assembleDebug --no-daemon
+
