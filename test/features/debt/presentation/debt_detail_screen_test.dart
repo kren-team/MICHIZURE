@@ -169,7 +169,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('状態: 期限終了'), findsOneWidget);
+    expect(find.text('期限終了'), findsOneWidget);
     expect(find.byKey(const Key('debt-detail-cache-banner')), findsOneWidget);
     expect(find.byKey(const Key('debt-repay-action')), findsNothing);
   });

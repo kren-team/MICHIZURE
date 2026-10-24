@@ -109,36 +109,107 @@ final class _DebtDetail extends StatelessWidget {
     final names = {
       for (final member in members) member.userId: member.displayName,
     };
-    return ListView(
+    final textTheme = Theme.of(context).textTheme;
+    final debtorName = names[debt.failedUserId] ?? 'グループメンバー';
+    final isActive = debt.status == DebtStatus.active;
+    final statusColor = switch (debt.status) {
+      DebtStatus.active => MichizureColors.accent,
+      DebtStatus.completed => MichizureColors.success,
+      DebtStatus.expired => MichizureColors.textSecondary,
+    };
+    final list = ListView(
       padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
         if (isFromCache)
-          const Text('オフラインの保存済みデータです。', key: Key('debt-detail-cache-banner')),
-        MichizureMetricCard(
-          label: names[debt.failedUserId] ?? 'グループメンバー',
-          value: '残り ${debt.remainingReps} 回',
-          valueKey: const Key('debt-detail-remaining'),
-          icon: Icons.fitness_center,
-          description: '合計 ${debt.totalReps} 回 / 完了 ${debt.completedReps} 回',
-          child: MichizureStatusPill(
-            label: _statusLabel(debt.status),
-            icon: debt.status == DebtStatus.active
-                ? Icons.sync
-                : Icons.check_circle_outline,
-            color: debt.status == DebtStatus.active
-                ? MichizureColors.pink
-                : MichizureColors.success,
+          const Padding(
+            padding: EdgeInsets.only(bottom: MichizureSpacing.item),
+            child: MichizureStatusPill(
+              key: Key('debt-detail-cache-banner'),
+              label: 'オフラインの保存済みデータです',
+              icon: Icons.cloud_off,
+              color: MichizureColors.warning,
+            ),
+          ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(MichizureSpacing.card),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    MichizureAvatar(name: debtorName, highlighted: isActive),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(debtorName, style: textTheme.titleMedium),
+                          Text('が約束を破りました', style: textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                    MichizureStatusPill(
+                      label: _statusLabel(debt.status),
+                      icon: switch (debt.status) {
+                        DebtStatus.active => Icons.directions_run,
+                        DebtStatus.completed => Icons.check_circle_outline,
+                        DebtStatus.expired => Icons.timer_off_outlined,
+                      },
+                      color: statusColor,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                MichizureRepCount(
+                  reps: debt.remainingReps,
+                  textKey: const Key('debt-detail-remaining'),
+                  fontSize: 48,
+                  color: statusColor,
+                ),
+                const SizedBox(height: 14),
+                MichizureProgressBar(
+                  value: debt.totalReps == 0
+                      ? 0
+                      : debt.completedReps / debt.totalReps,
+                  color: statusColor,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '合計 ${debt.totalReps} 回 / 完了 ${debt.completedReps} 回',
+                  style: textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 12),
-        Text('状態: ${_statusLabel(debt.status)}'),
-        Text('発生: ${_formatDateTime(debt.createdAt)}'),
-        Text('封印期限: ${_formatDateTime(debt.lockExpiresAt)}'),
-        const SizedBox(height: 8),
-        const Text('完済または期限到達で、この負債によるアプリ封印が解除されます。'),
-        const Divider(height: 32),
-        Text('メンバー別の確定回数', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: MichizureSpacing.item),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: MichizureSpacing.card,
+              vertical: 6,
+            ),
+            child: Column(
+              children: [
+                _InfoRow(label: '発生', value: _formatDateTime(debt.createdAt)),
+                const Divider(height: 1),
+                _InfoRow(
+                  label: '封印期限',
+                  value: _formatDateTime(debt.lockExpiresAt),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 10, 4, 0),
+          child: Text(
+            '完済または期限到達で、この負債によるアプリ封印が解除されます。',
+            style: TextStyle(fontSize: 12, color: MichizureColors.textTertiary),
+          ),
+        ),
+        const MichizureSectionHeader(title: 'メンバー別の返済'),
         if (contributionError != null) ...[
           Text(
             contributionError!,
@@ -149,25 +220,87 @@ final class _DebtDetail extends StatelessWidget {
         ] else if (summaries == null)
           const LinearProgressIndicator(key: Key('debt-contributions-loading'))
         else if (summaries!.isEmpty)
-          const Text('まだ確定した返済はありません。', key: Key('debt-contributions-empty'))
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(MichizureSpacing.card),
+              child: Text(
+                'まだ確定した返済はありません。',
+                key: Key('debt-contributions-empty'),
+              ),
+            ),
+          )
         else
-          ...summaries!.map(
-            (summary) => ListTile(
-              key: Key('debt-contribution-${summary.userId}'),
-              leading: const Icon(Icons.person),
-              title: Text(names[summary.userId] ?? 'グループメンバー'),
-              trailing: Text('${summary.totalReps} 回'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Column(
+                children: [
+                  for (final summary in summaries!)
+                    ListTile(
+                      key: Key('debt-contribution-${summary.userId}'),
+                      leading: MichizureAvatar(
+                        name: names[summary.userId] ?? '?',
+                      ),
+                      title: Text(names[summary.userId] ?? 'グループメンバー'),
+                      trailing: Text(
+                        '${summary.totalReps} 回',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        const SizedBox(height: 16),
-        if (debt.status == DebtStatus.active)
-          MichizurePrimaryButton(
-            buttonKey: const Key('debt-repay-action'),
-            onPressed: () => context.go('/debts/${debt.id}/repay'),
-            icon: const Icon(Icons.directions_run),
-            child: const Text('この負債を返済する'),
-          ),
       ],
+    );
+    if (!isActive) return list;
+    return Column(
+      children: [
+        Expanded(child: list),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              MichizureSpacing.page,
+              8,
+              MichizureSpacing.page,
+              12,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: MichizurePrimaryButton(
+                buttonKey: const Key('debt-repay-action'),
+                accent: true,
+                onPressed: () => context.go('/debts/${debt.id}/repay'),
+                icon: const Icon(Icons.directions_run),
+                child: const Text('この負債を返済する'),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+final class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(value, style: Theme.of(context).textTheme.titleSmall),
+        ],
+      ),
     );
   }
 }

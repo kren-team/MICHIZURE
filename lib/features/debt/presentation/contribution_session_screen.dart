@@ -90,8 +90,14 @@ final class _ContributionSessionScreenState
     SquatSessionState squatState,
   ) {
     final debt = snapshot.value!;
+    final members = ref.watch(currentGroupMembersProvider).value ?? const [];
+    final debtorName = members
+        .where((member) => member.userId == debt.failedUserId)
+        .map((member) => member.displayName)
+        .firstOrNull;
     return ContributionSessionView(
       debt: debt,
+      debtorName: debtorName,
       state: syncState,
       squatState: squatState,
       isFromCache: snapshot.isFromCache,
@@ -112,6 +118,7 @@ final class _ContributionSessionScreenState
 final class ContributionSessionView extends StatelessWidget {
   const ContributionSessionView({
     required this.debt,
+    this.debtorName,
     required this.state,
     required this.isFromCache,
     required this.hasPendingWrites,
@@ -125,6 +132,9 @@ final class ContributionSessionView extends StatelessWidget {
   });
 
   final Debt debt;
+
+  /// 負債を発生させたメンバーの表示名。解決できない場合はnull。
+  final String? debtorName;
   final ContributionControllerState state;
   final SquatSessionState squatState;
   final bool isFromCache;
@@ -137,27 +147,79 @@ final class ContributionSessionView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final isActive = debt.status == DebtStatus.active;
     return ListView(
-      padding: const EdgeInsets.all(MichizureSpacing.page),
+      padding: const EdgeInsets.fromLTRB(
+        MichizureSpacing.page,
+        4,
+        MichizureSpacing.page,
+        32,
+      ),
       children: [
-        Text(
-          '返済中の負債: ${_shortId(debt.id)}',
-          key: const Key('selected-debt-id'),
-        ),
-        const SizedBox(height: 12),
-        MichizureMetricCard(
-          label: 'スクワット返済',
-          value: '残り ${debt.remainingReps} 回',
-          valueKey: const Key('contribution-session-remaining'),
-          icon: Icons.fitness_center,
-          child: MichizureStatusPill(
-            label: debt.status == DebtStatus.active ? '返済中' : '終了',
-            icon: debt.status == DebtStatus.active
-                ? Icons.directions_run
-                : Icons.check_circle_outline,
-            color: debt.status == DebtStatus.active
-                ? MichizureColors.pink
-                : MichizureColors.success,
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(MichizureSpacing.card),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${debtorName ?? 'グループメンバー'}の負債を返済中',
+                        key: const Key('selected-debt-label'),
+                        style: MichizureTextStyles.overline,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    MichizureStatusPill(
+                      label: isActive ? '返済中' : '終了',
+                      icon: isActive
+                          ? Icons.directions_run
+                          : Icons.check_circle_outline,
+                      color: isActive
+                          ? MichizureColors.accent
+                          : MichizureColors.success,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, animation) => ScaleTransition(
+                    scale: Tween(begin: 1.15, end: 1.0).animate(animation),
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [?current],
+                  ),
+                  child: MichizureRepCount(
+                    key: ValueKey(debt.remainingReps),
+                    reps: debt.remainingReps,
+                    textKey: const Key('contribution-session-remaining'),
+                    color: isActive
+                        ? MichizureColors.accent
+                        : MichizureColors.success,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                MichizureProgressBar(
+                  value: debt.totalReps == 0
+                      ? 0
+                      : debt.completedReps / debt.totalReps,
+                  color: isActive
+                      ? MichizureColors.accent
+                      : MichizureColors.success,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${debt.completedReps} / ${debt.totalReps} 回 返済済み',
+                  style: textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
         ),
         if (state.lastDelivery case final delivery?
@@ -170,7 +232,7 @@ final class ContributionSessionView extends StatelessWidget {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
-        const SizedBox(height: 16),
+        const SizedBox(height: MichizureSpacing.item),
         _SquatControls(
           key: const ValueKey('persistent-squat-controls'),
           debt: debt,
@@ -181,31 +243,96 @@ final class ContributionSessionView extends StatelessWidget {
           onStart: onStart,
           onStop: onStop,
         ),
-        const Divider(height: 32),
-        Text('返済の反映状況', style: Theme.of(context).textTheme.titleMedium),
-        Text(
-          '端末で検出 ${squatState.detectedReps} 回',
-          key: const Key('squat-detected-count'),
-        ),
-        Text('検出を保存 ${state.detectedCount} 回'),
-        Text(
-          '送信待ち ${state.pendingCount} 回',
-          key: const Key('contribution-pending-count'),
-        ),
-        Text(
-          '確定 ${state.confirmedCount} 回',
-          key: const Key('contribution-confirmed-count'),
-        ),
-        Text(
-          '拒否 ${state.rejectedCount} 回',
-          key: const Key('contribution-rejected-count'),
-        ),
+        if (squatState.isRunning ||
+            squatState.detectedReps > 0 ||
+            state.pendingCount > 0 ||
+            state.confirmedCount > 0 ||
+            state.rejectedCount > 0) ...[
+          const MichizureSectionHeader(title: '返済の反映状況'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+              child: Row(
+                children: [
+                  _SyncStat(
+                    label: '端末で検出',
+                    value: squatState.detectedReps,
+                    textKey: const Key('squat-detected-count'),
+                  ),
+                  _SyncStat(
+                    label: '送信待ち',
+                    value: state.pendingCount,
+                    textKey: const Key('contribution-pending-count'),
+                  ),
+                  _SyncStat(
+                    label: '確定',
+                    value: state.confirmedCount,
+                    textKey: const Key('contribution-confirmed-count'),
+                    color: MichizureColors.success,
+                  ),
+                  _SyncStat(
+                    label: '拒否',
+                    value: state.rejectedCount,
+                    textKey: const Key('contribution-rejected-count'),
+                    color: state.rejectedCount > 0
+                        ? MichizureColors.error
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (state.isRestoring || state.isSubmitting)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: LinearProgressIndicator(),
           ),
       ],
+    );
+  }
+}
+
+final class _SyncStat extends StatelessWidget {
+  const _SyncStat({
+    required this.label,
+    required this.value,
+    required this.textKey,
+    this.color,
+  });
+
+  final String label;
+  final int value;
+  final Key textKey;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Semantics(
+        label: '$label $value 回',
+        excludeSemantics: true,
+        child: Column(
+          children: [
+            Text(
+              '$value',
+              key: textKey,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                color: value == 0 ? MichizureColors.textTertiary : color,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall,
+              maxLines: 1,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -239,36 +366,36 @@ final class _SquatControls extends StatelessWidget {
       );
     }
     if (state.permission == CameraPermissionState.permanentlyDenied) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: MichizurePrimaryButton(
+      return _SessionSetupCard(
+        action: MichizurePrimaryButton(
           buttonKey: const Key('open-camera-settings'),
           onPressed: onOpenSettings,
+          icon: const Icon(Icons.settings_outlined),
           child: const Text('設定でカメラを許可'),
         ),
       );
     }
     if (state.permission != CameraPermissionState.granted) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: MichizurePrimaryButton(
+      return _SessionSetupCard(
+        action: MichizurePrimaryButton(
           buttonKey: const Key('request-camera-permission'),
           onPressed: state.status == SquatSessionStatus.requestingPermission
               ? null
               : onRequestPermission,
+          icon: const Icon(Icons.videocam_outlined),
           child: const Text('カメラを許可して準備'),
         ),
       );
     }
     if (!state.isRunning) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: MichizurePrimaryButton(
+      return _SessionSetupCard(
+        action: MichizurePrimaryButton(
           buttonKey: const Key('start-squat-session'),
+          accent: true,
           onPressed: state.status == SquatSessionStatus.starting
               ? null
               : onStart,
-          icon: const Icon(Icons.camera_alt),
+          icon: const Icon(Icons.directions_run),
           child: const Text('スクワット返済を開始'),
         ),
       );
@@ -291,55 +418,215 @@ final class _SquatControls extends StatelessWidget {
               ),
             ),
           ),
-        const SizedBox(height: 8),
+        const SizedBox(height: MichizureSpacing.item),
         if (!state.detectorReady)
           const Card(
             key: Key('pose-model-loading'),
             child: ListTile(
-              leading: CircularProgressIndicator(),
+              leading: SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
               title: Text('姿勢判定を準備しています'),
               subtitle: Text('全身が映る位置でお待ちください。'),
             ),
           ),
+        _DetectorStateBanner(
+          detectorState: state.detectorState,
+          qualityMessage: _qualityMessage(
+            state.pipelineStatus,
+            state.qualityWarning,
+          ),
+          isQualityOk:
+              state.pipelineStatus == SquatPosePipelineStatus.valid &&
+              state.qualityWarning == null,
+        ),
+        if (state.failure case final failure?)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _detectorFailureMessage(failure.reason),
+              key: const Key('squat-detector-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        const SizedBox(height: 10),
         const Text(
           '胸の下から足首まで映してください。'
           'カメラに対して斜め30〜45度または横向きになると判定しやすくなります。',
           textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12, color: MichizureColors.textTertiary),
         ),
-        Semantics(
-          liveRegion: true,
-          child: Text(
-            '次の動作: ${_stateLabel(state.detectorState)}',
-            key: const Key('squat-detector-state'),
-            style: Theme.of(context).textTheme.titleMedium,
-            textAlign: TextAlign.center,
-          ),
-        ),
-        Semantics(
-          liveRegion: true,
-          child: Text(
-            _qualityMessage(state.pipelineStatus, state.qualityWarning),
-            key: const Key('squat-quality-message'),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        if (state.failure case final failure?)
-          Text(
-            _detectorFailureMessage(failure.reason),
-            key: const Key('squat-detector-error'),
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        const SizedBox(height: 12),
-        OutlinedButton(
+        const SizedBox(height: 8),
+        TextButton.icon(
           key: const Key('stop-squat-session'),
           onPressed: state.status == SquatSessionStatus.stopping
               ? null
               : onStop,
-          child: const Text('返済を終了'),
+          icon: const Icon(Icons.stop_circle_outlined),
+          label: const Text('返済を終了'),
         ),
       ],
     );
   }
+}
+
+final class _SessionSetupCard extends StatelessWidget {
+  const _SessionSetupCard({required this.action});
+
+  final Widget action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(MichizureSpacing.card),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('はじめる前に', style: MichizureTextStyles.overline),
+            const SizedBox(height: 14),
+            const _SetupStep(number: 1, text: '端末を腰くらいの高さに立てかける'),
+            const _SetupStep(number: 2, text: '2〜3歩下がり、胸の下から足首までを映す'),
+            const _SetupStep(number: 3, text: 'カメラに対して斜め30〜45度を向く'),
+            const SizedBox(height: 18),
+            action,
+            const SizedBox(height: 10),
+            const Text(
+              '映像は端末内だけで判定し、保存・送信しません。',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: MichizureColors.textTertiary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final class _SetupStep extends StatelessWidget {
+  const _SetupStep({required this.number, required this.text});
+
+  final int number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: MichizureColors.elevatedSurface,
+            ),
+            child: Text(
+              '$number',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(color: MichizureColors.textPrimary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+final class _DetectorStateBanner extends StatelessWidget {
+  const _DetectorStateBanner({
+    required this.detectorState,
+    required this.qualityMessage,
+    required this.isQualityOk,
+  });
+
+  final SquatDetectorState detectorState;
+  final String qualityMessage;
+  final bool isQualityOk;
+
+  @override
+  Widget build(BuildContext context) {
+    final emphasized = detectorState == SquatDetectorState.bottom;
+    return Card(
+      color: emphasized
+          ? MichizureColors.accent.withValues(alpha: 0.16)
+          : MichizureColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(
+              _stateIcon(detectorState),
+              color: emphasized
+                  ? MichizureColors.accent
+                  : MichizureColors.textPrimary,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      '次の動作: ${_stateLabel(detectorState)}',
+                      key: const Key('squat-detector-state'),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Semantics(
+                    liveRegion: true,
+                    child: Row(
+                      children: [
+                        Icon(
+                          isQualityOk ? Icons.check_circle : Icons.info_outline,
+                          size: 14,
+                          color: isQualityOk
+                              ? MichizureColors.success
+                              : MichizureColors.warning,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            qualityMessage,
+                            key: const Key('squat-quality-message'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _stateIcon(SquatDetectorState state) {
+  return switch (state) {
+    SquatDetectorState.calibrating => Icons.accessibility_new,
+    SquatDetectorState.standing => Icons.play_arrow_rounded,
+    SquatDetectorState.descending => Icons.south,
+    SquatDetectorState.bottom => Icons.north,
+    SquatDetectorState.ascending => Icons.north,
+  };
 }
 
 String _stateLabel(SquatDetectorState state) {
@@ -413,8 +700,4 @@ String _rejectionMessage(ContributionRejectionReason? reason) {
     ContributionRejectionReason.unknown ||
     null => '返済を確定できませんでした。再試行してください。',
   };
-}
-
-String _shortId(String value) {
-  return value.length <= 8 ? value : value.substring(0, 8);
 }

@@ -28,7 +28,8 @@ void main() {
       ),
     );
 
-    expect(find.text('返済中の負債: debt-1'), findsOneWidget);
+    expect(find.text('グループメンバーの負債を返済中'), findsOneWidget);
+    expect(find.textContaining('debt-1'), findsNothing);
     expect(find.text('残り 10 回'), findsOneWidget);
     expect(find.textContaining('デモPC'), findsNothing);
     expect(find.textContaining('Host Pose'), findsNothing);
@@ -66,7 +67,7 @@ void main() {
       ),
     );
 
-    expect(find.text('送信待ち 1 回'), findsOneWidget);
+    _expectStat(tester, 'contribution-pending-count', 1);
     expect(find.textContaining('端末内に保存'), findsNothing);
     expect(find.textContaining('同期確定前'), findsNothing);
     expect(find.byKey(const Key('contribution-retry-button')), findsNothing);
@@ -104,8 +105,8 @@ void main() {
       ),
     );
 
-    expect(find.text('確定 1 回'), findsOneWidget);
-    expect(find.text('拒否 1 回'), findsOneWidget);
+    _expectStat(tester, 'contribution-confirmed-count', 1);
+    _expectStat(tester, 'contribution-rejected-count', 1);
     expect(find.text('この負債はすでに終了しています。'), findsOneWidget);
     expect(find.textContaining('FirebaseException'), findsNothing);
   });
@@ -148,8 +149,8 @@ void main() {
 
     expect(find.text('次の動作: 姿勢を確認しています'), findsOneWidget);
     expect(find.text('足首を認識できません。'), findsOneWidget);
-    expect(find.text('端末で検出 1 回'), findsOneWidget);
-    expect(find.text('送信待ち 1 回'), findsOneWidget);
+    _expectStat(tester, 'squat-detected-count', 1);
+    _expectStat(tester, 'contribution-pending-count', 1);
     expect(find.byType(TextField), findsNothing);
   });
 
@@ -505,4 +506,8 @@ Debt _debt({int completedReps = 0}) {
     lastContributionAt: null,
     lastContributionEventId: null,
   );
+}
+
+void _expectStat(WidgetTester tester, String key, int value) {
+  expect(tester.widget<Text>(find.byKey(Key(key))).data, '$value');
 }
