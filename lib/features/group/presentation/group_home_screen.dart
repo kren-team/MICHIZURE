@@ -45,6 +45,11 @@ final class _GroupOnboardingView extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('MICHIZURE'),
+        titleTextStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 2,
+        ),
         actions: _accountActions(context, ref, authCommand),
       ),
       body: Center(
@@ -56,8 +61,16 @@ final class _GroupOnboardingView extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('仲間とスクワット負債を返済するグループを作成するか、招待コードで参加してください。'),
-                const SizedBox(height: 24),
+                Text(
+                  'まずは、道連れにする\n仲間を集めよう。',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '誰かが約束を破ると、グループ全員にスクワット負債が発生します。'
+                  'グループを作るか、仲間から届いた招待コードで参加してください。',
+                ),
+                const SizedBox(height: 32),
                 MichizurePrimaryButton(
                   buttonKey: const Key('group-create-route-button'),
                   onPressed: () {
@@ -122,7 +135,7 @@ final class _GroupDashboardViewState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('グループ'),
+        title: Text(groupState.value?.name ?? 'グループ'),
         actions: _accountActions(context, ref, authCommand),
       ),
       body: groupState.when(
@@ -180,43 +193,79 @@ final class _GroupDashboardViewState
       activeDebtCount: debtsState.value?.value.length ?? 0,
     );
 
+    final activeDebts = debtsState.value?.value ?? const <Debt>[];
     return ListView(
-      padding: const EdgeInsets.all(MichizureSpacing.page),
+      padding: const EdgeInsets.fromLTRB(
+        MichizureSpacing.page,
+        4,
+        MichizureSpacing.page,
+        40,
+      ),
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(MichizureSpacing.card),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${profileGreeting(displayName)}、おかえりなさい',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  group.name,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text('${group.memberCount} / ${Group.maximumMemberCount} 人'),
-              ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
+          child: Text(
+            '${profileGreeting(displayName)}、おかえりなさい',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: MichizureColors.textSecondary,
             ),
           ),
         ),
-        const SizedBox(height: 16),
         _NextActionCard(
           guidance: guidance,
+          activeDebts: activeDebts,
           onPressed: command.isLoading
               ? null
               : () => _openNextAction(context, guidance.action),
         ),
+        const SizedBox(height: MichizureSpacing.item),
+        _QuickActionGrid(
+          children: [
+            _QuickActionTile(
+              tileKey: const Key('task-composer-route-button'),
+              icon: Icons.timer_outlined,
+              label: '約束を始める',
+              caption: '集中する時間を決める',
+              onTap: command.isLoading ? null : () => context.go('/task/new'),
+            ),
+            _QuickActionTile(
+              tileKey: const Key('debt-list-route-button'),
+              icon: Icons.fitness_center,
+              label: '負債',
+              caption: debtsState.when(
+                loading: () => '読み込み中',
+                error: (error, stackTrace) => '読み込みエラー',
+                data: (snapshot) => snapshot.value.isEmpty
+                    ? 'なし'
+                    : '${snapshot.value.length}件・返済中',
+              ),
+              highlighted: activeDebts.isNotEmpty,
+              onTap: () => context.go('/debts'),
+            ),
+            _QuickActionTile(
+              tileKey: const Key('lock-status-route-button'),
+              icon: Icons.lock_outline,
+              label: '封印状態',
+              caption: '封印中のアプリ',
+              onTap: () => context.go('/lock-status'),
+            ),
+            _QuickActionTile(
+              tileKey: const Key('group-invite-route-button'),
+              icon: Icons.person_add_alt,
+              label: '仲間を招待',
+              caption: '招待コードを発行',
+              onTap: command.isLoading
+                  ? null
+                  : () => context.go('/group/invite'),
+            ),
+          ],
+        ),
         if (setup != null) ...[
-          const SizedBox(height: 12),
+          const MichizureSectionHeader(title: '封印するアプリ'),
           Card(
             key: const Key('home-selected-apps-card'),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
               child: SelectedAppsSummary(
                 apps: setup.apps,
                 selectedPackageNames: setup.savedPackageNames,
@@ -226,63 +275,48 @@ final class _GroupDashboardViewState
             ),
           ),
         ],
-        const SizedBox(height: 24),
-        Text('メニュー', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          key: const Key('task-composer-route-button'),
-          onPressed: command.isLoading ? null : () => context.go('/task/new'),
-          icon: const Icon(Icons.timer_outlined),
-          label: const Text('約束を始める'),
+        MichizureSectionHeader(
+          title: 'メンバー',
+          trailing: Text(
+            '${group.memberCount} / ${Group.maximumMemberCount}',
+            style: MichizureTextStyles.overline,
+          ),
         ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          key: const Key('debt-list-route-button'),
-          onPressed: () => context.go('/debts'),
-          icon: const Icon(Icons.fitness_center),
-          label: Text(
-            debtsState.when(
-              loading: () => '現在の負債を確認',
-              error: (error, stackTrace) => '現在の負債（読み込みエラー）',
-              data: (snapshot) => '現在の負債（${snapshot.value.length}件）',
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Column(
+              children: [
+                for (final member in members)
+                  ListTile(
+                    key: Key('group-member-${member.userId}'),
+                    leading: MichizureAvatar(
+                      name: member.displayName,
+                      highlighted: activeDebts.any(
+                        (debt) => debt.failedUserId == member.userId,
+                      ),
+                    ),
+                    title: Text(
+                      member.displayName,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    subtitle: switch (_memberSubtitle(member, activeDebts)) {
+                      final text? => Text(text),
+                      null => null,
+                    },
+                    trailing: member.role == GroupMemberRole.owner
+                        ? const MichizureStatusPill(
+                            label: '所有者',
+                            icon: Icons.workspace_premium_outlined,
+                          )
+                        : null,
+                  ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          key: const Key('lock-status-route-button'),
-          onPressed: () => context.go('/lock-status'),
-          icon: const Icon(Icons.lock_outline),
-          label: const Text('アプリ封印状態'),
-        ),
-        const SizedBox(height: 8),
-        MichizurePrimaryButton(
-          buttonKey: const Key('group-invite-route-button'),
-          onPressed: command.isLoading
-              ? null
-              : () => context.go('/group/invite'),
-          icon: const Icon(Icons.share),
-          child: const Text('招待コードを発行'),
-        ),
-        const SizedBox(height: 24),
-        Text('メンバー', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        ...members.map(
-          (member) => ListTile(
-            key: Key('group-member-${member.userId}'),
-            leading: Icon(
-              member.role == GroupMemberRole.owner
-                  ? Icons.workspace_premium
-                  : Icons.person,
-            ),
-            title: Text(member.displayName),
-            trailing: Text(
-              member.role == GroupMemberRole.owner ? '所有者' : 'メンバー',
-            ),
-          ),
-        ),
+        const MichizureSectionHeader(title: 'グループ管理'),
         if (isOwner && transferCandidates.isNotEmpty) ...[
-          const Divider(height: 32),
           DropdownButtonFormField<String>(
             key: const Key('group-owner-transfer-select'),
             initialValue: _selectedNewOwnerUid,
@@ -323,9 +357,10 @@ final class _GroupDashboardViewState
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ],
-        const SizedBox(height: 24),
-        OutlinedButton(
+        const SizedBox(height: 12),
+        TextButton(
           key: const Key('group-leave-button'),
+          style: TextButton.styleFrom(foregroundColor: MichizureColors.error),
           onPressed: command.isLoading
               ? null
               : () => _confirmLeave(
@@ -401,44 +436,194 @@ final class _GroupDashboardViewState
 String profileGreeting(String displayName) =>
     displayName.trim().isEmpty ? 'こんにちは' : '$displayNameさん';
 
+String? _memberSubtitle(GroupMember member, List<Debt> activeDebts) {
+  final remaining = activeDebts
+      .where((debt) => debt.failedUserId == member.userId)
+      .fold<int>(0, (sum, debt) => sum + debt.remainingReps);
+  return remaining == 0 ? null : '負債 残り$remaining回';
+}
+
 final class _NextActionCard extends StatelessWidget {
-  const _NextActionCard({required this.guidance, required this.onPressed});
+  const _NextActionCard({
+    required this.guidance,
+    required this.activeDebts,
+    required this.onPressed,
+  });
 
   final HomeGuidance guidance;
+  final List<Debt> activeDebts;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
+    final showsDebt = guidance.action == HomeNextAction.viewDebts;
+    final remaining = activeDebts.fold<int>(
+      0,
+      (sum, debt) => sum + debt.remainingReps,
+    );
+    final total = activeDebts.fold<int>(0, (sum, debt) => sum + debt.totalReps);
     return Card(
       key: const Key('home-next-action-card'),
-      child: DecoratedBox(
-        decoration: const BoxDecoration(gradient: MichizureGradients.subtle),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: MichizureStatusPill(
-                  label: '次にすること',
-                  icon: Icons.bolt_rounded,
-                  color: MichizureColors.pink,
+      child: Padding(
+        padding: const EdgeInsets.all(MichizureSpacing.card),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: showsDebt
+                        ? MichizureColors.accent
+                        : MichizureColors.textSecondary,
+                  ),
                 ),
+                const SizedBox(width: 8),
+                const Text('次にすること', style: MichizureTextStyles.overline),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (showsDebt && total > 0) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    '$remaining',
+                    key: const Key('home-debt-remaining'),
+                    style: MichizureTextStyles.counter.copyWith(
+                      color: MichizureColors.accent,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '回 残っています',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
-              Text(
-                guidance.title,
-                key: const Key('home-next-action-title'),
-                style: Theme.of(context).textTheme.titleLarge,
+              MichizureProgressBar(value: 1 - remaining / total),
+              const SizedBox(height: 14),
+            ],
+            Text(
+              guidance.title,
+              key: const Key('home-next-action-title'),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 6),
+            Text(guidance.description),
+            const SizedBox(height: 20),
+            MichizurePrimaryButton(
+              buttonKey: const Key('home-next-action-button'),
+              onPressed: onPressed,
+              accent: showsDebt,
+              icon: Icon(_actionIcon(guidance.action)),
+              child: Text(guidance.actionLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _actionIcon(HomeNextAction action) {
+  return switch (action) {
+    HomeNextAction.completeDeviceSetup => Icons.phonelink_setup,
+    HomeNextAction.selectLockApps => Icons.apps,
+    HomeNextAction.viewDebts => Icons.directions_run,
+    HomeNextAction.startTask => Icons.timer_outlined,
+  };
+}
+
+final class _QuickActionGrid extends StatelessWidget {
+  const _QuickActionGrid({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var index = 0; index < children.length; index += 2) {
+      if (index > 0) {
+        rows.add(const SizedBox(height: MichizureSpacing.item));
+      }
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: children[index]),
+              const SizedBox(width: MichizureSpacing.item),
+              Expanded(
+                child: index + 1 < children.length
+                    ? children[index + 1]
+                    : const SizedBox.shrink(),
               ),
-              const SizedBox(height: 6),
-              Text(guidance.description),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(children: rows);
+  }
+}
+
+final class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({
+    required this.tileKey,
+    required this.icon,
+    required this.label,
+    required this.caption,
+    required this.onTap,
+    this.highlighted = false,
+  });
+
+  final Key tileKey;
+  final IconData icon;
+  final String label;
+  final String caption;
+  final VoidCallback? onTap;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Card(
+      child: InkWell(
+        key: tileKey,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: highlighted
+                    ? MichizureColors.accent
+                    : enabled
+                    ? MichizureColors.textPrimary
+                    : MichizureColors.textTertiary,
+              ),
               const SizedBox(height: 18),
-              MichizurePrimaryButton(
-                buttonKey: const Key('home-next-action-button'),
-                onPressed: onPressed,
-                child: Text(guidance.title),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: enabled ? null : MichizureColors.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                caption,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: highlighted ? MichizureColors.accent : null,
+                ),
               ),
             ],
           ),
@@ -447,6 +632,8 @@ final class _NextActionCard extends StatelessWidget {
     );
   }
 }
+
+enum _AccountMenuItem { profile, signOut }
 
 List<Widget> _accountActions(
   BuildContext context,
@@ -467,17 +654,39 @@ List<Widget> _accountActions(
       onPressed: () => context.go('/device-setup'),
       icon: const Icon(Icons.phonelink_setup),
     ),
-    IconButton(
-      tooltip: 'プロフィール',
-      onPressed: () => context.go('/profile'),
-      icon: const Icon(Icons.person_outline),
+    PopupMenuButton<_AccountMenuItem>(
+      key: const Key('account-menu-button'),
+      tooltip: 'アカウント',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (item) {
+        switch (item) {
+          case _AccountMenuItem.profile:
+            context.go('/profile');
+          case _AccountMenuItem.signOut:
+            if (!authCommand.isLoading) {
+              ref.read(authControllerProvider.notifier).signOut();
+            }
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: _AccountMenuItem.profile,
+          child: ListTile(
+            leading: Icon(Icons.person_outline),
+            title: Text('プロフィール'),
+          ),
+        ),
+        PopupMenuItem(
+          value: _AccountMenuItem.signOut,
+          enabled: !authCommand.isLoading,
+          child: const ListTile(
+            leading: Icon(Icons.logout),
+            title: Text('ログアウト'),
+          ),
+        ),
+      ],
     ),
-    TextButton(
-      onPressed: authCommand.isLoading
-          ? null
-          : () => ref.read(authControllerProvider.notifier).signOut(),
-      child: const Text('ログアウト'),
-    ),
+    const SizedBox(width: 4),
   ];
 }
 

@@ -36,6 +36,8 @@ void main() {
     );
 
     expect(find.text('朝活チーム'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('2 / 40'), 300);
+    expect(find.text('2 / 40'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.byKey(const Key('group-member-alice')),
       300,
@@ -72,7 +74,8 @@ void main() {
     );
 
     expect(find.text('次にすること'), findsOneWidget);
-    expect(find.text('端末セットアップを完了する'), findsNWidgets(2));
+    expect(find.text('端末セットアップを完了する'), findsOneWidget);
+    expect(find.text('セットアップを開く'), findsOneWidget);
   });
 
   testWidgets(
@@ -86,7 +89,8 @@ void main() {
         deviceRepository: FakeDeviceControlRepository(),
       );
 
-      expect(find.text('封印するアプリを選ぶ'), findsNWidgets(2));
+      expect(find.text('封印するアプリを選ぶ'), findsOneWidget);
+      expect(find.text('アプリを選ぶ'), findsOneWidget);
     },
   );
 
@@ -99,7 +103,12 @@ void main() {
       debts: [_debt],
     );
 
-    expect(find.text('現在の負債を確認する'), findsNWidgets(2));
+    expect(find.text('現在の負債を確認する'), findsOneWidget);
+    expect(find.text('スクワットで返済する'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('home-debt-remaining'))).data,
+      '${_debt.remainingReps}',
+    );
   });
 
   testWidgets('shows saved app count, labels, and a change route from Home', (
@@ -115,6 +124,10 @@ void main() {
       deviceRepository: device,
     );
 
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('home-selected-apps-card')),
+      300,
+    );
     expect(find.text('2件選択済み'), findsOneWidget);
     expect(find.text('Social、Video'), findsOneWidget);
     expect(find.byKey(const Key('home-app-selection-button')), findsOneWidget);

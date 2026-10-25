@@ -51,7 +51,7 @@ final class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                         const Icon(
                           Icons.person_add_alt_1,
                           size: 42,
-                          color: MichizureColors.purple,
+                          color: MichizureColors.accent,
                         ),
                         const SizedBox(height: 16),
                         const Text('グループに表示する名前を設定してください。'),

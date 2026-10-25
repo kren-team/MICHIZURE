@@ -92,36 +92,31 @@ final class _LockStateView extends StatelessWidget {
       padding: const EdgeInsets.all(MichizureSpacing.page),
       children: [
         Card(
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              gradient: MichizureGradients.subtle,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(MichizureSpacing.card),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  MichizureStatusPill(
-                    label: state.hasActiveLock ? '封印中' : '利用可能',
-                    icon: state.hasActiveLock ? Icons.lock : Icons.lock_open,
-                    color: state.hasActiveLock
-                        ? MichizureColors.pink
-                        : MichizureColors.success,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    state.hasActiveLock ? 'アプリを封印中' : '現在の封印はありません',
-                    key: const Key('lock-status-title'),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    state.hasActiveLock
-                        ? '有効な対象 ${state.effectiveTargetCount}件'
-                        : '負債の完済または期限到達で解除されます',
-                  ),
-                ],
-              ),
+          child: Padding(
+            padding: const EdgeInsets.all(MichizureSpacing.card),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                MichizureStatusPill(
+                  label: state.hasActiveLock ? '封印中' : '利用可能',
+                  icon: state.hasActiveLock ? Icons.lock : Icons.lock_open,
+                  color: state.hasActiveLock
+                      ? MichizureColors.accent
+                      : MichizureColors.success,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  state.hasActiveLock ? 'アプリを封印中' : '現在の封印はありません',
+                  key: const Key('lock-status-title'),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  state.hasActiveLock
+                      ? '有効な対象 ${state.effectiveTargetCount}件'
+                      : '負債の完済または期限到達で解除されます',
+                ),
+              ],
             ),
           ),
         ),

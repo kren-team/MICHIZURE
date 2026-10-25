@@ -56,62 +56,47 @@ final class AuthPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.all(MichizureSpacing.page),
+            padding: const EdgeInsets.symmetric(
+              horizontal: MichizureSpacing.page,
+              vertical: 32,
+            ),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 40,
+                minHeight: constraints.maxHeight - 64,
               ),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  child: Card(
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        gradient: MichizureGradients.subtle,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(MichizureSpacing.section),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const Icon(
-                              Icons.bolt_rounded,
-                              size: 42,
-                              color: MichizureColors.pink,
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _BrandMark(),
+                      const SizedBox(height: 48),
+                      Text(title, style: textTheme.headlineSmall),
+                      const SizedBox(height: 20),
+                      if (error case final message?) ...[
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            message,
+                            key: const Key('auth-error-message'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
                             ),
-                            const SizedBox(height: 12),
-                            Text(
-                              title,
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: 24),
-                            if (error case final message?) ...[
-                              Semantics(
-                                liveRegion: true,
-                                child: Text(
-                                  message,
-                                  key: const Key('auth-error-message'),
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-                            form,
-                            const SizedBox(height: 8),
-                            footer,
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
+                        const SizedBox(height: 16),
+                      ],
+                      form,
+                      const SizedBox(height: 8),
+                      footer,
+                    ],
                   ),
                 ),
               ),
@@ -119,6 +104,44 @@ final class AuthPage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+final class _BrandMark extends StatelessWidget {
+  const _BrandMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: const BoxDecoration(
+            color: MichizureColors.accent,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'MICHIZURE',
+          style: TextStyle(
+            fontSize: 34,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '約束を破ったら、仲間もスクワット。',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(color: MichizureColors.textSecondary),
+        ),
+      ],
     );
   }
 }

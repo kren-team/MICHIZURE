@@ -9,14 +9,12 @@ void main() {
 
     expect(theme.brightness, Brightness.dark);
     expect(theme.scaffoldBackgroundColor, MichizureColors.background);
-    expect(theme.colorScheme.primary, MichizureColors.purple);
-    expect(theme.colorScheme.secondary, MichizureColors.pink);
+    expect(theme.colorScheme.primary, MichizureColors.paper);
+    expect(theme.colorScheme.secondary, MichizureColors.accent);
     expect(theme.cardTheme.color, MichizureColors.surface);
   });
 
-  testWidgets('gradient primary button keeps a full-size tap target', (
-    tester,
-  ) async {
+  testWidgets('primary button keeps a full-size tap target', (tester) async {
     var taps = 0;
     await tester.pumpWidget(
       MaterialApp(

@@ -17,12 +17,14 @@ final class MichizureHomeAction extends StatelessWidget {
   }
 }
 
+/// 画面内で最も重要な1操作。1画面に1つだけ置く。
 final class MichizurePrimaryButton extends StatelessWidget {
   const MichizurePrimaryButton({
     required this.onPressed,
     required this.child,
     this.icon,
     this.buttonKey,
+    this.accent = false,
     super.key,
   });
 
@@ -31,36 +33,31 @@ final class MichizurePrimaryButton extends StatelessWidget {
   final Widget? icon;
   final Key? buttonKey;
 
+  /// 負債の返済など、朱色で強調すべき操作。
+  final bool accent;
+
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: enabled ? MichizureGradients.primary : null,
-        color: enabled ? null : MichizureColors.elevatedSurface,
-        borderRadius: BorderRadius.circular(MichizureRadii.control),
-      ),
-      child: FilledButton(
+    final style = accent
+        ? FilledButton.styleFrom(
+            backgroundColor: MichizureColors.accent,
+            foregroundColor: MichizureColors.onAccent,
+          )
+        : null;
+    if (icon == null) {
+      return FilledButton(
         key: buttonKey,
         onPressed: onPressed,
-        style: ButtonStyle(
-          backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-          foregroundColor: WidgetStatePropertyAll(
-            enabled ? const Color(0xFF161026) : MichizureColors.textSecondary,
-          ),
-          overlayColor: WidgetStatePropertyAll(
-            MichizureColors.textPrimary.withValues(alpha: 0.10),
-          ),
-          shadowColor: const WidgetStatePropertyAll(Colors.transparent),
-        ),
-        child: icon == null
-            ? child
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [icon!, const SizedBox(width: 8), child],
-              ),
-      ),
+        style: style,
+        child: child,
+      );
+    }
+    return FilledButton.icon(
+      key: buttonKey,
+      onPressed: onPressed,
+      style: style,
+      icon: icon,
+      label: child,
     );
   }
 }
@@ -72,6 +69,7 @@ final class MichizureMetricCard extends StatelessWidget {
     this.description,
     this.icon,
     this.valueKey,
+    this.progress,
     this.child,
     super.key,
   });
@@ -81,50 +79,49 @@ final class MichizureMetricCard extends StatelessWidget {
   final String? description;
   final IconData? icon;
   final Key? valueKey;
+
+  /// 0.0〜1.0の進捗。nullなら表示しない。
+  final double? progress;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: DecoratedBox(
-        decoration: const BoxDecoration(gradient: MichizureGradients.subtle),
-        child: Padding(
-          padding: const EdgeInsets.all(MichizureSpacing.card),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, color: MichizureColors.purple),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: MichizureColors.textSecondary,
-                      ),
-                    ),
-                  ),
+      child: Padding(
+        padding: const EdgeInsets.all(MichizureSpacing.card),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18, color: MichizureColors.textSecondary),
+                  const SizedBox(width: 8),
                 ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                value,
-                key: valueKey,
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  color: MichizureColors.pink,
-                  fontWeight: FontWeight.w800,
+                Expanded(
+                  child: Text(label, style: MichizureTextStyles.overline),
                 ),
-              ),
-              if (description != null) ...[
-                const SizedBox(height: 6),
-                Text(description!),
               ],
-              if (child != null) ...[const SizedBox(height: 14), child!],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              key: valueKey,
+              style: MichizureTextStyles.counter.copyWith(
+                fontSize: 40,
+                color: MichizureColors.accent,
+              ),
+            ),
+            if (progress != null) ...[
+              const SizedBox(height: 16),
+              MichizureProgressBar(value: progress!),
             ],
-          ),
+            if (description != null) ...[
+              const SizedBox(height: 10),
+              Text(description!),
+            ],
+            if (child != null) ...[const SizedBox(height: 14), child!],
+          ],
         ),
       ),
     );
@@ -135,7 +132,7 @@ final class MichizureStatusPill extends StatelessWidget {
   const MichizureStatusPill({
     required this.label,
     required this.icon,
-    this.color = MichizureColors.purple,
+    this.color = MichizureColors.textSecondary,
     super.key,
   });
 
@@ -147,17 +144,16 @@ final class MichizureStatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(MichizureRadii.pill),
-        border: Border.all(color: color.withValues(alpha: 0.55)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: color),
-            const SizedBox(width: 6),
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
             Text(
               label,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -166,6 +162,93 @@ final class MichizureStatusPill extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+final class MichizureSectionHeader extends StatelessWidget {
+  const MichizureSectionHeader({required this.title, this.trailing, super.key});
+
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, MichizureSpacing.section, 4, 10),
+      child: Row(
+        children: [
+          Expanded(child: Text(title, style: MichizureTextStyles.overline)),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+final class MichizureProgressBar extends StatelessWidget {
+  const MichizureProgressBar({
+    required this.value,
+    this.height = 6,
+    this.color = MichizureColors.accent,
+    super.key,
+  });
+
+  final double value;
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(MichizureRadii.pill),
+      child: LinearProgressIndicator(
+        value: value.clamp(0.0, 1.0),
+        minHeight: height,
+        color: color,
+        backgroundColor: MichizureColors.elevatedSurface,
+      ),
+    );
+  }
+}
+
+/// 表示名の頭文字だけを使う、画像なしのアバター。
+final class MichizureAvatar extends StatelessWidget {
+  const MichizureAvatar({
+    required this.name,
+    this.size = 36,
+    this.highlighted = false,
+    super.key,
+  });
+
+  final String name;
+  final double size;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final initial = trimmed.isEmpty ? '?' : trimmed.characters.first;
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: highlighted
+            ? MichizureColors.accent
+            : MichizureColors.elevatedSurface,
+      ),
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontSize: size * 0.42,
+          fontWeight: FontWeight.w700,
+          color: highlighted
+              ? MichizureColors.onAccent
+              : MichizureColors.textPrimary,
         ),
       ),
     );
@@ -192,7 +275,7 @@ final class MichizureEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: MichizureColors.purple),
+            Icon(icon, size: 40, color: MichizureColors.textTertiary),
             const SizedBox(height: 14),
             Text(message, textAlign: TextAlign.center),
             if (action != null) ...[const SizedBox(height: 18), action!],
@@ -247,6 +330,52 @@ final class MichizureErrorState extends StatelessWidget {
               child: const Text('再試行'),
             ),
       key: messageKey,
+    );
+  }
+}
+
+/// 「残り N 回」を数字だけ大きく表示する。
+///
+/// 1つの[Text]として描画するため、文言全体で検索・読み上げできる。
+final class MichizureRepCount extends StatelessWidget {
+  const MichizureRepCount({
+    required this.reps,
+    this.prefix = '残り',
+    this.fontSize = 56,
+    this.color = MichizureColors.accent,
+    this.textKey,
+    super.key,
+  });
+
+  final int reps;
+  final String prefix;
+  final double fontSize;
+  final Color color;
+  final Key? textKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final unitStyle = TextStyle(
+      fontSize: fontSize * 0.34,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0,
+      color: color,
+    );
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: '$prefix ', style: unitStyle),
+          TextSpan(
+            text: '$reps',
+            style: MichizureTextStyles.counter.copyWith(
+              fontSize: fontSize,
+              color: color,
+            ),
+          ),
+          TextSpan(text: ' 回', style: unitStyle),
+        ],
+      ),
+      key: textKey,
     );
   }
 }
