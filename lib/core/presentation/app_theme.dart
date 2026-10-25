@@ -1,57 +1,72 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// 墨（ink）と朱（vermilion）の2色を軸にしたカラーシステム。
+///
+/// 主要操作は紙色（[paper]）の面に墨文字、負債・回数・進捗だけに朱（[accent]）を使う。
+/// 色数を絞り、グラデーションと枠線の多用を避ける。
 abstract final class MichizureColors {
-  static const background = Color(0xFF05091A);
-  static const surface = Color(0xFF10182E);
-  static const elevatedSurface = Color(0xFF18213B);
-  static const border = Color(0xFF2A3555);
-  static const purple = Color(0xFFB99AFF);
-  static const pink = Color(0xFFF184B5);
-  static const textPrimary = Color(0xFFF7F6FF);
-  static const textSecondary = Color(0xFFA8B0C8);
-  static const success = Color(0xFF68D6B3);
-  static const warning = Color(0xFFF2BF75);
-  static const error = Color(0xFFFF7F9F);
-}
-
-abstract final class MichizureGradients {
-  static const primary = LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
-    colors: [MichizureColors.purple, MichizureColors.pink],
-  );
-
-  static const subtle = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF1C2546), MichizureColors.surface],
-  );
+  static const background = Color(0xFF0D0D0F);
+  static const surface = Color(0xFF17171A);
+  static const elevatedSurface = Color(0xFF222226);
+  static const border = Color(0xFF2C2C31);
+  static const paper = Color(0xFFF2EEE6);
+  static const onPaper = Color(0xFF141416);
+  static const accent = Color(0xFFFF5B2E);
+  static const onAccent = Color(0xFF1A0904);
+  static const textPrimary = Color(0xFFF2EEE6);
+  static const textSecondary = Color(0xFF9A968E);
+  static const textTertiary = Color(0xFF66635E);
+  static const success = Color(0xFF45C98F);
+  static const warning = Color(0xFFF2B13D);
+  static const error = Color(0xFFFF6B6B);
 }
 
 abstract final class MichizureSpacing {
   static const page = 20.0;
-  static const card = 18.0;
-  static const section = 24.0;
+  static const card = 20.0;
+  static const section = 28.0;
   static const item = 12.0;
 }
 
 abstract final class MichizureRadii {
-  static const card = 20.0;
-  static const control = 16.0;
+  static const card = 18.0;
+  static const control = 14.0;
   static const pill = 999.0;
+}
+
+abstract final class MichizureTextStyles {
+  /// 回数や残り時間など、桁が揃っていてほしい大きな数値。
+  static const counter = TextStyle(
+    fontSize: 56,
+    height: 1.0,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -1.5,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
+
+  /// セクション見出し。本文より小さく、色で階層を示す。
+  static const overline = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.8,
+    color: MichizureColors.textSecondary,
+  );
 }
 
 ThemeData buildMichizureTheme() {
   const scheme = ColorScheme.dark(
-    primary: MichizureColors.purple,
-    onPrimary: Color(0xFF161026),
-    secondary: MichizureColors.pink,
-    onSecondary: Color(0xFF28101D),
+    primary: MichizureColors.paper,
+    onPrimary: MichizureColors.onPaper,
+    secondary: MichizureColors.accent,
+    onSecondary: MichizureColors.onAccent,
     error: MichizureColors.error,
-    onError: Color(0xFF2B0713),
+    onError: Color(0xFF2B0707),
     surface: MichizureColors.surface,
     onSurface: MichizureColors.textPrimary,
+    surfaceContainerHighest: MichizureColors.elevatedSurface,
+    outline: MichizureColors.border,
+    outlineVariant: MichizureColors.border,
   );
   final base = ThemeData(
     colorScheme: scheme,
@@ -60,15 +75,15 @@ ThemeData buildMichizureTheme() {
   );
   final outline = OutlineInputBorder(
     borderRadius: BorderRadius.circular(MichizureRadii.control),
-    borderSide: const BorderSide(color: MichizureColors.border),
+    borderSide: BorderSide.none,
   );
 
   return base.copyWith(
     scaffoldBackgroundColor: MichizureColors.background,
     canvasColor: MichizureColors.background,
     dividerColor: MichizureColors.border,
-    splashColor: MichizureColors.purple.withValues(alpha: 0.10),
-    highlightColor: MichizureColors.purple.withValues(alpha: 0.06),
+    splashColor: MichizureColors.paper.withValues(alpha: 0.06),
+    highlightColor: MichizureColors.paper.withValues(alpha: 0.04),
     textTheme: base.textTheme
         .apply(
           bodyColor: MichizureColors.textPrimary,
@@ -77,14 +92,19 @@ ThemeData buildMichizureTheme() {
         .copyWith(
           bodyMedium: base.textTheme.bodyMedium?.copyWith(
             color: MichizureColors.textSecondary,
-            height: 1.45,
+            height: 1.5,
           ),
           bodySmall: base.textTheme.bodySmall?.copyWith(
             color: MichizureColors.textSecondary,
             height: 1.4,
           ),
+          headlineMedium: base.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
           headlineSmall: base.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
           ),
           titleLarge: base.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w700,
@@ -106,7 +126,7 @@ ThemeData buildMichizureTheme() {
       systemOverlayStyle: SystemUiOverlayStyle.light,
       titleTextStyle: TextStyle(
         color: MichizureColors.textPrimary,
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -118,14 +138,13 @@ ThemeData buildMichizureTheme() {
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(MichizureRadii.card),
-        side: const BorderSide(color: MichizureColors.border),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: MichizureColors.surface,
       labelStyle: const TextStyle(color: MichizureColors.textSecondary),
-      hintStyle: const TextStyle(color: MichizureColors.textSecondary),
+      hintStyle: const TextStyle(color: MichizureColors.textTertiary),
       helperStyle: const TextStyle(color: MichizureColors.textSecondary),
       prefixIconColor: MichizureColors.textSecondary,
       suffixIconColor: MichizureColors.textSecondary,
@@ -133,45 +152,46 @@ ThemeData buildMichizureTheme() {
       border: outline,
       enabledBorder: outline,
       focusedBorder: outline.copyWith(
-        borderSide: const BorderSide(color: MichizureColors.purple, width: 1.5),
+        borderSide: const BorderSide(color: MichizureColors.paper, width: 1.2),
       ),
       errorBorder: outline.copyWith(
         borderSide: const BorderSide(color: MichizureColors.error),
       ),
       focusedErrorBorder: outline.copyWith(
-        borderSide: const BorderSide(color: MichizureColors.error, width: 1.5),
+        borderSide: const BorderSide(color: MichizureColors.error, width: 1.2),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(64, 52),
-        backgroundColor: MichizureColors.purple,
-        foregroundColor: scheme.onPrimary,
+        minimumSize: const Size(64, 54),
+        backgroundColor: MichizureColors.paper,
+        foregroundColor: MichizureColors.onPaper,
         disabledBackgroundColor: MichizureColors.elevatedSurface,
-        disabledForegroundColor: MichizureColors.textSecondary,
+        disabledForegroundColor: MichizureColors.textTertiary,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(MichizureRadii.control),
         ),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(64, 52),
+        minimumSize: const Size(64, 54),
         backgroundColor: MichizureColors.surface,
-        foregroundColor: MichizureColors.purple,
-        side: const BorderSide(color: MichizureColors.purple),
+        foregroundColor: MichizureColors.textPrimary,
+        disabledForegroundColor: MichizureColors.textTertiary,
+        side: BorderSide.none,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(MichizureRadii.control),
         ),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         minimumSize: const Size(48, 48),
-        foregroundColor: MichizureColors.purple,
+        foregroundColor: MichizureColors.textPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(MichizureRadii.control),
         ),
@@ -184,19 +204,31 @@ ThemeData buildMichizureTheme() {
       ),
     ),
     checkboxTheme: CheckboxThemeData(
-      side: const BorderSide(color: MichizureColors.border, width: 1.5),
+      side: const BorderSide(color: MichizureColors.textTertiary, width: 1.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       fillColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)
-            ? MichizureColors.purple
+            ? MichizureColors.accent
             : Colors.transparent,
       ),
-      checkColor: const WidgetStatePropertyAll(Color(0xFF161026)),
+      checkColor: const WidgetStatePropertyAll(MichizureColors.onAccent),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? MichizureColors.onAccent
+            : MichizureColors.textSecondary,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? MichizureColors.accent
+            : MichizureColors.elevatedSurface,
+      ),
     ),
     listTileTheme: const ListTileThemeData(
-      iconColor: MichizureColors.purple,
+      iconColor: MichizureColors.textSecondary,
       textColor: MichizureColors.textPrimary,
-      contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
     ),
     dividerTheme: const DividerThemeData(
       color: MichizureColors.border,
@@ -208,33 +240,47 @@ ThemeData buildMichizureTheme() {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(MichizureRadii.card),
-        side: const BorderSide(color: MichizureColors.border),
       ),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: MichizureColors.elevatedSurface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(MichizureRadii.control),
+      ),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: MichizureColors.surface,
+      surfaceTintColor: Colors.transparent,
+      showDragHandle: true,
+      dragHandleColor: MichizureColors.textTertiary,
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: MichizureColors.elevatedSurface,
-      contentTextStyle: const TextStyle(color: MichizureColors.textPrimary),
+      backgroundColor: MichizureColors.paper,
+      contentTextStyle: const TextStyle(
+        color: MichizureColors.onPaper,
+        fontWeight: FontWeight.w600,
+      ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(MichizureRadii.control),
-        side: const BorderSide(color: MichizureColors.border),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: MichizureColors.surface,
       surfaceTintColor: Colors.transparent,
-      indicatorColor: MichizureColors.pink.withValues(alpha: 0.16),
+      indicatorColor: MichizureColors.accent.withValues(alpha: 0.16),
       iconTheme: WidgetStateProperty.resolveWith(
         (states) => IconThemeData(
           color: states.contains(WidgetState.selected)
-              ? MichizureColors.pink
+              ? MichizureColors.accent
               : MichizureColors.textSecondary,
         ),
       ),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (states) => TextStyle(
           color: states.contains(WidgetState.selected)
-              ? MichizureColors.pink
+              ? MichizureColors.textPrimary
               : MichizureColors.textSecondary,
           fontWeight: states.contains(WidgetState.selected)
               ? FontWeight.w700
@@ -242,14 +288,8 @@ ThemeData buildMichizureTheme() {
         ),
       ),
     ),
-    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-      backgroundColor: MichizureColors.surface,
-      selectedItemColor: MichizureColors.pink,
-      unselectedItemColor: MichizureColors.textSecondary,
-      type: BottomNavigationBarType.fixed,
-    ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
-      color: MichizureColors.pink,
+      color: MichizureColors.accent,
       linearTrackColor: MichizureColors.elevatedSurface,
       circularTrackColor: MichizureColors.elevatedSurface,
     ),

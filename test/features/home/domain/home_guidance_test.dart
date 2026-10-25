@@ -37,6 +37,7 @@ void main() {
 
       expect(guidance.action, HomeNextAction.viewDebts);
       expect(guidance.description, contains('2件'));
+      expect(guidance.actionLabel, isNot(guidance.title));
     });
 
     test('starts a task when all prerequisites are satisfied', () {
@@ -49,6 +50,7 @@ void main() {
 
       expect(guidance.action, HomeNextAction.startTask);
       expect(guidance.title, '約束を開始する');
+      expect(guidance.actionLabel, '約束を始める');
     });
   });
 }
